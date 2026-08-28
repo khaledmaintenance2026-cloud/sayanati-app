@@ -1,0 +1,37 @@
+name: sayanati_app
+description: "تطبيق صيانتي — إدارة الصيانة والإنتاج والسلامة"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # State management
+  provider: ^6.1.2
+
+  # ملاحظة: حزم Firebase غير مُضافة بعد لتقليل مخاطر أول بناء وتجربتها الآن
+  # محليًا بذاكرة داخلية فقط. راجع خطوات التفعيل في lib/services/firebase_bootstrap.dart —
+  # الخطوة الأولى هناك هي إضافة firebase_core / cloud_firestore / firebase_auth /
+  # firebase_messaging هنا في pubspec.yaml.
+
+  # Utilities
+  intl: ^0.19.0
+  uuid: ^4.4.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  generate: false
+
+  # فعّل هذا القسم بعد إضافة الشعارات الفعلية إلى assets/images
+  # assets:
+  #   - assets/images/
