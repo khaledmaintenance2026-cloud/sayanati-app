@@ -30,12 +30,6 @@ class SayanatiApp extends StatelessWidget {
         title: 'صيانتي',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
-        locale: const Locale('ar'),
-        supportedLocales: const [Locale('ar')],
-        localizationsDelegates: const [
-          DefaultMaterialLocalizations.delegate,
-          DefaultWidgetsLocalizations.delegate,
-        ],
         builder: (context, child) {
           return Directionality(
             textDirection: TextDirection.rtl,
