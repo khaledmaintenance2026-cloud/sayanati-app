@@ -1,0 +1,60 @@
+name: بناء تطبيق صيانتي (Android APK)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout الكود
+        uses: actions/checkout@v4
+
+      - name: تثبيت Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: توليد مجلد Android الأصلي (بدون المساس بـ lib أو pubspec)
+        run: flutter create --platforms=android --org com.sayanati --project-name sayanati_app .
+
+      - name: تحميل الحزم
+        run: flutter pub get
+
+      - name: فحص الكود
+        run: flutter analyze || true
+
+      - name: بناء APK (نسخة تجريبية قابلة للتثبيت فورًا)
+        run: flutter build apk --debug
+
+      - name: بناء APK (نسخة release موقّعة بمفتاح تجريبي)
+        continue-on-error: true
+        run: flutter build apk --release
+
+      - name: رفع APK كملف تحميل (Artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sayanati-app-apk
+          path: |
+            build/app/outputs/flutter-apk/app-debug.apk
+            build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: نشر رابط تحميل مباشر وثابت
+        if: always()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: أحدث نسخة من تطبيق صيانتي (APK)
+          body: يُحدَّث تلقائيًا مع كل رفع كود جديد. حمّل app-release.apk مباشرة من هنا.
+          make_latest: true
+          files: |
+            build/app/outputs/flutter-apk/app-debug.apk
+            build/app/outputs/flutter-apk/app-release.apk
