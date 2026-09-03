@@ -47,13 +47,15 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
 
+      # رابط تحميل مباشر وثابت (لا يحتاج تسجيل دخول GitHub ولا فك ضغط) —
+      # مناسب لفتحه مباشرة من متصفح الجوال وتثبيت APK فورًا.
       - name: نشر رابط تحميل مباشر وثابت
         if: always()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
           name: أحدث نسخة من تطبيق صيانتي (APK)
-          body: يُحدَّث تلقائيًا مع كل رفع كود جديد. حمّل app-release.apk مباشرة من هنا.
+          body: يُحدَّث تلقائيًا مع كل رفع كود جديد. افتح هذه الصفحة من متصفح جوالك وحمّل app-release.apk (أو app-debug.apk) مباشرة.
           make_latest: true
           files: |
             build/app/outputs/flutter-apk/app-debug.apk
