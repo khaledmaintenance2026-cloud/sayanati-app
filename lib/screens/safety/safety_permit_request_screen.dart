@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/app_state.dart';
+import '../../services/constants.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
@@ -13,20 +14,24 @@ class SafetyPermitRequestScreen extends StatefulWidget {
 }
 
 class _SafetyPermitRequestScreenState extends State<SafetyPermitRequestScreen> {
-  final _locationCtrl = TextEditingController();
+  String _location = kFacilityLocations.first;
+  final _detailCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final _countCtrl = TextEditingController(text: '1');
   String? _relatedReportId;
 
   @override
   void dispose() {
-    _locationCtrl.dispose();
+    _detailCtrl.dispose();
     _descCtrl.dispose();
     _countCtrl.dispose();
     super.dispose();
   }
 
-  bool get _canSubmit => _locationCtrl.text.trim().isNotEmpty && _descCtrl.text.trim().isNotEmpty;
+  String get _fullLocation =>
+      _detailCtrl.text.trim().isEmpty ? _location : '$_location — ${_detailCtrl.text.trim()}';
+
+  bool get _canSubmit => _descCtrl.text.trim().isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +72,16 @@ class _SafetyPermitRequestScreenState extends State<SafetyPermitRequestScreen> {
                   ],
                   const Text('الموقع', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
                   const SizedBox(height: 6),
-                  TextField(controller: _locationCtrl, decoration: _decoration(hint: 'مثال: خط ٩ — ماكينة الخلط'), onChanged: (_) => setState(() {})),
+                  DropdownButtonFormField<String>(
+                    value: _location,
+                    decoration: _decoration(),
+                    items: kFacilityLocations.map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
+                    onChanged: (v) => setState(() => _location = v ?? _location),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text('تفاصيل الموقع (اختياري)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                  const SizedBox(height: 6),
+                  TextField(controller: _detailCtrl, decoration: _decoration(hint: 'مثال: خط ٩ — ماكينة الخلط')),
                   const SizedBox(height: 14),
                   const Text('البيان (وصف العمل)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
                   const SizedBox(height: 6),
@@ -100,7 +114,7 @@ class _SafetyPermitRequestScreenState extends State<SafetyPermitRequestScreen> {
                       context.read<AppState>().requestPermit(
                             requesterName: 'عبدالله حسن',
                             requesterRole: 'فني صيانة',
-                            location: _locationCtrl.text.trim(),
+                            location: _fullLocation,
                             description: _descCtrl.text.trim(),
                             techniciansCount: int.tryParse(_countCtrl.text.trim()) ?? 1,
                             relatedReportId: _relatedReportId,
