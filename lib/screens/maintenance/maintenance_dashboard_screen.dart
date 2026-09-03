@@ -8,6 +8,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import 'maintenance_assign_screen.dart';
 import 'maintenance_new_report_screen.dart';
+import 'maintenance_report_print_screen.dart';
 import 'maintenance_reports_screen.dart';
 import 'maintenance_task_close_screen.dart';
 import 'maintenance_work_order_screen.dart';
@@ -173,6 +174,8 @@ class _ReportCard extends StatelessWidget {
           Navigator.of(context).push(MaterialPageRoute(builder: (_) => MaintenanceAssignScreen(report: report)));
         } else if (report.status == MaintenanceStatus.inProgress) {
           Navigator.of(context).push(MaterialPageRoute(builder: (_) => MaintenanceTaskCloseScreen(report: report)));
+        } else if (report.status == MaintenanceStatus.completed) {
+          Navigator.of(context).push(MaterialPageRoute(builder: (_) => MaintenanceReportPrintScreen(report: report)));
         }
       },
       child: Container(
@@ -191,6 +194,11 @@ class _ReportCard extends StatelessWidget {
                   child: Text('${report.equipment} — ${report.line}',
                       style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                 ),
+                if (report.status == MaintenanceStatus.completed)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 6),
+                    child: Icon(Icons.picture_as_pdf_outlined, size: 18, color: AppColors.textMuted),
+                  ),
                 StatusPill(label: statusInfo.label, color: statusInfo.color, background: statusInfo.bg),
               ],
             ),
