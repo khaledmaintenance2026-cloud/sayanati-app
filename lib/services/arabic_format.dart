@@ -44,4 +44,14 @@ class ArabicFormat {
     final d = dt.day.toString().padLeft(2, '0');
     return toEasternDigits('$y/$m/$d');
   }
+
+  /// تنسيق الوقت بصيغة ٢٤ ساعة بأرقام هندية، مثل ١٤:٠٥.
+  static String time(DateTime dt) {
+    final h = dt.hour.toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    return toEasternDigits('$h:$m');
+  }
+
+  /// تاريخ ووقت معًا لاستخدامهما في رأس التقارير المطبوعة.
+  static String dateTime(DateTime dt) => '${date(dt)} — ${time(dt)}';
 }
