@@ -10,14 +10,14 @@ import 'api_client.dart';
 /// طبقة الحالة/البيانات لكل التطبيق.
 ///
 /// ⚠️ حالة كل قسم مختلفة الآن بعد الانتقال لسيرفر صيانتي المحلي:
-/// - الفنيون (technicians) مربوطون فعليًا بالسيرفر (Node.js + PostgreSQL)
-///   عبر [ApiClient] — كل عملية هنا تُخزَّن فعليًا وتظهر لكل المستخدمين.
+/// - الفنيون (technicians) وخطوط الإنتاج (productionLines) مربوطون فعليًا
+///   بالسيرفر (Node.js + PostgreSQL) عبر [ApiClient] — كل عملية هنا تُخزَّن
+///   فعليًا وتظهر لكل المستخدمين (لا حاجة لأي إشعار فوري إضافي، البيانات
+///   تُحمَّل من جديد عند فتح/تحديث الشاشة).
 /// - بلاغات الصيانة/الباتشات/تصاريح السلامة ما زالت بذاكرة محلية مؤقتة
-///   (Mock) كما كانت في نسخة Firebase — لم تُهاجَر بعد. راجعوا قسم "تقرير
-///   المراجعة الشاملة" المرفق (الملف الرابع) لخطة الربط الكاملة بنفس نمط
-///   قسم الفنيين بالأسفل: كل نقطة تحتاج تعديلًا فيها توضيح صريح بأي مسار
-///   REST على السيرفر تتصل (مثال: createReport ↔ POST /production/incidents،
-///   assignTechnician ↔ PATCH /work-orders/:id/assign، إلخ).
+///   (Mock) — لم تُهاجَر بعد. عند ربطها اتبعوا نفس نمط الفنيين/الإنتاج
+///   أعلاه: تحميل (load...FromCloud) + إضافة/تعديل/حذف (...Cloud) تتصل
+///   بمسارات REST الموجودة فعليًا على السيرفر (مثال: POST /safety-permits).
 class AppState extends ChangeNotifier {
   final _uuid = const Uuid();
   final ApiClient _api = ApiClient.instance;
@@ -51,12 +51,15 @@ class AppState extends ChangeNotifier {
   void attachAuth() {
     _attached = true;
     _loadTechniciansFromCloud();
+    _loadProductionLinesFromCloud();
   }
 
   void detachAuth() {
     _attached = false;
     techniciansLoaded = false;
     technicians.clear();
+    productionLinesLoaded = false;
+    productionLines.clear();
   }
 
   Future<void> reloadTechnicians() => _loadTechniciansFromCloud();
@@ -263,30 +266,69 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------
-  // الإنتاج (لا يزال محليًا Mock — راجع POST /production/incidents و
-  // /production/lines و /production/equipment على السيرفر المحلي)
+  // الإنتاج — خطوط الإنتاج (مربوطة بالسيرفر المحلي فعليًا، بنفس نمط
+  // الفنيين أعلاه). الباتشات نفسها لا تزال محلية Mock (راجع الملاحظة أعلى
+  // الملف وتقرير المراجعة لخطة ربطها بمسار /production لاحقًا).
   // ---------------------------------------------------------------------
-  final List<ProductionLine> productionLines = List.generate(
-    6,
-    (i) => ProductionLine(id: 'line${i + 7}', name: 'خط ${_easternInt(i + 7)}'),
-  );
+  final List<ProductionLine> productionLines = [];
+
+  bool productionLinesLoaded = false;
+  String? productionLinesError;
+
+  Future<void> reloadProductionLines() => _loadProductionLinesFromCloud();
+
+  Future<void> _loadProductionLinesFromCloud() async {
+    if (!_attached) return;
+    try {
+      final data = await _api.get('/production/lines');
+      final list = (data['lines'] as List).cast<Map<String, dynamic>>();
+      productionLines
+        ..clear()
+        ..addAll(list.map(ProductionLine.fromApi));
+      productionLinesLoaded = true;
+      productionLinesError = null;
+      notifyListeners();
+    } catch (e) {
+      productionLinesError = 'تعذّر تحميل خطوط الإنتاج من السيرفر: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<void> addProductionLineCloud({required String name, String? location}) async {
+    final data = await _api.post('/production/lines', {
+      'name': name,
+      if (location != null && location.isNotEmpty) 'location': location,
+    });
+    productionLines.add(ProductionLine.fromApi(data['line'] as Map<String, dynamic>));
+    notifyListeners();
+  }
+
+  Future<void> updateProductionLineCloud(
+    String id, {
+    String? name,
+    String? location,
+    bool? active,
+  }) async {
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+    if (location != null) body['location'] = location;
+    if (active != null) body['active'] = active;
+    if (body.isEmpty) return;
+
+    final data = await _api.patch('/production/lines/$id', body);
+    final updated = ProductionLine.fromApi(data['line'] as Map<String, dynamic>);
+    final i = productionLines.indexWhere((l) => l.id == id);
+    if (i != -1) productionLines[i] = updated;
+    notifyListeners();
+  }
+
+  Future<void> removeProductionLineCloud(String id) async {
+    await _api.delete('/production/lines/$id');
+    productionLines.removeWhere((l) => l.id == id);
+    notifyListeners();
+  }
 
   final List<Batch> batches = [];
-
-  static String _easternInt(int n) {
-    const d = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-    return n.toString().split('').map((c) => d[int.parse(c)]).join();
-  }
-
-  void seedProduction() {
-    final now = DateTime.now();
-    batches.addAll([
-      Batch(id: _uuid.v4(), lineId: 'line7', productName: 'حديد تسليح ١٢ مم', quantity: 310, date: now, recordedBy: 'مشرف الخط ٧'),
-      Batch(id: _uuid.v4(), lineId: 'line8', productName: 'حديد تسليح ١٠ مم', quantity: 330, date: now, recordedBy: 'مشرف الخط ٨'),
-      Batch(id: _uuid.v4(), lineId: 'line9', productName: 'حديد تسليح ١٦ مم', quantity: 300, date: now,
-          hasStoppage: true, stoppageReason: 'عطل ميكانيكي مفاجئ', stoppageMinutes: 65, recordedBy: 'مشرف الخط ٩'),
-    ]);
-  }
 
   Batch recordBatch({
     required String lineId,
@@ -375,7 +417,6 @@ class AppState extends ChangeNotifier {
   // ---------------------------------------------------------------------
   void seedAll() {
     seedMaintenance();
-    seedProduction();
     seedSafety();
   }
 
