@@ -1,0 +1,234 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../services/api_client.dart';
+import '../../services/auth_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/common.dart';
+
+class ApprovalsTab extends StatefulWidget {
+  const ApprovalsTab({super.key});
+
+  @override
+  State<ApprovalsTab> createState() => _ApprovalsTabState();
+}
+
+class _ApprovalsTabState extends State<ApprovalsTab> {
+  final ApiClient _api = ApiClient.instance;
+  bool _loading = true;
+  String? _error;
+  List<Map<String, dynamic>> _users = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await _api.get('/users');
+      final users = (data['users'] as List).cast<Map<String, dynamic>>();
+      users.sort((a, b) => (a['email'] as String? ?? '').compareTo(b['email'] as String? ?? ''));
+      if (mounted) setState(() => _users = users);
+    } catch (e) {
+      if (mounted) setState(() => _error = 'تعذّر تحميل المستخدمين: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _approve(String uid, AppRole role) async {
+    await _api.patch('/users/$uid/approve', {'role': roleToString(role)});
+    await _load();
+  }
+
+  Future<void> _reject(String uid) async {
+    await _api.delete('/users/$uid');
+    await _load();
+  }
+
+  Future<void> _setRole(String uid, AppRole role) async {
+    await _api.patch('/users/$uid/role', {'role': roleToString(role)});
+    await _load();
+  }
+
+  Future<void> _revoke(String uid) async {
+    await _api.patch('/users/$uid/revoke');
+    await _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator());
+
+    final myUid = context.read<AuthService>().currentUser?.uid;
+    final pending = _users.where((u) => u['status'] != 'approved').toList();
+    final approved = _users.where((u) => u['status'] == 'approved').toList();
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+        children: [
+          if (_error != null) ...[
+            InfoNote(text: _error!, color: const Color(0xFFB3261E), icon: Icons.error_outline),
+            const SizedBox(height: 14),
+          ],
+          Text('طلبات بانتظار الاعتماد (${pending.length})',
+              style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          if (pending.isEmpty)
+            const Text('لا توجد طلبات معلّقة', style: TextStyle(fontSize: 13, color: AppColors.textMuted))
+          else
+            ...pending.map((u) => _PendingCard(
+                  user: u,
+                  onApprove: (role) => _approve(u['id'].toString(), role),
+                  onReject: () => _reject(u['id'].toString()),
+                )),
+          const SizedBox(height: 24),
+          Text('المستخدمون المعتمدون (${approved.length})',
+              style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          ...approved.map((u) => _ApprovedCard(
+                user: u,
+                isSelf: u['id'].toString() == myUid,
+                onChangeRole: (role) => _setRole(u['id'].toString(), role),
+                onRevoke: () => _revoke(u['id'].toString()),
+              )),
+        ],
+      ),
+    );
+  }
+}
+
+class _PendingCard extends StatefulWidget {
+  final Map<String, dynamic> user;
+  final void Function(AppRole role) onApprove;
+  final VoidCallback onReject;
+
+  const _PendingCard({required this.user, required this.onApprove, required this.onReject});
+
+  @override
+  State<_PendingCard> createState() => _PendingCardState();
+}
+
+class _PendingCardState extends State<_PendingCard> {
+  AppRole _role = AppRole.production;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border.all(color: AppColors.warningText.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text((widget.user['name'] as String?) ?? '', style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold)),
+          Text((widget.user['email'] as String?) ?? '', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const Text('الصلاحية:', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: DropdownButtonFormField<AppRole>(
+                  value: _role,
+                  isDense: true,
+                  decoration: const InputDecoration(
+                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    filled: true,
+                    fillColor: AppColors.background,
+                    border: OutlineInputBorder(),
+                  ),
+                  items: AppRole.values
+                      .map((r) => DropdownMenuItem(value: r, child: Text(roleLabel(r), style: const TextStyle(fontSize: 12.5))))
+                      .toList(),
+                  onChanged: (v) => setState(() => _role = v ?? _role),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: widget.onReject,
+                  style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFB3261E)),
+                  child: const Text('رفض'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => widget.onApprove(_role),
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.successText, foregroundColor: Colors.white),
+                  child: const Text('اعتماد'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ApprovedCard extends StatelessWidget {
+  final Map<String, dynamic> user;
+  final bool isSelf;
+  final void Function(AppRole role) onChangeRole;
+  final VoidCallback onRevoke;
+
+  const _ApprovedCard({required this.user, required this.isSelf, required this.onChangeRole, required this.onRevoke});
+
+  @override
+  Widget build(BuildContext context) {
+    final role = roleFromString(user['role'] as String?);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(color: AppColors.surface, border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(16)),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text((user['name'] as String?) ?? '', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                Text((user['email'] as String?) ?? '', style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+              ],
+            ),
+          ),
+          if (isSelf)
+            const StatusPill(label: 'أنت', color: AppColors.maintenance, background: Color(0x1F2B3487))
+          else ...[
+            DropdownButton<AppRole>(
+              value: role,
+              underline: const SizedBox(),
+              items: AppRole.values
+                  .map((r) => DropdownMenuItem(value: r, child: Text(roleLabel(r), style: const TextStyle(fontSize: 12.5))))
+                  .toList(),
+              onChanged: (v) => v == null ? null : onChangeRole(v),
+            ),
+            IconButton(
+              tooltip: 'إلغاء الاعتماد',
+              icon: const Icon(Icons.block, size: 20, color: Color(0xFFB3261E)),
+              onPressed: onRevoke,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
