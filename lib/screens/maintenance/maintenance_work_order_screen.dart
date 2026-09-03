@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/app_state.dart';
+import '../../services/constants.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
@@ -15,12 +16,12 @@ class MaintenanceWorkOrderScreen extends StatefulWidget {
 }
 
 class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen> {
-  String _line = 'خط ٧';
+  String _line = kFacilityLocations.first;
   final _descCtrl = TextEditingController();
   final _reminderCtrl = TextEditingController(text: '30');
   final Set<String> _selectedTechIds = {};
 
-  final _lines = ['خط ٧', 'خط ٨', 'خط ٩', 'خط ١٠', 'خط ١١', 'خط ١٢'];
+  final _lines = kFacilityLocations;
 
   @override
   void dispose() {
