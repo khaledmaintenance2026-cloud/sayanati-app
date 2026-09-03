@@ -130,7 +130,7 @@ class _RootNavState extends State<RootNav> {
       'safety': const SafetyHomeScreen(),
       'admin': const AdminHomeScreen(),
     };
-    final items = <BottomNavigationBarItem>{
+    final items = <String, BottomNavigationBarItem>{
       'home': const BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'الرئيسية'),
       'maintenance': const BottomNavigationBarItem(icon: Icon(Icons.build_outlined), label: 'الصيانة'),
       'production': const BottomNavigationBarItem(icon: Icon(Icons.factory_outlined), label: 'الإنتاج'),
