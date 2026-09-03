@@ -5,19 +5,29 @@ import '../models/maintenance_report.dart';
 import '../models/production.dart';
 import '../models/safety_permit.dart';
 import '../models/technician.dart';
+import 'api_client.dart';
 
 /// طبقة الحالة/البيانات لكل التطبيق.
 ///
-/// هذا التطبيق يعمل الآن بذاكرة محلية (Mock) حتى يعمل ويُختبر فورًا بلا خادم.
-/// عندما يتوفر مشروع Firebase الخاص بكم، يُستبدل محتوى هذا الملف بمزوّد
-/// يقرأ/يكتب من Cloud Firestore ويرسل إشعارات عبر Firebase Cloud Messaging،
-/// دون الحاجة لتغيير أي شاشة — كل الشاشات تتحدث فقط مع AppState عبر Provider.
+/// ⚠️ حالة كل قسم مختلفة الآن بعد الانتقال لسيرفر صيانتي المحلي:
+/// - الفنيون (technicians) مربوطون فعليًا بالسيرفر (Node.js + PostgreSQL)
+///   عبر [ApiClient] — كل عملية هنا تُخزَّن فعليًا وتظهر لكل المستخدمين.
+/// - بلاغات الصيانة/الباتشات/تصاريح السلامة ما زالت بذاكرة محلية مؤقتة
+///   (Mock) كما كانت في نسخة Firebase — لم تُهاجَر بعد. راجعوا قسم "تقرير
+///   المراجعة الشاملة" المرفق (الملف الرابع) لخطة الربط الكاملة بنفس نمط
+///   قسم الفنيين بالأسفل: كل نقطة تحتاج تعديلًا فيها توضيح صريح بأي مسار
+///   REST على السيرفر تتصل (مثال: createReport ↔ POST /production/incidents،
+///   assignTechnician ↔ PATCH /work-orders/:id/assign، إلخ).
 class AppState extends ChangeNotifier {
   final _uuid = const Uuid();
+  final ApiClient _api = ApiClient.instance;
 
   // ---------------------------------------------------------------------
   // سجل نشاط مبسّط يحاكي الإشعارات الفورية + رسائل واتساب الجماعية،
-  // لإظهار أن منطق سير العمل يعمل فعليًا (وليس مجرد تصميم ثابت).
+  // لإظهار أن منطق سير العمل يعمل فعليًا (وليس مجرد تصميم ثابت). ملاحظة:
+  // سيرفر صيانتي المحلي يملك بالفعل نظام Webhooks حقيقي (راجع تبويب
+  // "إعدادات الموقع" في لوحة التحكم على السيرفر) يمكن ربطه بواتساب فعليًا
+  // بدل هذا السجل الوهمي — راجع قسم التوصيات في تقرير المراجعة.
   // ---------------------------------------------------------------------
   final List<String> activityLog = [];
 
@@ -27,14 +37,95 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------
-  // الصيانة
+  // الصيانة — الفنيون (مربوطون بالسيرفر المحلي فعليًا)
   // ---------------------------------------------------------------------
-  final List<Technician> technicians = [
-    Technician(id: 't1', name: 'عبدالله حسن', specialty: 'كهرباء وميكانيكا', available: true),
-    Technician(id: 't2', name: 'سالم مبارك', specialty: 'تبريد وتكييف', available: false),
-    Technician(id: 't3', name: 'يوسف طارق', specialty: 'ميكانيكا عامة', available: true),
-  ];
+  final List<Technician> technicians = [];
 
+  bool _attached = false;
+  bool techniciansLoaded = false;
+  String? techniciansError;
+
+  /// تُستدعى مرة واحدة فور تسجيل الدخول بنجاح (راجع main.dart) — لا تحتاج
+  /// أي رمز دخول يُمرَّر لها الآن؛ ApiClient يحمل رمز الجلسة الحالي داخليًا
+  /// فور أن يستدعي AuthService.signIn/signUp عليه setToken.
+  void attachAuth() {
+    _attached = true;
+    _loadTechniciansFromCloud();
+  }
+
+  void detachAuth() {
+    _attached = false;
+    techniciansLoaded = false;
+    technicians.clear();
+  }
+
+  Future<void> reloadTechnicians() => _loadTechniciansFromCloud();
+
+  Future<void> _loadTechniciansFromCloud() async {
+    if (!_attached) return;
+    try {
+      final data = await _api.get('/technicians');
+      final list = (data['technicians'] as List).cast<Map<String, dynamic>>();
+      technicians
+        ..clear()
+        ..addAll(list.map(Technician.fromApi));
+      techniciansLoaded = true;
+      techniciansError = null;
+      notifyListeners();
+    } catch (e) {
+      // نُبقي القائمة كما كانت (فارغة أو من تحميل سابق ناجح)، وتُعرض رسالة
+      // الخطأ في لوحة الإدارة مع زر لإعادة المحاولة (reloadTechnicians).
+      techniciansError = 'تعذّر تحميل الفنيين من السيرفر: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<void> addTechnicianCloud({
+    required String name,
+    required String specialty,
+    String? phone,
+  }) async {
+    final data = await _api.post('/technicians', {
+      'name': name,
+      'specialty': specialty,
+      if (phone != null && phone.isNotEmpty) 'phone': phone,
+    });
+    technicians.add(Technician.fromApi(data['technician'] as Map<String, dynamic>));
+    notifyListeners();
+  }
+
+  Future<void> updateTechnicianCloud(
+    String id, {
+    String? name,
+    String? specialty,
+    String? phone,
+    bool? available,
+  }) async {
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+    if (specialty != null) body['specialty'] = specialty;
+    if (phone != null) body['phone'] = phone;
+    if (available != null) body['status'] = available ? 'available' : 'busy';
+    if (body.isEmpty) return;
+
+    final data = await _api.patch('/technicians/$id', body);
+    final updated = Technician.fromApi(data['technician'] as Map<String, dynamic>);
+    final i = technicians.indexWhere((t) => t.id == id);
+    if (i != -1) technicians[i] = updated;
+    notifyListeners();
+  }
+
+  Future<void> removeTechnicianCloud(String id) async {
+    await _api.delete('/technicians/$id');
+    technicians.removeWhere((t) => t.id == id);
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------
+  // الصيانة — البلاغات وأوامر العمل (لا تزال محلية Mock — راجع الملاحظة
+  // أعلى الملف وتقرير المراجعة لخطة ربطها بمسارات /production/incidents
+  // و /work-orders و /loto على السيرفر المحلي)
+  // ---------------------------------------------------------------------
   final List<MaintenanceReport> maintenanceReports = [];
 
   void seedMaintenance() {
@@ -136,6 +227,15 @@ class AppState extends ChangeNotifier {
     report.assignedAt = DateTime.now();
     report.status = MaintenanceStatus.inProgress;
     final tech = technicians.firstWhere((t) => t.id == technicianId);
+    // تصحيح لعلّة كانت موجودة في نسخة Firebase: حالة "متاح/مشغول" للفني لم
+    // تكن تتغيّر تلقائيًا عند التعيين — الآن تُحدَّث فعليًا على السيرفر (الفنيون
+    // مربوطون به فعليًا)، حتى لو بقي البلاغ نفسه محليًا مؤقتًا. لا ننتظر
+    // (await) النتيجة حتى تبقى هذه الدالة متزامنة كما تتوقعها الشاشات الحالية.
+    tech.available = false;
+    updateTechnicianCloud(technicianId, available: false).catchError((e) {
+      techniciansError = 'تعذّر تحديث حالة الفني على السيرفر: $e';
+      notifyListeners();
+    });
     _log('🔔 واتساب لجروب الصيانة: تم إسناد بلاغ "${report.equipment}" للفني ${tech.name}');
     notifyListeners();
   }
@@ -146,13 +246,25 @@ class AppState extends ChangeNotifier {
     report.partsUsed = partsUsed;
     report.closedAt = DateTime.now();
     report.status = MaintenanceStatus.completed;
+    // نفس تصحيح العلّة أعلاه: نُعيد الفني/الفنيين المعيّنين لحالة "متاح" فعليًا
+    // على السيرفر عند إنجاز البلاغ، بدل تركهم "مشغولين" للأبد بالخطأ.
+    for (final techId in report.assignedTechnicianIds) {
+      final idx = technicians.indexWhere((t) => t.id == techId);
+      if (idx == -1) continue;
+      technicians[idx].available = true;
+      updateTechnicianCloud(techId, available: true).catchError((e) {
+        techniciansError = 'تعذّر تحديث حالة الفني على السيرفر: $e';
+        notifyListeners();
+      });
+    }
     _log('🔔 إشعار لقسم الإنتاج + واتساب الصيانة: أُنجز بلاغ "${report.equipment}" '
         '(المدة: ${report.duration != null ? report.duration!.inMinutes : 0} دقيقة)');
     notifyListeners();
   }
 
   // ---------------------------------------------------------------------
-  // الإنتاج
+  // الإنتاج (لا يزال محليًا Mock — راجع POST /production/incidents و
+  // /production/lines و /production/equipment على السيرفر المحلي)
   // ---------------------------------------------------------------------
   final List<ProductionLine> productionLines = List.generate(
     6,
@@ -208,7 +320,8 @@ class AppState extends ChangeNotifier {
       batches.where((b) => b.lineId == lineId).fold(0, (sum, b) => sum + b.quantity);
 
   // ---------------------------------------------------------------------
-  // السلامة
+  // السلامة (لا يزال محليًا Mock — راجع POST /safety-permits و /loto و
+  // /near-miss على السيرفر المحلي)
   // ---------------------------------------------------------------------
   final List<SafetyPermit> permits = [];
 
@@ -264,5 +377,11 @@ class AppState extends ChangeNotifier {
     seedMaintenance();
     seedProduction();
     seedSafety();
+  }
+
+  @override
+  void dispose() {
+    detachAuth();
+    super.dispose();
   }
 }
