@@ -14,10 +14,14 @@ dependencies:
   # State management
   provider: ^6.1.2
 
-  # ملاحظة: حزم Firebase غير مُضافة بعد لتقليل مخاطر أول بناء وتجربتها الآن
-  # محليًا بذاكرة داخلية فقط. راجع خطوات التفعيل في lib/services/firebase_bootstrap.dart —
-  # الخطوة الأولى هناك هي إضافة firebase_core / cloud_firestore / firebase_auth /
-  # firebase_messaging هنا في pubspec.yaml.
+  # التواصل مع سيرفر صيانتي المحلي (Node.js + PostgreSQL) عبر REST مباشرة
+  # (راجع lib/services/api_client.dart) — بدون أي حزمة إضافية غير http نفسها.
+  http: ^1.2.2
+  shared_preferences: ^2.3.2
+
+  # توليد تقارير PDF عربية (تقرير بلاغ الصيانة) بالاعتماد على محرك عرض
+  # النظام نفسه، فيظهر النص العربي بشكل سليم دون أي خط خاص.
+  printing: ^5.13.4
 
   # Utilities
   intl: ^0.19.0
