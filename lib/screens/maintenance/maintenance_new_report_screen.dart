@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/app_state.dart';
+import '../../services/constants.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
@@ -13,11 +14,11 @@ class MaintenanceNewReportScreen extends StatefulWidget {
 }
 
 class _MaintenanceNewReportScreenState extends State<MaintenanceNewReportScreen> {
-  String _line = 'خط ٩';
+  String _line = kFacilityLocations.first;
   final _equipmentCtrl = TextEditingController(text: 'ماكينة الخلط');
   final _descriptionCtrl = TextEditingController();
 
-  final _lines = ['خط ٧', 'خط ٨', 'خط ٩', 'خط ١٠', 'خط ١١', 'خط ١٢'];
+  final _lines = kFacilityLocations;
 
   @override
   void dispose() {
