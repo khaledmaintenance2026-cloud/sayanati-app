@@ -2,19 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/app_state.dart';
+import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 
 class HomeScreen extends StatelessWidget {
-  final ValueChanged<int>? onSelectTab;
+  final AppRole role;
+  final ValueChanged<String>? onSelectModule;
 
-  const HomeScreen({super.key, this.onSelectTab});
+  const HomeScreen({super.key, required this.role, this.onSelectModule});
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final auth = context.watch<AuthService>();
     final openReports = state.openEmergencyReports.length;
     final activeLines = state.productionLines.where((l) => l.activeToday).length;
     final pendingPermits = state.permits.where((p) => p.status.name == 'pending').length;
+
+    final showMaintenance = role == AppRole.admin || role == AppRole.maintenance;
+    final showProduction = role == AppRole.admin || role == AppRole.production;
+    final showSafety = role == AppRole.admin || role == AppRole.safety;
 
     return SafeArea(
       child: Padding(
@@ -24,22 +31,27 @@ class HomeScreen extends StatelessWidget {
           children: [
             Row(
               children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    border: Border.all(color: AppColors.border),
-                    borderRadius: BorderRadius.circular(12),
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => auth.signOut(),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      border: Border.all(color: AppColors.border),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.logout, size: 19, color: AppColors.textSecondary),
                   ),
-                  child: const Icon(Icons.notifications_none, size: 20, color: AppColors.textSecondary),
                 ),
                 const Spacer(),
-                const Column(
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text('مرحباً بك', style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
-                    Text('خالد', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    const Text('مرحباً بك', style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+                    Text(auth.currentUser?.name ?? '', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text(roleLabel(role), style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
                   ],
                 ),
               ],
@@ -50,30 +62,45 @@ class HomeScreen extends StatelessWidget {
               child: Text('الأقسام', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
             ),
             const SizedBox(height: 12),
-            _ModuleCard(
-              icon: Icons.build_outlined,
-              color: AppColors.maintenance,
-              title: 'الصيانة',
-              subtitle: '$openReports بلاغات مفتوحة الآن',
-              onTap: () => onSelectTab?.call(1),
-            ),
-            const SizedBox(height: 12),
-            _ModuleCard(
-              icon: Icons.factory_outlined,
-              color: AppColors.production,
-              title: 'الإنتاج',
-              subtitle: '$activeLines خطوط إنتاج نشطة',
-              onTap: () => onSelectTab?.call(2),
-            ),
-            const SizedBox(height: 12),
-            _ModuleCard(
-              icon: Icons.shield_outlined,
-              color: AppColors.safety,
-              iconColor: AppColors.safetyText,
-              title: 'السلامة',
-              subtitle: pendingPermits > 0 ? '$pendingPermits تصريح بانتظار الموافقة' : 'لا توجد تصاريح معلّقة',
-              onTap: () => onSelectTab?.call(3),
-            ),
+            if (showMaintenance) ...[
+              _ModuleCard(
+                icon: Icons.build_outlined,
+                color: AppColors.maintenance,
+                title: 'الصيانة',
+                subtitle: '$openReports بلاغات مفتوحة الآن',
+                onTap: () => onSelectModule?.call('maintenance'),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (showProduction) ...[
+              _ModuleCard(
+                icon: Icons.factory_outlined,
+                color: AppColors.production,
+                title: 'الإنتاج',
+                subtitle: '$activeLines خطوط إنتاج نشطة',
+                onTap: () => onSelectModule?.call('production'),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (showSafety) ...[
+              _ModuleCard(
+                icon: Icons.shield_outlined,
+                color: AppColors.safety,
+                iconColor: AppColors.safetyText,
+                title: 'السلامة',
+                subtitle: pendingPermits > 0 ? '$pendingPermits تصريح بانتظار الموافقة' : 'لا توجد تصاريح معلّقة',
+                onTap: () => onSelectModule?.call('safety'),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (role == AppRole.admin)
+              _ModuleCard(
+                icon: Icons.admin_panel_settings_outlined,
+                color: AppColors.textSecondary,
+                title: 'الإدارة',
+                subtitle: 'الفنيون واعتماد المستخدمين',
+                onTap: () => onSelectModule?.call('admin'),
+              ),
           ],
         ),
       ),
