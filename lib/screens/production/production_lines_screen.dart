@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -249,7 +248,7 @@ class _FacilityLinesView extends StatelessWidget {
                         itemBuilder: (context, i) {
                           final line = lines[i];
                           final total = state.lineTotalToday(line.id);
-                          final batchCount = state.batches.where((b) => b.lineId == line.id).length;
+                          final batchCount = state.batchCountTodayForLine(line.id);
                           return InkWell(
                             borderRadius: BorderRadius.circular(16),
                             onTap: () => Navigator.of(context).push(
