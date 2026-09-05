@@ -15,6 +15,7 @@ class SignupScreen extends StatefulWidget {
 class _SignupScreenState extends State<SignupScreen> {
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _loading = false;
   bool _obscure = true;
@@ -23,6 +24,7 @@ class _SignupScreenState extends State<SignupScreen> {
   void dispose() {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
+    _phoneCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
   }
@@ -34,7 +36,7 @@ class _SignupScreenState extends State<SignupScreen> {
     if (!_canSubmit) return;
     setState(() => _loading = true);
     final auth = context.read<AuthService>();
-    await auth.signUp(_nameCtrl.text.trim(), _emailCtrl.text.trim(), _passCtrl.text);
+    await auth.signUp(_nameCtrl.text.trim(), _emailCtrl.text.trim(), _passCtrl.text, phone: _phoneCtrl.text.trim());
     if (mounted) setState(() => _loading = false);
   }
 
@@ -67,6 +69,19 @@ class _SignupScreenState extends State<SignupScreen> {
                     keyboardType: TextInputType.emailAddress,
                     onChanged: (_) => setState(() {}),
                     decoration: _decoration(hint: 'name@example.com'),
+                  ),
+                  const SizedBox(height: 14),
+                  const _FieldLabel('رقم الجوال (اختياري)'),
+                  TextField(
+                    controller: _phoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    onChanged: (_) => setState(() {}),
+                    decoration: _decoration(hint: '05xxxxxxxx'),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'يُستخدم لإرسال إشعارات واتساب موجَّهة لك شخصيًا (مثل نتيجة تصريح سلامة)، يمكنك إضافته لاحقًا أيضًا.',
+                    style: TextStyle(fontSize: 11.5, color: AppColors.textMuted, height: 1.5),
                   ),
                   const SizedBox(height: 14),
                   const _FieldLabel('كلمة المرور (٦ أحرف على الأقل)'),
