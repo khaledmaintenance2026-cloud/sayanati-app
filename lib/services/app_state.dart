@@ -7,6 +7,15 @@ import '../models/safety_permit.dart';
 import '../models/technician.dart';
 import 'api_client.dart';
 
+/// نتيجة طلب تقرير إنتاج بمدة مخصصة — الرابط دائمًا متاح لو نجح الإنشاء
+/// (حتى لو فشل إرسال واتساب لسبب ما)، و[warning] يحمل سبب فشل الإرسال إن وُجد.
+class ProductionReportResult {
+  final String reportUrl;
+  final bool whatsappSent;
+  final String? warning;
+  const ProductionReportResult({required this.reportUrl, required this.whatsappSent, this.warning});
+}
+
 /// طبقة الحالة/البيانات لكل التطبيق.
 ///
 /// ⚠️ حالة كل قسم مختلفة الآن بعد الانتقال لسيرفر صيانتي المحلي:
@@ -417,10 +426,13 @@ class AppState extends ChangeNotifier {
   }
 
   /// طلب تقرير إنتاج بمدة مخصّصة — يُنشئ السيرفر ملف تقرير HTML لباتشات
-  /// وبلاغات هذا المصنع خلال المدة المحددة، ويرسل رابطه عبر واتساب لرقم
-  /// طالب التقرير نفسه (وليس لجروب المصنع) — راجع routes/production.js
+  /// وبلاغات هذا المصنع خلال المدة المحددة، ويحاول إرسال رابطه مباشرة عبر
+  /// واتساب (TextMeBot) لرقم طالب التقرير نفسه — راجع routes/production.js
   /// (POST /reports/request) و services/productionReport.js على السيرفر.
-  Future<String> requestProductionReport({
+  /// نُعيد النتيجة كاملة (وليس الرابط فقط) لأن الإرسال عبر واتساب قد يفشل
+  /// (مثلاً: مفتاح TextMeBot غير مضبوط بعد) بينما التقرير نفسه أُنشئ بنجاح —
+  /// نريد عرض الرابط للمستخدم في كل الأحوال.
+  Future<ProductionReportResult> requestProductionReport({
     required String facility,
     required DateTime from,
     required DateTime to,
@@ -430,7 +442,11 @@ class AppState extends ChangeNotifier {
       'from': from.toIso8601String(),
       'to': to.toIso8601String(),
     });
-    return data['reportUrl'] as String;
+    return ProductionReportResult(
+      reportUrl: data['reportUrl'] as String,
+      whatsappSent: data['whatsappSent'] as bool? ?? false,
+      warning: data['warning'] as String?,
+    );
   }
 
   ProductionLine lineById(String id) => productionLines.firstWhere((l) => l.id == id);
