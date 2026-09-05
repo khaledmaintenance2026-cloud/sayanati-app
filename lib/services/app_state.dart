@@ -481,11 +481,34 @@ class AppState extends ChangeNotifier {
     return permit;
   }
 
-  void reviewPermit(String permitId, {required bool approve, required String reviewer}) {
+  /// اعتماد أو رفض تصريح عمل — عند الموافقة (approve: true) يجب تمرير قوائم
+  /// "خلو الموقع من التالي" و"المخاطر المحتملة" و"معدات الوقاية الشخصية"
+  /// بالإضافة إلى الإجراءات الإلزامية (precautions)؛ وعند الرفض يجب تمرير
+  /// سبب الرفض (rejectionReason) فقط — نفس حقول PATCH /safety-permits/:id/review
+  /// الموجودة فعليًا على سيرفر صيانتي المحلي.
+  void reviewPermit(
+    String permitId, {
+    required bool approve,
+    required String reviewer,
+    List<String> siteHazards = const [],
+    List<String> potentialRisks = const [],
+    List<String> ppeRequired = const [],
+    String? precautions,
+    String? rejectionReason,
+  }) {
     final permit = permits.firstWhere((p) => p.id == permitId);
     permit.status = approve ? PermitStatus.approved : PermitStatus.rejected;
     permit.reviewedBy = reviewer;
     permit.reviewedAt = DateTime.now();
+    if (approve) {
+      permit.siteHazards = siteHazards;
+      permit.potentialRisks = potentialRisks;
+      permit.ppeRequired = ppeRequired;
+      permit.precautions = precautions;
+      permit.rejectionReason = null;
+    } else {
+      permit.rejectionReason = rejectionReason;
+    }
     _log('🔔 إشعار لمقدّم الطلب: تصريح "${permit.location}" ${approve ? 'تمت الموافقة عليه' : 'رُفض'}');
     notifyListeners();
   }
