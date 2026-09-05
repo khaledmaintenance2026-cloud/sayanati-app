@@ -54,15 +54,26 @@ class _ProductionReportsScreenState extends State<ProductionReportsScreen> {
       // نشمل نهاية يوم "إلى" كاملًا (السيرفر يفعل ذلك أيضًا احتياطًا) حتى لا
       // يُستثنى اليوم الأخير المختار بسبب كون وقته 00:00.
       final to = DateTime(range.end.year, range.end.month, range.end.day, 23, 59, 59);
-      await context.read<AppState>().requestProductionReport(
+      final result = await context.read<AppState>().requestProductionReport(
             facility: widget.facility,
             from: range.start,
             to: to,
           );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم إنشاء التقرير — سيصلك رابطه على واتساب رقمك خلال لحظات')),
-      );
+      if (result.whatsappSent) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم إنشاء التقرير وإرساله على واتساب رقمك')),
+        );
+      } else {
+        // التقرير أُنشئ بنجاح رغم ذلك — نعرض الرابط حتى يقدر المستخدم فتحه
+        // يدويًا (نسخ النص من الإشعار) لو تعذّر الإرسال التلقائي.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${result.warning ?? 'تعذّر إرسال واتساب تلقائيًا'}\n${result.reportUrl}'),
+            duration: const Duration(seconds: 8),
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
