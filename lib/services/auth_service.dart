@@ -177,6 +177,23 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  /// يغيّر كلمة مرور المستخدم الحالي — يتطلب معرفة كلمة المرور الحالية.
+  /// يُرجع true عند النجاح، أو false مع تفصيل السبب في [lastError].
+  Future<bool> changePassword(String currentPassword, String newPassword) async {
+    lastError = null;
+    try {
+      await _api.patch('/auth/change-password', {
+        'currentPassword': currentPassword,
+        'newPassword': newPassword,
+      });
+      return true;
+    } on ApiException catch (e) {
+      lastError = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<void> signOut() async {
     await _api.clearToken();
     currentUser = null;
