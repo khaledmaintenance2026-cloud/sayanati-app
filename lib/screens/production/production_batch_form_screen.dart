@@ -19,6 +19,8 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> {
   final _qtyCtrl = TextEditingController();
   final _reasonCtrl = TextEditingController();
   final _minutesCtrl = TextEditingController();
+  final _operationalNotesCtrl = TextEditingController();
+  final _actionsTakenCtrl = TextEditingController();
   bool _hasStoppage = false;
 
   @override
@@ -27,6 +29,8 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> {
     _qtyCtrl.dispose();
     _reasonCtrl.dispose();
     _minutesCtrl.dispose();
+    _operationalNotesCtrl.dispose();
+    _actionsTakenCtrl.dispose();
     super.dispose();
   }
 
@@ -89,6 +93,20 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> {
                     const SizedBox(height: 14),
                     const _Label('مدة التوقف (بالدقائق)'),
                     TextField(controller: _minutesCtrl, keyboardType: TextInputType.number, decoration: _decoration(hint: 'مثال: 45')),
+                    const SizedBox(height: 14),
+                    const _Label('الملاحظات التشغيلية'),
+                    TextField(
+                      controller: _operationalNotesCtrl,
+                      maxLines: 3,
+                      decoration: _decoration(hint: 'ما حدث بالتفصيل أثناء التوقف؟'),
+                    ),
+                    const SizedBox(height: 14),
+                    const _Label('الحلول والإجراءات المتخذة'),
+                    TextField(
+                      controller: _actionsTakenCtrl,
+                      maxLines: 3,
+                      decoration: _decoration(hint: 'ما الذي تم اتخاذه لحل المشكلة؟'),
+                    ),
                   ],
                 ],
               ),
@@ -108,6 +126,12 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> {
                             hasStoppage: _hasStoppage,
                             stoppageReason: _hasStoppage ? _reasonCtrl.text.trim() : null,
                             stoppageMinutes: _hasStoppage ? int.tryParse(_minutesCtrl.text.trim()) : null,
+                            operationalNotes: _hasStoppage && _operationalNotesCtrl.text.trim().isNotEmpty
+                                ? _operationalNotesCtrl.text.trim()
+                                : null,
+                            actionsTaken: _hasStoppage && _actionsTakenCtrl.text.trim().isNotEmpty
+                                ? _actionsTakenCtrl.text.trim()
+                                : null,
                           );
                       Navigator.of(context).pop();
                       ScaffoldMessenger.of(context).showSnackBar(
