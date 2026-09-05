@@ -10,14 +10,16 @@ import 'api_client.dart';
 /// طبقة الحالة/البيانات لكل التطبيق.
 ///
 /// ⚠️ حالة كل قسم مختلفة الآن بعد الانتقال لسيرفر صيانتي المحلي:
-/// - الفنيون (technicians) وخطوط الإنتاج (productionLines) مربوطون فعليًا
-///   بالسيرفر (Node.js + PostgreSQL) عبر [ApiClient] — كل عملية هنا تُخزَّن
-///   فعليًا وتظهر لكل المستخدمين (لا حاجة لأي إشعار فوري إضافي، البيانات
-///   تُحمَّل من جديد عند فتح/تحديث الشاشة).
-/// - بلاغات الصيانة/الباتشات/تصاريح السلامة ما زالت بذاكرة محلية مؤقتة
-///   (Mock) — لم تُهاجَر بعد. عند ربطها اتبعوا نفس نمط الفنيين/الإنتاج
-///   أعلاه: تحميل (load...FromCloud) + إضافة/تعديل/حذف (...Cloud) تتصل
-///   بمسارات REST الموجودة فعليًا على السيرفر (مثال: POST /safety-permits).
+/// - الفنيون (technicians)، خطوط الإنتاج (productionLines)، بلاغات الأعطال
+///   (incidents)، وباتشات الإنتاج (batches) مربوطون فعليًا بالسيرفر
+///   (Node.js + PostgreSQL) عبر [ApiClient] — كل عملية هنا تُخزَّن فعليًا
+///   وتظهر لكل المستخدمين (لا حاجة لأي إشعار فوري إضافي، البيانات تُحمَّل
+///   من جديد عند فتح/تحديث الشاشة).
+/// - بلاغات الصيانة (maintenanceReports) وتصاريح السلامة (permits) ما زالت
+///   بذاكرة محلية مؤقتة (Mock) — لم تُهاجَر بعد. عند ربطها اتبعوا نفس نمط
+///   الفنيين/الإنتاج أعلاه: تحميل (load...FromCloud) + إضافة/تعديل/حذف
+///   (...Cloud) تتصل بمسارات REST الموجودة فعليًا على السيرفر (مثال:
+///   POST /safety-permits و/work-orders).
 class AppState extends ChangeNotifier {
   final _uuid = const Uuid();
   final ApiClient _api = ApiClient.instance;
@@ -53,6 +55,7 @@ class AppState extends ChangeNotifier {
     _loadTechniciansFromCloud();
     _loadProductionLinesFromCloud();
     _loadIncidentsFromCloud();
+    _loadBatchesFromCloud();
   }
 
   void detachAuth() {
@@ -63,6 +66,8 @@ class AppState extends ChangeNotifier {
     productionLines.clear();
     incidentsLoaded = false;
     incidents.clear();
+    batchesLoaded = false;
+    batches.clear();
   }
 
   Future<void> reloadTechnicians() => _loadTechniciansFromCloud();
@@ -282,9 +287,8 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------
-  // الإنتاج — خطوط الإنتاج (مربوطة بالسيرفر المحلي فعليًا، بنفس نمط
-  // الفنيين أعلاه). الباتشات نفسها لا تزال محلية Mock (راجع الملاحظة أعلى
-  // الملف وتقرير المراجعة لخطة ربطها بمسار /production لاحقًا).
+  // الإنتاج — خطوط الإنتاج والباتشات (مربوطان بالسيرفر المحلي فعليًا، بنفس
+  // نمط الفنيين أعلاه).
   // ---------------------------------------------------------------------
   final List<ProductionLine> productionLines = [];
 
@@ -351,46 +355,80 @@ class AppState extends ChangeNotifier {
   List<ProductionLine> linesByFacility(String facility) =>
       productionLines.where((l) => l.location == facility).toList();
 
+  /// الباتشات — كانت محلية على جهاز المشرف فقط (تختفي عند إعادة تشغيل
+  /// التطبيق)، أصبحت الآن محفوظة على السيرفر فعليًا (راجع routes/production.js
+  /// و/production/batches) بنفس نمط خطوط الإنتاج والبلاغات أعلاه.
   final List<Batch> batches = [];
+  bool batchesLoaded = false;
+  String? batchesError;
 
-  Batch recordBatch({
+  Future<void> reloadBatches() => _loadBatchesFromCloud();
+
+  Future<void> _loadBatchesFromCloud() async {
+    if (!_attached) return;
+    try {
+      final data = await _api.get('/production/batches');
+      final list = (data['batches'] as List).cast<Map<String, dynamic>>();
+      batches
+        ..clear()
+        ..addAll(list.map(Batch.fromApi));
+      batchesLoaded = true;
+      batchesError = null;
+      notifyListeners();
+    } catch (e) {
+      batchesError = 'تعذّر تحميل الباتشات من السيرفر: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<Batch> recordBatchCloud({
     required String lineId,
     required String batchNumber,
     required String productName,
     required int quantity,
-    required String recordedBy,
     bool hasStoppage = false,
     String? stoppageReason,
     int? stoppageMinutes,
     String? operationalNotes,
     String? actionsTaken,
-  }) {
-    final batch = Batch(
-      id: _uuid.v4(),
-      lineId: lineId,
-      batchNumber: batchNumber,
-      productName: productName,
-      quantity: quantity,
-      date: DateTime.now(),
-      hasStoppage: hasStoppage,
-      stoppageReason: stoppageReason,
-      stoppageMinutes: stoppageMinutes,
-      operationalNotes: operationalNotes,
-      actionsTaken: actionsTaken,
-      recordedBy: recordedBy,
-    );
+  }) async {
+    final data = await _api.post('/production/batches', {
+      'lineId': lineId,
+      'batchNumber': batchNumber,
+      'productName': productName,
+      'quantity': quantity,
+      'hasStoppage': hasStoppage,
+      if (stoppageReason != null) 'stoppageReason': stoppageReason,
+      if (stoppageMinutes != null) 'stoppageMinutes': stoppageMinutes,
+      if (operationalNotes != null) 'operationalNotes': operationalNotes,
+      if (actionsTaken != null) 'actionsTaken': actionsTaken,
+    });
+    final batch = Batch.fromApi(data['batch'] as Map<String, dynamic>);
     batches.insert(0, batch);
     _log('🔔 واتساب لجروب الإنتاج اليومي: باتش جديد على ${lineById(lineId).name} — الكمية $quantity');
     notifyListeners();
     return batch;
   }
 
+  Future<void> removeBatchCloud(String id) async {
+    await _api.delete('/production/batches/$id');
+    batches.removeWhere((b) => b.id == id);
+    notifyListeners();
+  }
+
   ProductionLine lineById(String id) => productionLines.firstWhere((l) => l.id == id);
 
-  /// كل الباتشات المسجّلة على خطوط قسم/مصنع معيّن اليوم.
+  bool _isToday(DateTime d) {
+    final now = DateTime.now();
+    return d.year == now.year && d.month == now.month && d.day == now.day;
+  }
+
+  /// كل الباتشات المسجّلة اليوم على خطوط قسم/مصنع معيّن — الباتشات صارت
+  /// تُحفظ على السيرفر وتتراكم عبر الأيام، لذا لازم فلترة "اليوم" هنا صراحة
+  /// (لم تكن لازمة سابقًا عندما كانت الباتشات محلية تُمسَح كل إعادة تشغيل).
   List<Batch> batchesByFacility(String facility) {
     final lineIds = linesByFacility(facility).map((l) => l.id).toSet();
-    return batches.where((b) => lineIds.contains(b.lineId)).toList();
+    return batches.where((b) => lineIds.contains(b.lineId) && _isToday(b.date)).toList();
   }
 
   // ---------------------------------------------------------------------
@@ -449,8 +487,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  int lineTotalToday(String lineId) =>
-      batches.where((b) => b.lineId == lineId).fold(0, (sum, b) => sum + b.quantity);
+  int lineTotalToday(String lineId) => batches
+      .where((b) => b.lineId == lineId && _isToday(b.date))
+      .fold(0, (sum, b) => sum + b.quantity);
+
+  /// عدد باتشات اليوم فقط على خط معيّن — راجع ملاحظة فلترة "اليوم" أعلى
+  /// [batchesByFacility].
+  int batchCountTodayForLine(String lineId) =>
+      batches.where((b) => b.lineId == lineId && _isToday(b.date)).length;
 
   // ---------------------------------------------------------------------
   // السلامة (لا يزال محليًا Mock — راجع POST /safety-permits و /loto و
