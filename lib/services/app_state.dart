@@ -416,6 +416,23 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// طلب تقرير إنتاج بمدة مخصّصة — يُنشئ السيرفر ملف تقرير HTML لباتشات
+  /// وبلاغات هذا المصنع خلال المدة المحددة، ويرسل رابطه عبر واتساب لرقم
+  /// طالب التقرير نفسه (وليس لجروب المصنع) — راجع routes/production.js
+  /// (POST /reports/request) و services/productionReport.js على السيرفر.
+  Future<String> requestProductionReport({
+    required String facility,
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final data = await _api.post('/production/reports/request', {
+      'facility': facility,
+      'from': from.toIso8601String(),
+      'to': to.toIso8601String(),
+    });
+    return data['reportUrl'] as String;
+  }
+
   ProductionLine lineById(String id) => productionLines.firstWhere((l) => l.id == id);
 
   bool _isToday(DateTime d) {
