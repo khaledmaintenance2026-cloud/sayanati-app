@@ -71,6 +71,11 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
     await _load();
   }
 
+  Future<void> _setPhone(String uid, String? phone) async {
+    await _api.patch('/users/$uid/phone', {'phone': phone});
+    await _load();
+  }
+
   Future<void> _revoke(String uid) async {
     await _api.patch('/users/$uid/revoke');
     await _load();
@@ -113,6 +118,7 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
                 isSelf: u['id'].toString() == myUid,
                 onChangeRole: (role) => _setRole(u['id'].toString(), role),
                 onChangeFacility: (facility) => _setFacility(u['id'].toString(), facility),
+                onChangePhone: (phone) => _setPhone(u['id'].toString(), phone),
                 onRevoke: () => _revoke(u['id'].toString()),
               )),
         ],
@@ -151,6 +157,8 @@ class _PendingCardState extends State<_PendingCard> {
         children: [
           Text((widget.user['name'] as String?) ?? '', style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold)),
           Text((widget.user['email'] as String?) ?? '', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+          if ((widget.user['phone'] as String?)?.isNotEmpty ?? false)
+            Text(widget.user['phone'] as String, style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
           const SizedBox(height: 10),
           Row(
             children: [
@@ -230,6 +238,7 @@ class _ApprovedCard extends StatelessWidget {
   final bool isSelf;
   final void Function(AppRole role) onChangeRole;
   final void Function(String? facility) onChangeFacility;
+  final void Function(String? phone) onChangePhone;
   final VoidCallback onRevoke;
 
   const _ApprovedCard({
@@ -237,13 +246,36 @@ class _ApprovedCard extends StatelessWidget {
     required this.isSelf,
     required this.onChangeRole,
     required this.onChangeFacility,
+    required this.onChangePhone,
     required this.onRevoke,
   });
+
+  Future<void> _editPhone(BuildContext context) async {
+    final ctrl = TextEditingController(text: (user['phone'] as String?) ?? '');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('رقم الجوال', style: TextStyle(fontSize: 15)),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.phone,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '05xxxxxxxx', border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('إلغاء')),
+          ElevatedButton(onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()), child: const Text('حفظ')),
+        ],
+      ),
+    );
+    if (result != null) onChangePhone(result.isEmpty ? null : result);
+  }
 
   @override
   Widget build(BuildContext context) {
     final role = roleFromString(user['role'] as String?);
     final facility = user['production_facility'] as String?;
+    final phone = user['phone'] as String?;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -259,6 +291,23 @@ class _ApprovedCard extends StatelessWidget {
                   children: [
                     Text((user['name'] as String?) ?? '', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                     Text((user['email'] as String?) ?? '', style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+                    InkWell(
+                      onTap: () => _editPhone(context),
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.phone_outlined, size: 12.5, color: AppColors.textMuted),
+                            const SizedBox(width: 3),
+                            Text(
+                              (phone?.isNotEmpty ?? false) ? phone! : 'إضافة رقم الجوال',
+                              style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted, decoration: TextDecoration.underline),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
