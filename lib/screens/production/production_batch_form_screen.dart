@@ -23,6 +23,7 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> w
   final _operationalNotesCtrl = TextEditingController();
   final _actionsTakenCtrl = TextEditingController();
   bool _hasStoppage = false;
+  bool _submitting = false;
   late final TabController _tabController;
 
   @override
@@ -45,11 +46,43 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> w
   }
 
   bool get _canSubmit {
+    if (_submitting) return false;
     final qty = int.tryParse(_qtyCtrl.text.trim());
     if (_batchNumberCtrl.text.trim().isEmpty) return false;
     if (_productCtrl.text.trim().isEmpty || qty == null || qty <= 0) return false;
     if (_hasStoppage && _reasonCtrl.text.trim().isEmpty) return false;
     return true;
+  }
+
+  Future<void> _submit() async {
+    setState(() => _submitting = true);
+    try {
+      await context.read<AppState>().recordBatchCloud(
+            lineId: widget.line.id,
+            batchNumber: _batchNumberCtrl.text.trim(),
+            productName: _productCtrl.text.trim(),
+            quantity: int.parse(_qtyCtrl.text.trim()),
+            hasStoppage: _hasStoppage,
+            stoppageReason: _hasStoppage ? _reasonCtrl.text.trim() : null,
+            stoppageMinutes: _hasStoppage ? int.tryParse(_minutesCtrl.text.trim()) : null,
+            operationalNotes:
+                _operationalNotesCtrl.text.trim().isNotEmpty ? _operationalNotesCtrl.text.trim() : null,
+            actionsTaken: _hasStoppage && _actionsTakenCtrl.text.trim().isNotEmpty
+                ? _actionsTakenCtrl.text.trim()
+                : null,
+          );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم تسجيل الباتش وحفظه على السيرفر')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذّر تسجيل الباتش: $e')),
+      );
+    }
   }
 
   @override
@@ -153,35 +186,14 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> w
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-            child: PrimaryButton(
-              label: 'تسجيل الباتش',
-              color: _canSubmit ? AppColors.production : AppColors.textFaint,
-              icon: Icons.check,
-              onPressed: _canSubmit
-                  ? () {
-                      context.read<AppState>().recordBatch(
-                            lineId: widget.line.id,
-                            batchNumber: _batchNumberCtrl.text.trim(),
-                            productName: _productCtrl.text.trim(),
-                            quantity: int.parse(_qtyCtrl.text.trim()),
-                            recordedBy: 'مشرف ${widget.line.name}',
-                            hasStoppage: _hasStoppage,
-                            stoppageReason: _hasStoppage ? _reasonCtrl.text.trim() : null,
-                            stoppageMinutes: _hasStoppage ? int.tryParse(_minutesCtrl.text.trim()) : null,
-                            operationalNotes: _operationalNotesCtrl.text.trim().isNotEmpty
-                                ? _operationalNotesCtrl.text.trim()
-                                : null,
-                            actionsTaken: _hasStoppage && _actionsTakenCtrl.text.trim().isNotEmpty
-                                ? _actionsTakenCtrl.text.trim()
-                                : null,
-                          );
-                      Navigator.of(context).pop();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('تم تسجيل الباتش وإرساله لجروب الإنتاج')),
-                      );
-                    }
-                  : null,
-            ),
+            child: _submitting
+                ? const Center(child: Padding(padding: EdgeInsets.all(10), child: CircularProgressIndicator()))
+                : PrimaryButton(
+                    label: 'تسجيل الباتش',
+                    color: _canSubmit ? AppColors.production : AppColors.textFaint,
+                    icon: Icons.check,
+                    onPressed: _canSubmit ? _submit : null,
+                  ),
           ),
         ],
       ),
@@ -212,4 +224,3 @@ InputDecoration _decoration({String? hint}) {
     enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(13), borderSide: const BorderSide(color: AppColors.border)),
   );
 }
-
