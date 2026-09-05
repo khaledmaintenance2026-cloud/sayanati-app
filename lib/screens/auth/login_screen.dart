@@ -48,14 +48,15 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
               const SizedBox(height: 20),
               Container(
-                width: 72,
-                height: 72,
+                width: 76,
+                height: 76,
                 alignment: Alignment.center,
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: AppColors.maintenance.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Icon(Icons.factory_outlined, color: AppColors.maintenance, size: 34),
+                child: Image.asset('assets/images/logo.png', fit: BoxFit.contain),
               ),
               const SizedBox(height: 16),
               const Text('صيانتي', textAlign: TextAlign.center, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
