@@ -20,7 +20,7 @@ class HomeScreen extends StatelessWidget {
     final activeLines = state.productionLines.where((l) => l.activeToday).length;
     final pendingPermits = state.permits.where((p) => p.status.name == 'pending').length;
 
-    final showMaintenance = role == AppRole.admin || role == AppRole.maintenance;
+    final showMaintenance = role == AppRole.admin || isMaintenanceRole(role);
     final showProduction = role == AppRole.admin || role == AppRole.production;
     final showSafety = role == AppRole.admin || role == AppRole.safety;
 
