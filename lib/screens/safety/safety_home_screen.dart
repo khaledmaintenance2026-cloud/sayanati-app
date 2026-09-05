@@ -100,6 +100,11 @@ class _PermitCard extends StatelessWidget {
                 padding: EdgeInsets.only(top: 4),
                 child: Text('مرتبط ببلاغ صيانة قائم', style: TextStyle(fontSize: 11.5, color: AppColors.maintenance, fontWeight: FontWeight.w600)),
               ),
+            if (permit.status == PermitStatus.rejected && permit.rejectionReason != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('سبب الرفض: ${permit.rejectionReason}', style: const TextStyle(fontSize: 11.5, color: Color(0xFFB3261E))),
+              ),
           ],
         ),
       ),
