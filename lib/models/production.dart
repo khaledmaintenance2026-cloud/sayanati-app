@@ -48,6 +48,23 @@ class Batch {
     this.actionsTaken,
     required this.recordedBy,
   });
+
+  /// يبني باتشًا من استجابة سيرفر صيانتي المحلي (جدول production_batches) —
+  /// كانت الباتشات محلية فقط على جهاز المشرف قبل هذا التحديث.
+  factory Batch.fromApi(Map<String, dynamic> d) => Batch(
+        id: d['id'].toString(),
+        lineId: d['line_id'].toString(),
+        batchNumber: (d['batch_number'] as String?) ?? '',
+        productName: (d['product_name'] as String?) ?? '',
+        quantity: ((d['quantity'] as num?) ?? 0).round(),
+        date: DateTime.tryParse(d['created_at']?.toString() ?? '') ?? DateTime.now(),
+        hasStoppage: (d['has_stoppage'] as bool?) ?? false,
+        stoppageReason: d['stoppage_reason'] as String?,
+        stoppageMinutes: (d['stoppage_minutes'] as num?)?.round(),
+        operationalNotes: d['operational_notes'] as String?,
+        actionsTaken: d['actions_taken'] as String?,
+        recordedBy: (d['recorded_by'] as String?) ?? '',
+      );
 }
 
 /// بلاغ عطل/توقف فوري في الإنتاج — مرتبط بمسارات /production/incidents
