@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../services/app_state.dart';
 import '../../services/arabic_format.dart';
+import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
@@ -21,10 +22,55 @@ class ProductionReportsScreen extends StatefulWidget {
 }
 
 class _ProductionReportsScreenState extends State<ProductionReportsScreen> {
+  DateTimeRange? _selectedRange;
+  bool _requestingReport = false;
+
   @override
   void initState() {
     super.initState();
     Future.microtask(() => context.read<AppState>().reloadBatches());
+  }
+
+  // نتجنّب عمدًا تمرير locale عربي لـ showDateRangePicker (يحتاج حزمة
+  // flutter_localizations غير المُضافة أصلًا في هذا المشروع — راجع ملاحظة
+  // مشابهة في main.dart)، فتظهر نافذة الاختيار بالإنجليزية افتراضيًا، بينما
+  // نعرض المدة المختارة بأرقام هندية عبر ArabicFormat في بقية الواجهة.
+  Future<void> _pickRange() async {
+    final now = DateTime.now();
+    final range = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 1),
+      lastDate: now,
+      initialDateRange: _selectedRange ?? DateTimeRange(start: now.subtract(const Duration(days: 7)), end: now),
+    );
+    if (range != null) setState(() => _selectedRange = range);
+  }
+
+  Future<void> _sendReport() async {
+    final range = _selectedRange;
+    if (range == null) return;
+    setState(() => _requestingReport = true);
+    try {
+      // نشمل نهاية يوم "إلى" كاملًا (السيرفر يفعل ذلك أيضًا احتياطًا) حتى لا
+      // يُستثنى اليوم الأخير المختار بسبب كون وقته 00:00.
+      final to = DateTime(range.end.year, range.end.month, range.end.day, 23, 59, 59);
+      await context.read<AppState>().requestProductionReport(
+            facility: widget.facility,
+            from: range.start,
+            to: to,
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم إنشاء التقرير — سيصلك رابطه على واتساب رقمك خلال لحظات')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذّر إنشاء التقرير: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _requestingReport = false);
+    }
   }
 
   @override
@@ -53,34 +99,72 @@ class _ProductionReportsScreenState extends State<ProductionReportsScreen> {
                 ],
               ),
               const SizedBox(height: 20),
-              const Text('تقارير تلقائية', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+              const Text('تقارير تلقائية عبر واتساب', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
               const SizedBox(height: 10),
-              _ReportRow(title: 'التقرير الأسبوعي', subtitle: 'PDF — كل نهاية أسبوع لجروب ${widget.facility}'),
+              _ReportRow(title: 'التقرير الأسبوعي', subtitle: 'رابط تقرير — كل ٧ أيام تقريبًا لجروب ${widget.facility}'),
               const SizedBox(height: 10),
-              _ReportRow(title: 'التقرير الشهري', subtitle: 'PDF — أول كل شهر، الكمية والباتشات لكل خط في ${widget.facility}'),
+              _ReportRow(title: 'التقرير الشهري', subtitle: 'رابط تقرير — كل ٣٠ يومًا تقريبًا، الكمية والباتشات لكل خط في ${widget.facility}'),
               const SizedBox(height: 22),
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(color: AppColors.surface, border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(18)),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text('طلب تقرير بمدة مخصصة', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    const InfoNote(text: 'سيصلك ملف PDF على رقمك فقط — لن يُرسل للجروب', color: AppColors.production, icon: Icons.lock_outline),
-                    const SizedBox(height: 14),
-                    PrimaryButton(
-                      label: 'إنشاء التقرير',
-                      color: AppColors.production,
-                      icon: Icons.file_download_outlined,
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('سيصلك ملف PDF على رقمك خلال دقائق')),
-                        );
-                      },
+              Builder(
+                builder: (context) {
+                  final phone = context.watch<AuthService>().currentUser?.phone;
+                  final hasPhone = phone != null && phone.isNotEmpty;
+                  return Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(color: AppColors.surface, border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(18)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text('طلب تقرير بمدة مخصصة', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 12),
+                        InfoNote(
+                          text: hasPhone
+                              ? 'سيصلك رابط التقرير على واتساب رقمك ($phone) فقط — لن يُرسل للجروب'
+                              : 'رقم جوالك غير مسجَّل — أضيفوه من لوحة التحكم أولًا حتى يصلك رابط التقرير على واتساب',
+                          color: hasPhone ? AppColors.production : AppColors.warningText,
+                          icon: hasPhone ? Icons.lock_outline : Icons.warning_amber_outlined,
+                        ),
+                        const SizedBox(height: 12),
+                        InkWell(
+                          onTap: _pickRange,
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: AppColors.background,
+                              border: Border.all(color: AppColors.border),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.date_range_outlined, size: 18, color: AppColors.textMuted),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _selectedRange == null
+                                        ? 'اختر مدة التقرير'
+                                        : '${ArabicFormat.date(_selectedRange!.start)}  —  ${ArabicFormat.date(_selectedRange!.end)}',
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                ),
+                                const Icon(Icons.keyboard_arrow_down, size: 18, color: AppColors.textMuted),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        _requestingReport
+                            ? const Center(child: Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator()))
+                            : PrimaryButton(
+                                label: 'إنشاء وإرسال التقرير',
+                                color: _selectedRange != null ? AppColors.production : AppColors.textFaint,
+                                icon: Icons.send_outlined,
+                                onPressed: _selectedRange != null ? _sendReport : null,
+                              ),
+                      ],
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
               const SizedBox(height: 22),
               Text('باتشات ${widget.facility} اليوم', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
