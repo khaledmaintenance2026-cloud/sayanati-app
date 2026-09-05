@@ -342,6 +342,7 @@ class AppState extends ChangeNotifier {
 
   Batch recordBatch({
     required String lineId,
+    required String batchNumber,
     required String productName,
     required int quantity,
     required String recordedBy,
@@ -354,6 +355,7 @@ class AppState extends ChangeNotifier {
     final batch = Batch(
       id: _uuid.v4(),
       lineId: lineId,
+      batchNumber: batchNumber,
       productName: productName,
       quantity: quantity,
       date: DateTime.now(),
