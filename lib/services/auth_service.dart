@@ -46,22 +46,30 @@ class AppUser {
   final AppRole role;
   final bool approved;
 
+  /// المصنع الذي يُقيَّد به مستخدم قسم الإنتاج (مصنع الرجال/مصنع النساء) —
+  /// null يعني بلا تقييد (يرى كل المصانع)، وهذا حال كل الأدوار الأخرى دائمًا.
+  /// يُحدَّد فقط من لوحة الإدارة (راجع PATCH /users/:id/production-facility).
+  final String? productionFacility;
+
   AppUser({
     required this.uid,
     required this.email,
     required this.name,
     required this.role,
     required this.approved,
+    this.productionFacility,
   });
 
   /// يبني مستخدمًا من استجابة سيرفر صيانتي المحلي (حقل "user" في ردود
-  /// /api/auth/* و /api/users) — الشكل: {id, name, email, role, status}.
+  /// /api/auth/* و /api/users) — الشكل: {id, name, email, role, status,
+  /// production_facility}.
   factory AppUser.fromApi(Map<String, dynamic> d) => AppUser(
         uid: d['id'].toString(),
         email: (d['email'] as String?) ?? '',
         name: (d['name'] as String?) ?? '',
         role: roleFromString(d['role'] as String?),
         approved: d['status'] == 'approved',
+        productionFacility: d['production_facility'] as String?,
       );
 }
 
@@ -169,6 +177,23 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  /// يغيّر كلمة مرور المستخدم الحالي — يتطلب معرفة كلمة المرور الحالية.
+  /// يُرجع true عند النجاح، أو false مع تفصيل السبب في [lastError].
+  Future<bool> changePassword(String currentPassword, String newPassword) async {
+    lastError = null;
+    try {
+      await _api.patch('/auth/change-password', {
+        'currentPassword': currentPassword,
+        'newPassword': newPassword,
+      });
+      return true;
+    } on ApiException catch (e) {
+      lastError = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<void> signOut() async {
     await _api.clearToken();
     currentUser = null;
@@ -177,4 +202,3 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 }
-
