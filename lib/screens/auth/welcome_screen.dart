@@ -3,14 +3,8 @@ import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 
 /// شاشة ترحيب متحركة تظهر مرة واحدة فقط عند فتح التطبيق (قبل شاشة تسجيل
-/// الدخول)، بدل فيديو خارجي — شعار متحرك + اسم النظام، مع الانتقال تلقائيًا
-/// بعد ثوانٍ أو فور ضغط "متابعة".
-///
-/// ⚠️ الشعار حاليًا أيقونة مؤقتة (Icons.factory_outlined) لحين توفير شعار
-/// "صيانتي" الفعلي كملف صورة. لاستبداله بالشعار الحقيقي لاحقًا:
-///   ١) ضعوا ملف الشعار في assets/images/logo.png
-///   ٢) أضيفوا `assets: - assets/images/` في pubspec.yaml
-///   ٣) استبدلوا الحاوية أدناه بـ: Image.asset('assets/images/logo.png', width: 96, height: 96)
+/// الدخول)، بدل فيديو خارجي — شعار الماس للعطور + اسم النظام، مع الانتقال
+/// تلقائيًا بعد ثوانٍ أو فور ضغط "متابعة".
 class WelcomeScreen extends StatefulWidget {
   final VoidCallback onContinue;
   const WelcomeScreen({super.key, required this.onContinue});
@@ -58,16 +52,16 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     opacity: _visible ? 1 : 0,
                     duration: const Duration(milliseconds: 700),
                     child: Container(
-                      width: 110,
-                      height: 110,
+                      width: 130,
+                      height: 130,
                       alignment: Alignment.center,
+                      padding: const EdgeInsets.all(18),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(28),
                         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20, offset: const Offset(0, 8))],
                       ),
-                      // TODO: استبدلوا هذا بالشعار الفعلي عند توفره (راجع التعليق أعلى الملف).
-                      child: const Icon(Icons.factory_outlined, color: AppColors.maintenance, size: 56),
+                      child: Image.asset('assets/images/logo.png', fit: BoxFit.contain),
                     ),
                   ),
                 ),
