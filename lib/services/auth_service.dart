@@ -7,14 +7,29 @@ import 'api_client.dart';
 ///
 /// نفس القيم بالضبط المستخدمة في عمود role بجدول users على سيرفر صيانتي
 /// المحلي (راجع schema.sql) — لا حاجة لأي تحويل بين الطرفين.
-enum AppRole { admin, maintenance, production, safety }
+///
+/// دور "الصيانة" العام انقسم إلى دورين محددين بناءً على طلب الإدارة: فني
+/// صيانة (ينفّذ الإصلاحات) ومسؤول صيانة (يوزّع البلاغات ويدير الفنيين).
+/// كلاهما يريان قسم الصيانة نفسه بنفس الصلاحيات حاليًا — الفرق فقط في
+/// المسمّى الظاهر عند الاعتماد وفي بطاقة المستخدم؛ استخدم [isMaintenanceRole]
+/// بدل مقارنة الدور مباشرة عند التحقق من "هل هذا مستخدم صيانة؟" بغض النظر
+/// عن أيهما تحديدًا.
+enum AppRole { admin, maintenanceTechnician, maintenanceManager, production, safety }
+
+bool isMaintenanceRole(AppRole r) => r == AppRole.maintenanceTechnician || r == AppRole.maintenanceManager;
 
 AppRole roleFromString(String? s) {
   switch (s) {
     case 'admin':
       return AppRole.admin;
+    case 'maintenance_technician':
+      return AppRole.maintenanceTechnician;
+    // "maintenance" هو الاسم القديم قبل تقسيم الدور — أي حساب لا يزال بهذا
+    // الاسم على السيرفر (لم يُرحَّل بعد لأي سبب) يُعامَل كمسؤول صيانة، لأنه
+    // كان يملك الصلاحيات الكاملة نفسها قبل التقسيم.
+    case 'maintenance_manager':
     case 'maintenance':
-      return AppRole.maintenance;
+      return AppRole.maintenanceManager;
     case 'production':
       return AppRole.production;
     case 'safety':
@@ -24,14 +39,25 @@ AppRole roleFromString(String? s) {
   }
 }
 
-String roleToString(AppRole r) => r.name;
+String roleToString(AppRole r) {
+  switch (r) {
+    case AppRole.maintenanceTechnician:
+      return 'maintenance_technician';
+    case AppRole.maintenanceManager:
+      return 'maintenance_manager';
+    default:
+      return r.name;
+  }
+}
 
 String roleLabel(AppRole r) {
   switch (r) {
     case AppRole.admin:
       return 'مدير النظام';
-    case AppRole.maintenance:
-      return 'الصيانة';
+    case AppRole.maintenanceTechnician:
+      return 'فني صيانة';
+    case AppRole.maintenanceManager:
+      return 'مسؤول صيانة';
     case AppRole.production:
       return 'الإنتاج';
     case AppRole.safety:
@@ -51,6 +77,11 @@ class AppUser {
   /// يُحدَّد فقط من لوحة الإدارة (راجع PATCH /users/:id/production-facility).
   final String? productionFacility;
 
+  /// رقم الهاتف الشخصي للمستخدم — اختياري، يُدخله عند التسجيل أو يضيفه مدير
+  /// النظام لاحقًا. يُستخدم لتوجيه إشعارات واتساب لهذا المستخدم تحديدًا (مثل
+  /// نتيجة تصريح سلامة قدّمه) بدل جروب عام فقط.
+  final String? phone;
+
   AppUser({
     required this.uid,
     required this.email,
@@ -58,11 +89,12 @@ class AppUser {
     required this.role,
     required this.approved,
     this.productionFacility,
+    this.phone,
   });
 
   /// يبني مستخدمًا من استجابة سيرفر صيانتي المحلي (حقل "user" في ردود
   /// /api/auth/* و /api/users) — الشكل: {id, name, email, role, status,
-  /// production_facility}.
+  /// production_facility, phone}.
   factory AppUser.fromApi(Map<String, dynamic> d) => AppUser(
         uid: d['id'].toString(),
         email: (d['email'] as String?) ?? '',
@@ -70,6 +102,7 @@ class AppUser {
         role: roleFromString(d['role'] as String?),
         approved: d['status'] == 'approved',
         productionFacility: d['production_facility'] as String?,
+        phone: d['phone'] as String?,
       );
 }
 
@@ -141,13 +174,14 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  Future<bool> signUp(String name, String email, String password) async {
+  Future<bool> signUp(String name, String email, String password, {String? phone}) async {
     lastError = null;
     try {
       final data = await _api.post('/auth/register', {
         'name': name.trim(),
         'email': email.trim(),
         'password': password,
+        if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
       });
       await _api.setToken(data['token'] as String);
       currentUser = AppUser.fromApi(data['user'] as Map<String, dynamic>);
