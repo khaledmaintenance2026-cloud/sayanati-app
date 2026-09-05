@@ -23,19 +23,21 @@ class ProductionLine {
 class Batch {
   final String id;
   final String lineId;
+  final String batchNumber; // رقم الباتش — يكتبه المشرف يدويًا (ليس مولَّدًا تلقائيًا)
   final String productName;
   final int quantity;
   final DateTime date;
   final bool hasStoppage;
   final String? stoppageReason;
   final int? stoppageMinutes;
-  final String? operationalNotes; // الملاحظات التشغيلية عند التوقف
+  final String? operationalNotes; // الملاحظات التشغيلية — عامة، مستقلة عن وجود توقف
   final String? actionsTaken; // الحلول والإجراءات المتخذة عند التوقف
   final String recordedBy; // مشرف الخط
 
   Batch({
     required this.id,
     required this.lineId,
+    required this.batchNumber,
     required this.productName,
     required this.quantity,
     required this.date,
