@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/production.dart';
 import '../../services/app_state.dart';
 import '../../services/arabic_format.dart';
+import '../../services/auth_service.dart';
 import '../../services/constants.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -32,10 +33,22 @@ class _ProductionLinesScreenState extends State<ProductionLinesScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
+  /// التبويبات الظاهرة فعليًا لهذا المستخدم — كل التبويبات لمدير النظام أو
+  /// أي دور غير مقيَّد، أو تبويب واحد فقط لمستخدم إنتاج مُخصَّص له مصنع
+  /// محدد من لوحة الإدارة (لا يمكنه حتى رؤية القسم الآخر، فضلًا عن الدخول
+  /// إليه — نفس التقييد مطبَّق فعليًا على السيرفر أيضًا).
+  late final List<String> _visibleTabs;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _kProductionTabs.length, vsync: this);
+    final user = context.read<AuthService>().currentUser;
+    final restrictedFacility =
+        (user != null && user.role == AppRole.production && user.productionFacility != null)
+            ? user.productionFacility
+            : null;
+    _visibleTabs = restrictedFacility != null ? [restrictedFacility] : _kProductionTabs;
+    _tabController = TabController(length: _visibleTabs.length, vsync: this);
   }
 
   @override
@@ -44,7 +57,7 @@ class _ProductionLinesScreenState extends State<ProductionLinesScreen>
     super.dispose();
   }
 
-  String get _currentFacility => _kProductionTabs[_tabController.index];
+  String get _currentFacility => _visibleTabs[_tabController.index];
 
   Future<void> _openForm(BuildContext context, {ProductionLine? existing}) async {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
@@ -77,16 +90,30 @@ class _ProductionLinesScreenState extends State<ProductionLinesScreen>
                 const SizedBox(height: 12),
                 const Align(alignment: Alignment.centerRight, child: Text('القسم / المصنع', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
                 const SizedBox(height: 6),
-                DropdownButtonFormField<String>(
-                  value: selectedFacility,
-                  decoration: _decoration(),
-                  items: kFacilityLocations
-                      .map((f) => DropdownMenuItem(value: f, child: Text(f)))
-                      .toList(),
-                  onChanged: (v) {
-                    if (v != null) setSheetState(() => selectedFacility = v);
-                  },
-                ),
+                if (_visibleTabs.length == 1)
+                  // مستخدم مقيَّد بمصنع واحد — لا داعي لإظهار اختيار، الخط
+                  // يُضاف مباشرة لمصنعه ولا يمكنه نقله لمصنع آخر أصلًا.
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(13),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Text(selectedFacility, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  )
+                else
+                  DropdownButtonFormField<String>(
+                    value: selectedFacility,
+                    decoration: _decoration(),
+                    items: kFacilityLocations
+                        .map((f) => DropdownMenuItem(value: f, child: Text(f)))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v != null) setSheetState(() => selectedFacility = v);
+                    },
+                  ),
                 const SizedBox(height: 18),
                 PrimaryButton(
                   label: existing == null ? 'إضافة الخط' : 'حفظ التعديلات',
@@ -147,16 +174,18 @@ class _ProductionLinesScreenState extends State<ProductionLinesScreen>
             ),
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          onTap: (_) => setState(() {}),
-          labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-          tabs: _kProductionTabs.map((f) => Tab(text: f)).toList(),
-        ),
+        bottom: _visibleTabs.length > 1
+            ? TabBar(
+                controller: _tabController,
+                onTap: (_) => setState(() {}),
+                labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                tabs: _visibleTabs.map((f) => Tab(text: f)).toList(),
+              )
+            : null,
       ),
       body: TabBarView(
         controller: _tabController,
-        children: _kProductionTabs.map((f) => _FacilityLinesView(
+        children: _visibleTabs.map((f) => _FacilityLinesView(
               facility: f,
               onOpenForm: (existing) => _openForm(context, existing: existing),
               onDelete: (line) => _confirmDelete(context, line),
