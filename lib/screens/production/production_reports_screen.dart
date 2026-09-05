@@ -86,11 +86,13 @@ class ProductionReportsScreen extends StatelessWidget {
                             Text(ArabicFormat.number(b.quantity), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.production)),
                           ],
                         ),
-                        if (b.hasStoppage && ((b.operationalNotes?.isNotEmpty ?? false) || (b.actionsTaken?.isNotEmpty ?? false))) ...[
+                        const SizedBox(height: 3),
+                        Text('باتش رقم: ${b.batchNumber}', style: const TextStyle(fontSize: 11.5, color: AppColors.textFaint)),
+                        if ((b.operationalNotes?.isNotEmpty ?? false) || (b.hasStoppage && (b.actionsTaken?.isNotEmpty ?? false))) ...[
                           const SizedBox(height: 6),
                           if (b.operationalNotes?.isNotEmpty ?? false)
                             Text('ملاحظات تشغيلية: ${b.operationalNotes}', style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
-                          if (b.actionsTaken?.isNotEmpty ?? false)
+                          if (b.hasStoppage && (b.actionsTaken?.isNotEmpty ?? false))
                             Text('الإجراءات المتخذة: ${b.actionsTaken}', style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
                         ],
                       ],
