@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../services/app_state.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
+import '../auth/change_password_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   final AppRole role;
@@ -31,6 +32,23 @@ class HomeScreen extends StatelessWidget {
           children: [
             Row(
               children: [
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const ChangePasswordScreen()),
+                  ),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      border: Border.all(color: AppColors.border),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.lock_outline, size: 19, color: AppColors.textSecondary),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 InkWell(
                   borderRadius: BorderRadius.circular(12),
                   onTap: () => auth.signOut(),
