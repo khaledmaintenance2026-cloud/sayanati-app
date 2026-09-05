@@ -6,6 +6,12 @@ import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
+/// خيارات تقييد مستخدم قسم الإنتاج بمصنع واحد — null يعني بلا تقييد (يرى كل
+/// المصانع)، وهو الافتراضي. راجع عمود production_facility على السيرفر.
+const List<String?> kProductionFacilityChoices = [null, 'مصنع الرجال', 'مصنع النساء'];
+
+String productionFacilityLabel(String? f) => f ?? 'بلا تقييد (كل المصانع)';
+
 class ApprovalsTab extends StatefulWidget {
   const ApprovalsTab({super.key});
 
@@ -42,8 +48,11 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
     }
   }
 
-  Future<void> _approve(String uid, AppRole role) async {
+  Future<void> _approve(String uid, AppRole role, String? productionFacility) async {
     await _api.patch('/users/$uid/approve', {'role': roleToString(role)});
+    if (role == AppRole.production) {
+      await _api.patch('/users/$uid/production-facility', {'facility': productionFacility});
+    }
     await _load();
   }
 
@@ -54,6 +63,11 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
 
   Future<void> _setRole(String uid, AppRole role) async {
     await _api.patch('/users/$uid/role', {'role': roleToString(role)});
+    await _load();
+  }
+
+  Future<void> _setFacility(String uid, String? facility) async {
+    await _api.patch('/users/$uid/production-facility', {'facility': facility});
     await _load();
   }
 
@@ -87,7 +101,7 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
           else
             ...pending.map((u) => _PendingCard(
                   user: u,
-                  onApprove: (role) => _approve(u['id'].toString(), role),
+                  onApprove: (role, facility) => _approve(u['id'].toString(), role, facility),
                   onReject: () => _reject(u['id'].toString()),
                 )),
           const SizedBox(height: 24),
@@ -98,6 +112,7 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
                 user: u,
                 isSelf: u['id'].toString() == myUid,
                 onChangeRole: (role) => _setRole(u['id'].toString(), role),
+                onChangeFacility: (facility) => _setFacility(u['id'].toString(), facility),
                 onRevoke: () => _revoke(u['id'].toString()),
               )),
         ],
@@ -108,7 +123,7 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
 
 class _PendingCard extends StatefulWidget {
   final Map<String, dynamic> user;
-  final void Function(AppRole role) onApprove;
+  final void Function(AppRole role, String? productionFacility) onApprove;
   final VoidCallback onReject;
 
   const _PendingCard({required this.user, required this.onApprove, required this.onReject});
@@ -119,6 +134,7 @@ class _PendingCard extends StatefulWidget {
 
 class _PendingCardState extends State<_PendingCard> {
   AppRole _role = AppRole.production;
+  String? _facility;
 
   @override
   Widget build(BuildContext context) {
@@ -158,6 +174,31 @@ class _PendingCardState extends State<_PendingCard> {
               ),
             ],
           ),
+          if (_role == AppRole.production) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Text('المصنع:', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<String?>(
+                    value: _facility,
+                    isDense: true,
+                    decoration: const InputDecoration(
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      filled: true,
+                      fillColor: AppColors.background,
+                      border: OutlineInputBorder(),
+                    ),
+                    items: kProductionFacilityChoices
+                        .map((f) => DropdownMenuItem(value: f, child: Text(productionFacilityLabel(f), style: const TextStyle(fontSize: 12.5))))
+                        .toList(),
+                    onChanged: (v) => setState(() => _facility = v),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
@@ -171,7 +212,7 @@ class _PendingCardState extends State<_PendingCard> {
               const SizedBox(width: 10),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: () => widget.onApprove(_role),
+                  onPressed: () => widget.onApprove(_role, _role == AppRole.production ? _facility : null),
                   style: ElevatedButton.styleFrom(backgroundColor: AppColors.successText, foregroundColor: Colors.white),
                   child: const Text('اعتماد'),
                 ),
@@ -188,43 +229,76 @@ class _ApprovedCard extends StatelessWidget {
   final Map<String, dynamic> user;
   final bool isSelf;
   final void Function(AppRole role) onChangeRole;
+  final void Function(String? facility) onChangeFacility;
   final VoidCallback onRevoke;
 
-  const _ApprovedCard({required this.user, required this.isSelf, required this.onChangeRole, required this.onRevoke});
+  const _ApprovedCard({
+    required this.user,
+    required this.isSelf,
+    required this.onChangeRole,
+    required this.onChangeFacility,
+    required this.onRevoke,
+  });
 
   @override
   Widget build(BuildContext context) {
     final role = roleFromString(user['role'] as String?);
+    final facility = user['production_facility'] as String?;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(color: AppColors.surface, border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(16)),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text((user['name'] as String?) ?? '', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                Text((user['email'] as String?) ?? '', style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text((user['name'] as String?) ?? '', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                    Text((user['email'] as String?) ?? '', style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+                  ],
+                ),
+              ),
+              if (isSelf)
+                const StatusPill(label: 'أنت', color: AppColors.maintenance, background: Color(0x1F2B3487))
+              else ...[
+                DropdownButton<AppRole>(
+                  value: role,
+                  underline: const SizedBox(),
+                  items: AppRole.values
+                      .map((r) => DropdownMenuItem(value: r, child: Text(roleLabel(r), style: const TextStyle(fontSize: 12.5))))
+                      .toList(),
+                  onChanged: (v) => v == null ? null : onChangeRole(v),
+                ),
+                IconButton(
+                  tooltip: 'إلغاء الاعتماد',
+                  icon: const Icon(Icons.block, size: 20, color: Color(0xFFB3261E)),
+                  onPressed: onRevoke,
+                ),
               ],
-            ),
+            ],
           ),
-          if (isSelf)
-            const StatusPill(label: 'أنت', color: AppColors.maintenance, background: Color(0x1F2B3487))
-          else ...[
-            DropdownButton<AppRole>(
-              value: role,
-              underline: const SizedBox(),
-              items: AppRole.values
-                  .map((r) => DropdownMenuItem(value: r, child: Text(roleLabel(r), style: const TextStyle(fontSize: 12.5))))
-                  .toList(),
-              onChanged: (v) => v == null ? null : onChangeRole(v),
-            ),
-            IconButton(
-              tooltip: 'إلغاء الاعتماد',
-              icon: const Icon(Icons.block, size: 20, color: Color(0xFFB3261E)),
-              onPressed: onRevoke,
+          if (!isSelf && role == AppRole.production) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Text('المصنع:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButton<String?>(
+                    value: kProductionFacilityChoices.contains(facility) ? facility : null,
+                    isExpanded: true,
+                    underline: const SizedBox(),
+                    items: kProductionFacilityChoices
+                        .map((f) => DropdownMenuItem(value: f, child: Text(productionFacilityLabel(f), style: const TextStyle(fontSize: 12.5))))
+                        .toList(),
+                    onChanged: onChangeFacility,
+                  ),
+                ),
+              ],
             ),
           ],
         ],
