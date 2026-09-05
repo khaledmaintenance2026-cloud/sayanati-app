@@ -7,6 +7,7 @@ import '../../services/arabic_format.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import 'maintenance_assign_screen.dart';
+import 'maintenance_completed_screen.dart';
 import 'maintenance_new_report_screen.dart';
 import 'maintenance_report_print_screen.dart';
 import 'maintenance_reports_screen.dart';
@@ -26,8 +27,11 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    // الأعمال المنجزة لا تظهر في لوحة العمل اليومية هذه حتى لا تتراكم فيها
+    // للأبد — تبقى متاحة (وقابلة للحذف نهائيًا) من شاشة "الأعمال المنجزة"
+    // التي يفتحها زر شريط الأدوات بالأسفل.
     final reports = state.maintenanceReports
-        .where((r) => _showEmergency ? r.isEmergency : !r.isEmergency)
+        .where((r) => (_showEmergency ? r.isEmergency : !r.isEmergency) && r.status != MaintenanceStatus.completed)
         .toList();
 
     final completedCount = state.maintenanceReports.where((r) => r.status == MaintenanceStatus.completed).length;
@@ -39,6 +43,13 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
       appBar: AppBar(
         title: const Text('الصيانة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.task_alt_outlined),
+            tooltip: 'الأعمال المنجزة',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MaintenanceCompletedScreen()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.description_outlined),
             tooltip: 'التقارير',
@@ -78,11 +89,11 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
                 const SizedBox(height: 14),
                 Expanded(
                   child: reports.isEmpty
-                      ? const Center(child: Text('لا توجد بلاغات', style: TextStyle(color: AppColors.textMuted)))
+                      ? const Center(child: Text('لا توجد بلاغات جارية', style: TextStyle(color: AppColors.textMuted)))
                       : ListView.separated(
                           itemCount: reports.length,
                           separatorBuilder: (_, __) => const SizedBox(height: 10),
-                          itemBuilder: (context, i) => _ReportCard(report: reports[i]),
+                          itemBuilder: (context, i) => MaintenanceReportCard(report: reports[i]),
                         ),
                 ),
               ],
@@ -142,10 +153,14 @@ class _Segment extends StatelessWidget {
   }
 }
 
-class _ReportCard extends StatelessWidget {
+/// بطاقة عرض بلاغ/أمر عمل صيانة — مستخدمة في لوحة العمل اليومية وفي شاشة
+/// الأعمال المنجزة (maintenance_completed_screen.dart) معًا. تمرير [onDelete]
+/// يضيف زر حذف نهائي للبطاقة (يُستخدم فقط للأعمال المنجزة المؤرشفة).
+class MaintenanceReportCard extends StatelessWidget {
   final MaintenanceReport report;
+  final VoidCallback? onDelete;
 
-  const _ReportCard({required this.report});
+  const MaintenanceReportCard({super.key, required this.report, this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -200,6 +215,18 @@ class _ReportCard extends StatelessWidget {
                     child: Icon(Icons.picture_as_pdf_outlined, size: 18, color: AppColors.textMuted),
                   ),
                 StatusPill(label: statusInfo.label, color: statusInfo.color, background: statusInfo.bg),
+                if (onDelete != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: InkWell(
+                      onTap: onDelete,
+                      borderRadius: BorderRadius.circular(8),
+                      child: const Padding(
+                        padding: EdgeInsets.all(2),
+                        child: Icon(Icons.delete_outline, size: 19, color: Color(0xFFB3261E)),
+                      ),
+                    ),
+                  ),
               ],
             ),
             const SizedBox(height: 6),
