@@ -52,6 +52,7 @@ class AppState extends ChangeNotifier {
     _attached = true;
     _loadTechniciansFromCloud();
     _loadProductionLinesFromCloud();
+    _loadIncidentsFromCloud();
   }
 
   void detachAuth() {
@@ -60,6 +61,8 @@ class AppState extends ChangeNotifier {
     technicians.clear();
     productionLinesLoaded = false;
     productionLines.clear();
+    incidentsLoaded = false;
+    incidents.clear();
   }
 
   Future<void> reloadTechnicians() => _loadTechniciansFromCloud();
@@ -328,6 +331,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// خطوط الإنتاج التابعة لقسم/مصنع معيّن (مثال: 'مصنع الرجال') — أساس فصل
+  /// "مصنع الرجال" عن "مصنع النساء" إداريًا في الواجهة، حسب عمود location
+  /// الموجود فعليًا على كل خط (ومقيَّد بنفس القيم على السيرفر، راجع
+  /// kFacilityLocations في services/constants.dart).
+  List<ProductionLine> linesByFacility(String facility) =>
+      productionLines.where((l) => l.location == facility).toList();
+
   final List<Batch> batches = [];
 
   Batch recordBatch({
@@ -338,6 +348,8 @@ class AppState extends ChangeNotifier {
     bool hasStoppage = false,
     String? stoppageReason,
     int? stoppageMinutes,
+    String? operationalNotes,
+    String? actionsTaken,
   }) {
     final batch = Batch(
       id: _uuid.v4(),
@@ -348,6 +360,8 @@ class AppState extends ChangeNotifier {
       hasStoppage: hasStoppage,
       stoppageReason: stoppageReason,
       stoppageMinutes: stoppageMinutes,
+      operationalNotes: operationalNotes,
+      actionsTaken: actionsTaken,
       recordedBy: recordedBy,
     );
     batches.insert(0, batch);
@@ -357,6 +371,68 @@ class AppState extends ChangeNotifier {
   }
 
   ProductionLine lineById(String id) => productionLines.firstWhere((l) => l.id == id);
+
+  /// كل الباتشات المسجّلة على خطوط قسم/مصنع معيّن اليوم.
+  List<Batch> batchesByFacility(String facility) {
+    final lineIds = linesByFacility(facility).map((l) => l.id).toSet();
+    return batches.where((b) => lineIds.contains(b.lineId)).toList();
+  }
+
+  // ---------------------------------------------------------------------
+  // الإنتاج — بلاغات أعطال فورية (مربوطة بالسيرفر المحلي فعليًا عبر
+  // /production/incidents، بنفس نمط خطوط الإنتاج أعلاه).
+  // ---------------------------------------------------------------------
+  final List<Incident> incidents = [];
+  bool incidentsLoaded = false;
+  String? incidentsError;
+
+  Future<void> reloadIncidents() => _loadIncidentsFromCloud();
+
+  Future<void> _loadIncidentsFromCloud() async {
+    if (!_attached) return;
+    try {
+      final data = await _api.get('/production/incidents');
+      final list = (data['incidents'] as List).cast<Map<String, dynamic>>();
+      incidents
+        ..clear()
+        ..addAll(list.map(Incident.fromApi));
+      incidentsLoaded = true;
+      incidentsError = null;
+      notifyListeners();
+    } catch (e) {
+      incidentsError = 'تعذّر تحميل البلاغات من السيرفر: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<void> addIncidentCloud({
+    String? lineId,
+    String? equipmentId,
+    required String description,
+  }) async {
+    final data = await _api.post('/production/incidents', {
+      if (lineId != null) 'lineId': lineId,
+      if (equipmentId != null) 'equipmentId': equipmentId,
+      'description': description,
+    });
+    incidents.insert(0, Incident.fromApi(data['incident'] as Map<String, dynamic>));
+    _log('🔔 بلاغ عطل جديد في الإنتاج: $description');
+    notifyListeners();
+  }
+
+  Future<void> endIncidentDowntimeCloud(String id) async {
+    final data = await _api.patch('/production/incidents/$id/end-downtime', {});
+    final updated = Incident.fromApi(data['incident'] as Map<String, dynamic>);
+    final i = incidents.indexWhere((e) => e.id == id);
+    if (i != -1) incidents[i] = updated;
+    notifyListeners();
+  }
+
+  Future<void> removeIncidentCloud(String id) async {
+    await _api.delete('/production/incidents/$id');
+    incidents.removeWhere((e) => e.id == id);
+    notifyListeners();
+  }
 
   int lineTotalToday(String lineId) =>
       batches.where((b) => b.lineId == lineId).fold(0, (sum, b) => sum + b.quantity);
