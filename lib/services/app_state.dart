@@ -181,6 +181,19 @@ class AppState extends ChangeNotifier {
       .where((r) => r.isEmergency && r.status != MaintenanceStatus.completed)
       .toList();
 
+  /// الأعمال المنجزة فقط — منفصلة عن لوحة العمل اليومية حتى لا تتراكم فيها
+  /// للأبد (راجع [deleteMaintenanceReport] لحذفها نهائيًا بعد أرشفتها/طباعتها).
+  List<MaintenanceReport> get completedMaintenanceReports =>
+      maintenanceReports.where((r) => r.status == MaintenanceStatus.completed).toList();
+
+  /// يحذف بلاغًا/أمر عمل منجزًا نهائيًا من السجل — البيانات محلية على هذا
+  /// الجهاز فقط (راجع الملاحظة أعلى القسم)، فلا يوجد أي أثر لها على أي جهاز
+  /// آخر أو على السيرفر بعد الحذف.
+  void deleteMaintenanceReport(String reportId) {
+    maintenanceReports.removeWhere((r) => r.id == reportId);
+    notifyListeners();
+  }
+
   MaintenanceReport createReport({
     required String equipment,
     required String line,
