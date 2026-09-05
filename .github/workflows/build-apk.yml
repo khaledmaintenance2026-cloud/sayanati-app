@@ -26,6 +26,9 @@ jobs:
       - name: تحميل الحزم
         run: flutter pub get
 
+      - name: توليد أيقونة التطبيق من الشعار الفعلي (assets/images/app_icon.png)
+        run: dart run flutter_launcher_icons
+
       - name: فحص الكود
         run: flutter analyze || true
 
