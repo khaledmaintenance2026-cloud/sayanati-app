@@ -6,6 +6,7 @@ import 'services/auth_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/pending_approval_screen.dart';
+import 'screens/auth/welcome_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/maintenance/maintenance_dashboard_screen.dart';
 import 'screens/production/production_lines_screen.dart';
@@ -61,6 +62,11 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   bool _attached = false;
 
+  /// هل ظهرت شاشة الترحيب المتحركة مرة واحدة بالفعل خلال هذه الجلسة (منذ
+  /// آخر فتح للتطبيق)؟ تظهر فقط قبل شاشة الدخول، ولا تتكرر بعد ذلك (مثلاً
+  /// بعد تسجيل الخروج والعودة لشاشة الدخول من جديد ضمن نفس الجلسة).
+  bool _welcomeShown = false;
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
@@ -81,6 +87,9 @@ class _AuthGateState extends State<AuthGate> {
       case AuthStatus.loading:
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
       case AuthStatus.signedOut:
+        if (!_welcomeShown) {
+          return WelcomeScreen(onContinue: () => setState(() => _welcomeShown = true));
+        }
         return const LoginScreen();
       case AuthStatus.pendingApproval:
         return const PendingApprovalScreen();
