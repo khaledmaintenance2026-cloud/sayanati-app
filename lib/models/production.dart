@@ -35,6 +35,15 @@ class Batch {
   final String recordedBy; // مشرف الخط
   final int? workersCount; // عدد العمال على هذا الباتش — لمطابقة عمود "workers" في التقرير الأسبوعي القديم
 
+  /// وقت بدء/انتهاء الباتش الفعلي (وقت اليوم فقط، مثل "08:00:00") — اختياري،
+  /// يظهر في رسالة واتساب تسجيل الباتش (TIME FROM / TIME TO).
+  final String? timeFrom;
+  final String? timeTo;
+
+  /// "طرق تجنّب تكرار المشكلة" — منفصلة عن [actionsTaken]، تُعبَّأ فقط عند
+  /// وجود توقف. تظهر في رسالة واتساب كـ"Avoidance methods".
+  final String? preventionMethods;
+
   Batch({
     required this.id,
     required this.lineId,
@@ -49,6 +58,9 @@ class Batch {
     this.actionsTaken,
     required this.recordedBy,
     this.workersCount,
+    this.timeFrom,
+    this.timeTo,
+    this.preventionMethods,
   });
 
   /// يبني باتشًا من استجابة سيرفر صيانتي المحلي (جدول production_batches) —
@@ -67,6 +79,9 @@ class Batch {
         actionsTaken: d['actions_taken'] as String?,
         recordedBy: (d['recorded_by'] as String?) ?? '',
         workersCount: (d['workers_count'] as num?)?.round(),
+        timeFrom: d['time_from'] as String?,
+        timeTo: d['time_to'] as String?,
+        preventionMethods: d['prevention_methods'] as String?,
       );
 }
 
@@ -86,6 +101,10 @@ class Incident {
   final String status; // open | linked | closed
   final int downtimeMinutes;
 
+  /// تصنيف حدة العطل عند رفع البلاغ: simple (بسيط) / medium (متوسط) /
+  /// critical (حرج) — اختياري، null للبلاغات القديمة قبل إضافة هذا الحقل.
+  final String? severity;
+
   Incident({
     required this.id,
     this.lineId,
@@ -99,9 +118,18 @@ class Incident {
     this.downtimeEndedAt,
     required this.status,
     required this.downtimeMinutes,
+    this.severity,
   });
 
   bool get isOpen => status == 'open';
+
+  /// تسمية عربية جاهزة للعرض — بسيط/متوسط/حرج، أو null لو لم يُحدَّد.
+  String? get severityLabel => switch (severity) {
+        'simple' => 'بسيط',
+        'medium' => 'متوسط',
+        'critical' => 'حرج',
+        _ => null,
+      };
 
   factory Incident.fromApi(Map<String, dynamic> d) => Incident(
         id: d['id'].toString(),
@@ -119,5 +147,6 @@ class Incident {
             : DateTime.tryParse(d['downtime_ended_at'].toString()),
         status: (d['status'] as String?) ?? 'open',
         downtimeMinutes: ((d['downtime_minutes'] as num?) ?? 0).round(),
+        severity: d['severity'] as String?,
       );
 }
