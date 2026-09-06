@@ -30,6 +30,8 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
     final lines = appState.linesByFacility(widget.facility);
     final descCtrl = TextEditingController();
     String? selectedLineId = lines.isNotEmpty ? lines.first.id : null;
+    // تصنيف حدة العطل — يظهر لاحقًا في رسالة واتساب "بلاغ عطل مفاجئ" (اختياري).
+    String? selectedSeverity;
     bool submitting = false;
     String? error;
 
@@ -75,6 +77,26 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
                   decoration: _decoration(hint: 'مثال: توقف مفاجئ بسبب عطل ميكانيكي في السير'),
                   onChanged: (_) => setSheetState(() {}),
                 ),
+                const SizedBox(height: 12),
+                const Align(alignment: Alignment.centerRight, child: Text('نوع العطل (اختياري)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: const [
+                    MapEntry('simple', 'بسيط'),
+                    MapEntry('medium', 'متوسط'),
+                    MapEntry('critical', 'حرج'),
+                  ].map((entry) {
+                    final selected = selectedSeverity == entry.key;
+                    return ChoiceChip(
+                      label: Text(entry.value),
+                      selected: selected,
+                      selectedColor: AppColors.production.withOpacity(0.22),
+                      onSelected: (_) => setSheetState(() => selectedSeverity = selected ? null : entry.key),
+                    );
+                  }).toList(),
+                ),
                 if (error != null) ...[
                   const SizedBox(height: 10),
                   InfoNote(text: error!, color: const Color(0xFFB3261E), icon: Icons.error_outline),
@@ -94,6 +116,7 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
                             await appState.addIncidentCloud(
                               lineId: selectedLineId,
                               description: descCtrl.text.trim(),
+                              severity: selectedSeverity,
                             );
                             if (ctx.mounted) Navigator.of(ctx).pop();
                           } catch (e) {
@@ -177,6 +200,14 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
                                             Expanded(
                                               child: Text(lineName ?? 'بدون خط محدد', style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
                                             ),
+                                            if (incident.severityLabel != null) ...[
+                                              StatusPill(
+                                                label: incident.severityLabel!,
+                                                color: AppColors.textSecondary,
+                                                background: AppColors.divider,
+                                              ),
+                                              const SizedBox(width: 6),
+                                            ],
                                             StatusPill(
                                               label: incident.isOpen ? 'مفتوح' : 'مغلق',
                                               color: incident.isOpen ? const Color(0xFFB3261E) : const Color(0xFF2E7D32),
