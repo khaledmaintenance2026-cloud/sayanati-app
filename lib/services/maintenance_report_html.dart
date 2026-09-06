@@ -6,7 +6,9 @@ import 'arabic_format.dart';
 /// محرك عرض النظام نفسه، فتُخرج النص العربي بشكل سليم دون أي إعداد إضافي).
 String buildMaintenanceReportHtml(MaintenanceReport report) {
   final duration = report.duration;
-  final techLine = report.technicianName ?? (report.assignedTechnicianIds.isEmpty ? '—' : 'فني #${report.assignedTechnicianIds.first}');
+  final techLine = report.technicianNames ??
+      report.technicianName ??
+      (report.assignedTechnicianIds.isEmpty ? '—' : 'فني #${report.assignedTechnicianIds.first}');
 
   String row(String label, String value, {bool bold = false}) => '''
     <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid #EDEFF2;">
@@ -14,6 +16,17 @@ String buildMaintenanceReportHtml(MaintenanceReport report) {
       <span style="font-size:14px; ${bold ? 'font-weight:700;' : ''} color:#1A2129;">$value</span>
     </div>
   ''';
+
+  // مبني كمتغيّر مستقل (وليس ''' متداخلة داخل الـ''' الرئيسية بالأسفل) —
+  // التداخل يقطع النص الأصلي عند أول ''' يصادفها محرّك دارت.
+  final closeNotesBlock = (report.closeNotes != null && report.closeNotes!.isNotEmpty)
+      ? '''
+  <div style="background:#F5F6F8; border-radius:12px; padding:14px 16px; font-size:13.5px; line-height:1.7; color:#3A4250; margin-top:8px;">
+    <div style="font-weight:700; margin-bottom:6px;">ملاحظات</div>
+    ${report.closeNotes}
+  </div>
+  '''
+      : '';
 
   return '''
 <!doctype html>
@@ -79,6 +92,7 @@ String buildMaintenanceReportHtml(MaintenanceReport report) {
     <div style="font-weight:700; margin-bottom:6px;">القطع / المواد المستخدمة</div>
     ${report.partsUsed ?? '—'}
   </div>
+  $closeNotesBlock
   ''' : ''}
 
   <div style="margin-top:auto; padding-top:28px; border-top:1px solid #EDEFF2; font-size:11px; color:#B4BAC2; display:flex; justify-content:space-between;">
