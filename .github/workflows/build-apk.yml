@@ -15,6 +15,25 @@ jobs:
       - name: Checkout الكود
         uses: actions/checkout@v4
 
+      # مهم لتسجيل الدخول عبر جوجل: بدون هذه الخطوة يُنشئ Gradle مفتاح توقيع
+      # عشوائيًا جديدًا في كل تشغيل (لأن مجلد android/ نفسه يُولَّد من جديد
+      # كل مرة أسفل)، فيتغيّر "SHA-1 Fingerprint" باستمرار ويكسر تسجيل الدخول
+      # عبر جوجل بعد كل تحديث. نستعيد هنا مفتاحًا ثابتًا محفوظًا كـ Secret
+      # بدل تركه يتولّد عشوائيًا، فيبقى نفسه إلى الأبد. لو لم يُضبط الـ Secret
+      # بعد (أول تشغيل بعد هذا التحديث) يستمر البناء بمفتاح عشوائي كالمعتاد
+      # فقط مع تنبيه في السجل.
+      - name: استعادة مفتاح توقيع ثابت (لتسجيل الدخول عبر جوجل)
+        env:
+          ANDROID_DEBUG_KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$ANDROID_DEBUG_KEYSTORE_B64" ]; then
+            mkdir -p ~/.android
+            echo "$ANDROID_DEBUG_KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+            echo "تم استخدام مفتاح التوقيع الثابت المحفوظ في GitHub Secrets."
+          else
+            echo "تنبيه: ANDROID_DEBUG_KEYSTORE_B64 غير مضبوط — سيُستخدم مفتاح عشوائي جديد لهذا البناء."
+          fi
+
       - name: تثبيت Flutter
         uses: subosito/flutter-action@v2
         with:
