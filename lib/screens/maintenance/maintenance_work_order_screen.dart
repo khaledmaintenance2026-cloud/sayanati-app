@@ -20,7 +20,8 @@ class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen>
   final _equipmentCodeCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final _reminderCtrl = TextEditingController(text: '30');
-  String? _selectedTechId;
+  // يدعم النظام الآن تعيين أكثر من فني لنفس أمر العمل مباشرة عند الإنشاء.
+  final Set<String> _selectedTechIds = {};
   bool _submitting = false;
 
   final _lines = kFacilityLocations;
@@ -39,7 +40,7 @@ class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen>
       await context.read<AppState>().createWorkOrder(
             facility: _line,
             description: _descCtrl.text.trim(),
-            technicianId: _selectedTechId!,
+            technicianIds: _selectedTechIds.toList(),
             reminderIntervalDays: int.tryParse(_reminderCtrl.text.trim()),
             equipmentCode: _equipmentCodeCtrl.text.trim().isEmpty ? null : _equipmentCodeCtrl.text.trim(),
           );
@@ -60,7 +61,7 @@ class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen>
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final canSubmit = !_submitting && _descCtrl.text.trim().isNotEmpty && _selectedTechId != null;
+    final canSubmit = !_submitting && _descCtrl.text.trim().isNotEmpty && _selectedTechIds.isNotEmpty;
 
     return Scaffold(
       appBar: const ScreenTopBar(title: 'أمر عمل وقائي جديد'),
@@ -98,13 +99,13 @@ class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen>
                     decoration: _decoration(hint: 'مثال: فحص وتشحيم لوحة الكهرباء الدورية'),
                   ),
                   const SizedBox(height: 14),
-                  const Text('الفني المسؤول', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                  const Text('الفني المسؤول (يمكن اختيار أكثر من فني)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: state.technicians.map((t) {
-                      final selected = _selectedTechId == t.id;
+                      final selected = _selectedTechIds.contains(t.id);
                       return FilterChip(
                         label: Text(t.name),
                         selected: selected,
@@ -112,7 +113,13 @@ class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen>
                         checkmarkColor: AppColors.maintenance,
                         labelStyle: TextStyle(color: selected ? AppColors.maintenance : AppColors.textSecondary, fontWeight: FontWeight.w600, fontSize: 12.5),
                         side: BorderSide(color: selected ? AppColors.maintenance : AppColors.border),
-                        onSelected: (v) => setState(() => _selectedTechId = v ? t.id : null),
+                        onSelected: (v) => setState(() {
+                          if (v) {
+                            _selectedTechIds.add(t.id);
+                          } else {
+                            _selectedTechIds.remove(t.id);
+                          }
+                        }),
                       );
                     }).toList(),
                   ),
