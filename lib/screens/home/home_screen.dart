@@ -5,6 +5,7 @@ import '../../services/app_state.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../auth/change_password_screen.dart';
+import '../notifications/notifications_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   final AppRole role;
@@ -46,6 +47,43 @@ class HomeScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(Icons.lock_outline, size: 19, color: AppColors.textSecondary),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                  ),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      border: Border.all(color: AppColors.border),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        const Center(child: Icon(Icons.notifications_outlined, size: 19, color: AppColors.textSecondary)),
+                        if (state.unreadNotificationsCount > 0)
+                          Positioned(
+                            top: -2,
+                            right: -2,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(color: const Color(0xFFB3261E), borderRadius: BorderRadius.circular(8)),
+                              constraints: const BoxConstraints(minWidth: 16),
+                              child: Text(
+                                state.unreadNotificationsCount > 9 ? '٩+' : '${state.unreadNotificationsCount}',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 9.5, color: Colors.white, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
