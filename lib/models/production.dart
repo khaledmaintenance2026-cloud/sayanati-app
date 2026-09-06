@@ -99,6 +99,11 @@ class Incident {
   final String id;
   final String? lineId;
   final String? lineName;
+
+  /// مصنع خط الإنتاج (مصنع الرجال/مصنع النساء/المستودع العام) — يُستخدم عند
+  /// تحويل هذا البلاغ إلى أمر عمل صيانة (راجع AppState.convertIncidentToWorkOrder)
+  /// حتى يحمل أمر العمل نفس تصنيف الموقع الصحيح بدل تركه فارغًا.
+  final String? facility;
   final String? equipmentId;
   final String? equipmentName;
   final String description;
@@ -117,6 +122,7 @@ class Incident {
     required this.id,
     this.lineId,
     this.lineName,
+    this.facility,
     this.equipmentId,
     this.equipmentName,
     required this.description,
@@ -143,6 +149,7 @@ class Incident {
         id: d['id'].toString(),
         lineId: d['line_id']?.toString(),
         lineName: d['line_name'] as String?,
+        facility: d['facility'] as String?,
         equipmentId: d['equipment_id']?.toString(),
         equipmentName: d['equipment_name'] as String?,
         description: (d['description'] as String?) ?? '',
