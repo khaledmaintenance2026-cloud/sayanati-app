@@ -644,6 +644,50 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// يحوّل بلاغ إنتاج مفتوح إلى أمر عمل صيانة حقيقي (طارئ، بانتظار تعيين
+  /// فني) — يُستخدم من شاشة "بلاغات إنتاج بانتظار التحويل" في قسم الصيانة.
+  /// السيرفر نفسه يربط أمر العمل بالبلاغ الأصلي (incidentReportId) ويحوّل
+  /// حالة البلاغ تلقائيًا إلى "مرتبط" (راجع POST /work-orders)، فلا يظهر
+  /// بعدها في قائمة البلاغات المفتوحة بانتظار التحويل.
+  Future<MaintenanceReport> convertIncidentToWorkOrder(Incident incident) async {
+    final data = await _api.post('/work-orders', {
+      'kind': 'emergency',
+      'incidentReportId': incident.id,
+      if (incident.lineId != null) 'lineId': incident.lineId,
+      if (incident.equipmentId != null) 'equipmentId': incident.equipmentId,
+      'equipmentName': incident.equipmentName ?? (incident.lineName ?? 'غير محدد'),
+      if (incident.facility != null) 'facility': incident.facility,
+      'description': incident.description,
+    });
+    final report = MaintenanceReport.fromApi(data['workOrder'] as Map<String, dynamic>);
+    maintenanceReports.insert(0, report);
+
+    final i = incidents.indexWhere((e) => e.id == incident.id);
+    if (i != -1) {
+      // تحديث محلي متفائل لحالة البلاغ إلى "مرتبط" دون انتظار إعادة تحميل
+      // كامل القائمة من السيرفر — يختفي فورًا من شاشة "بانتظار التحويل".
+      incidents[i] = Incident(
+        id: incident.id,
+        lineId: incident.lineId,
+        lineName: incident.lineName,
+        facility: incident.facility,
+        equipmentId: incident.equipmentId,
+        equipmentName: incident.equipmentName,
+        description: incident.description,
+        reportedBy: incident.reportedBy,
+        reportedAt: incident.reportedAt,
+        downtimeStartedAt: incident.downtimeStartedAt,
+        downtimeEndedAt: incident.downtimeEndedAt,
+        status: 'linked',
+        downtimeMinutes: incident.downtimeMinutes,
+        severity: incident.severity,
+      );
+    }
+    _log('تم تحويل بلاغ إنتاج إلى أمر عمل صيانة: ${incident.description}');
+    notifyListeners();
+    return report;
+  }
+
   Future<void> removeIncidentCloud(String id) async {
     await _api.delete('/production/incidents/$id');
     incidents.removeWhere((e) => e.id == id);
