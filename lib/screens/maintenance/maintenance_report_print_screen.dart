@@ -3,8 +3,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
+import 'package:provider/provider.dart';
 
 import '../../models/maintenance_report.dart';
+import '../../services/app_state.dart';
 import '../../services/maintenance_report_html.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -12,6 +14,13 @@ import '../../widgets/common.dart';
 /// تقرير PDF قابل للطباعة/المشاركة لبلاغ صيانة واحد — يُبنى كـHTML بنفس هوية
 /// تقرير الإنتاج ثم يُحوَّل لملف PDF عبر محرك عرض النظام (لا حاجة لخط عربي
 /// خاص، النص يظهر بشكل سليم دائمًا).
+///
+/// عند فتح هذه الشاشة نجلب تفاصيل أمر العمل كاملة من السيرفر أولًا (وليس
+/// الاعتماد فقط على النسخة المحلية الممرَّرة من شاشة القائمة) — تحديدًا
+/// القطع/المواد المستخدمة الفعلية واسم الفني، التي لا تصل ضمن قائمة أوامر
+/// العمل العامة (راجع AppState.fetchWorkOrderDetail). لو تعذّر الجلب لأي
+/// سبب (لا اتصال إنترنت مثلًا)، نستمر بالنسخة المحلية الممرَّرة بدل حجب
+/// التقرير بالكامل.
 ///
 /// ملاحظة مهمة: التحويل من HTML إلى PDF (Printing.convertHtml) يعتمد داخليًا
 /// على مكوّن Android System WebView على الجهاز. على بعض الأجهزة (خصوصًا لو
@@ -29,9 +38,35 @@ class MaintenanceReportPrintScreen extends StatefulWidget {
 class _MaintenanceReportPrintScreenState extends State<MaintenanceReportPrintScreen> {
   bool _timedOut = false;
   int _attempt = 0;
+  late MaintenanceReport _report;
+  bool _loadingDetail = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _report = widget.report;
+    _loadDetail();
+  }
+
+  Future<void> _loadDetail() async {
+    try {
+      final detail = await context.read<AppState>().fetchWorkOrderDetail(widget.report.id);
+      if (!mounted) return;
+      setState(() {
+        _report = detail;
+        _loadingDetail = false;
+      });
+    } catch (_) {
+      // نستمر بالنسخة المحلية الممرَّرة بلا رسالة خطأ مزعجة — أهم شيء
+      // إظهار التقرير، حتى لو ببيانات قد تكون أقدم قليلًا (بدون القطع
+      // المستخدمة الدقيقة مثلًا).
+      if (!mounted) return;
+      setState(() => _loadingDetail = false);
+    }
+  }
 
   Future<Uint8List> _build(dynamic format) async {
-    final html = buildMaintenanceReportHtml(widget.report);
+    final html = buildMaintenanceReportHtml(_report);
     try {
       final bytes = await Printing.convertHtml(format: format, html: html)
           .timeout(const Duration(seconds: 20));
@@ -51,16 +86,20 @@ class _MaintenanceReportPrintScreenState extends State<MaintenanceReportPrintScr
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const ScreenTopBar(title: 'تقرير البلاغ'),
-      body: _timedOut ? _ConversionTimeoutView(onRetry: _retry) : PdfPreview(
-        key: ValueKey(_attempt),
-        build: _build,
-        allowSharing: true,
-        allowPrinting: true,
-        canChangeOrientation: false,
-        canChangePageFormat: false,
-        pdfFileName: 'تقرير_بلاغ_${widget.report.id.substring(0, 8)}.pdf',
-        loadingWidget: const Center(child: CircularProgressIndicator(color: AppColors.maintenance)),
-      ),
+      body: _loadingDetail
+          ? const Center(child: CircularProgressIndicator(color: AppColors.maintenance))
+          : _timedOut
+              ? _ConversionTimeoutView(onRetry: _retry)
+              : PdfPreview(
+                  key: ValueKey(_attempt),
+                  build: _build,
+                  allowSharing: true,
+                  allowPrinting: true,
+                  canChangeOrientation: false,
+                  canChangePageFormat: false,
+                  pdfFileName: 'تقرير_بلاغ_${_report.id}.pdf',
+                  loadingWidget: const Center(child: CircularProgressIndicator(color: AppColors.maintenance)),
+                ),
     );
   }
 }
