@@ -34,10 +34,17 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
         .where((r) => (_showEmergency ? r.isEmergency : !r.isEmergency) && r.status != MaintenanceStatus.completed)
         .toList();
 
-    final completedCount = state.maintenanceReports.where((r) => r.status == MaintenanceStatus.completed).length;
+    final now = DateTime.now();
+    final completedThisMonth = state.maintenanceReports.where((r) =>
+        r.status == MaintenanceStatus.completed &&
+        r.closedAt != null &&
+        r.closedAt!.year == now.year &&
+        r.closedAt!.month == now.month).length;
     final preventiveCount = state.maintenanceReports.where((r) => !r.isEmergency).length;
     final total = state.maintenanceReports.isEmpty ? 1 : state.maintenanceReports.length;
     final preventiveRatio = ((preventiveCount / total) * 100).round();
+    final avgResolution = averageMaintenanceResolution(state.maintenanceReports);
+    final avgResolutionLabel = avgResolution == null ? '—' : ArabicFormat.duration(avgResolution);
 
     return Scaffold(
       appBar: AppBar(
@@ -68,9 +75,9 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
               children: [
                 Row(
                   children: [
-                    KpiCard(value: '٤٢ د', label: 'متوسط وقت الإصلاح', valueColor: AppColors.maintenance),
+                    KpiCard(value: avgResolutionLabel, label: 'متوسط وقت الإصلاح', valueColor: AppColors.maintenance),
                     const SizedBox(width: 10),
-                    KpiCard(value: ArabicFormat.number(completedCount), label: 'أعطال هذا الشهر', valueColor: AppColors.maintenance),
+                    KpiCard(value: ArabicFormat.number(completedThisMonth), label: 'أعطال هذا الشهر', valueColor: AppColors.maintenance),
                     const SizedBox(width: 10),
                     KpiCard(value: '٪${ArabicFormat.toEasternDigits(preventiveRatio)}', label: 'نسبة الوقائي', valueColor: AppColors.maintenance),
                   ],
