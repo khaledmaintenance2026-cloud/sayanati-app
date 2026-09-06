@@ -44,7 +44,7 @@ class _ProductionLinesScreenState extends State<ProductionLinesScreen>
     super.initState();
     final user = context.read<AuthService>().currentUser;
     final restrictedFacility =
-        (user != null && user.role == AppRole.production && user.productionFacility != null)
+        (user != null && isProductionRole(user.role) && user.productionFacility != null)
             ? user.productionFacility
             : null;
     _visibleTabs = restrictedFacility != null ? [restrictedFacility] : _kProductionTabs;
