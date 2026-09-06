@@ -19,6 +19,7 @@ class MaintenanceTaskCloseScreen extends StatefulWidget {
 class _MaintenanceTaskCloseScreenState extends State<MaintenanceTaskCloseScreen> {
   final _descCtrl = TextEditingController();
   final _partsCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
   Timer? _ticker;
   Duration _elapsed = Duration.zero;
   bool _submitting = false;
@@ -40,6 +41,7 @@ class _MaintenanceTaskCloseScreenState extends State<MaintenanceTaskCloseScreen>
     _ticker?.cancel();
     _descCtrl.dispose();
     _partsCtrl.dispose();
+    _notesCtrl.dispose();
     super.dispose();
   }
 
@@ -53,6 +55,7 @@ class _MaintenanceTaskCloseScreenState extends State<MaintenanceTaskCloseScreen>
             widget.report.id,
             closeDescription: _descCtrl.text.trim(),
             partsUsed: _partsCtrl.text.trim(),
+            closeNotes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
           );
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -138,6 +141,15 @@ class _MaintenanceTaskCloseScreenState extends State<MaintenanceTaskCloseScreen>
                     maxLines: 3,
                     onChanged: (_) => setState(() {}),
                     decoration: _decoration(hint: 'مثال: حلقة إحكام مقاس ٤٠مم × ١'),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('ملاحظات (اختياري)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: _notesCtrl,
+                    minLines: 2,
+                    maxLines: 3,
+                    decoration: _decoration(hint: 'أي ملاحظات إضافية غير مشمولة في وصف العمل أعلاه'),
                   ),
                   const SizedBox(height: 16),
                   const InfoNote(
