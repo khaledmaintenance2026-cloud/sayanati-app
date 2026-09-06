@@ -24,6 +24,7 @@ MaintenanceStatus _statusFromApi(String? s) {
 class MaintenanceReport {
   final String id;
   final String equipment;
+  final String? equipmentCode; // كود المكينة — اختياري، يُعبَّأ عند إنشاء أمر عمل وقائي جديد
   final String line; // الخط / الموقع
   final String description;
   final MaintenanceKind kind;
@@ -49,6 +50,7 @@ class MaintenanceReport {
   MaintenanceReport({
     required this.id,
     required this.equipment,
+    this.equipmentCode,
     required this.line,
     required this.description,
     required this.kind,
@@ -70,6 +72,7 @@ class MaintenanceReport {
   factory MaintenanceReport.fromApi(Map<String, dynamic> d) => MaintenanceReport(
         id: d['id'].toString(),
         equipment: (d['equipment_name'] as String?) ?? '',
+        equipmentCode: d['equipment_code'] as String?,
         line: (d['facility'] as String?) ?? '',
         description: (d['description'] as String?) ?? '',
         kind: d['kind'] == 'preventive' ? MaintenanceKind.preventive : MaintenanceKind.emergency,
