@@ -8,6 +8,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import 'maintenance_assign_screen.dart';
 import 'maintenance_completed_screen.dart';
+import 'maintenance_incoming_incidents_screen.dart';
 import 'maintenance_new_report_screen.dart';
 import 'maintenance_report_print_screen.dart';
 import 'maintenance_reports_screen.dart';
@@ -46,10 +47,40 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
     final avgResolution = averageMaintenanceResolution(state.maintenanceReports);
     final avgResolutionLabel = avgResolution == null ? '—' : ArabicFormat.duration(avgResolution);
 
+    final incomingIncidentsCount = state.incidents.where((i) => i.isOpen).length;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('الصيانة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         actions: [
+          // بلاغات إنتاج وصلت للتو ولم تتحوّل بعد إلى أمر عمل — راجع
+          // maintenance_incoming_incidents_screen.dart. الرقم يعكس فورًا أي
+          // بلاغ جديد يصل عبر الاستطلاع الدوري (نفس آلية جرس الإشعارات).
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.move_to_inbox_outlined),
+                tooltip: 'بلاغات إنتاج بانتظار التحويل',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const MaintenanceIncomingIncidentsScreen()),
+                ),
+              ),
+              if (incomingIncidentsCount > 0)
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(color: const Color(0xFFB3261E), borderRadius: BorderRadius.circular(999)),
+                    child: Text(
+                      ArabicFormat.number(incomingIncidentsCount),
+                      style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+            ],
+          ),
           IconButton(
             icon: const Icon(Icons.task_alt_outlined),
             tooltip: 'الأعمال المنجزة',
