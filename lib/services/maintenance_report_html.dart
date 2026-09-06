@@ -54,7 +54,7 @@ String buildMaintenanceReportHtml(MaintenanceReport report) {
   <div style="font-size:15px; font-weight:700; margin:8px 0 4px;">بيانات البلاغ</div>
   <div>
     ${row('الموقع / الخط', report.line)}
-    ${row('المعدة', report.equipment)}
+    ${row('المعدة', report.equipmentCode != null && report.equipmentCode!.isNotEmpty ? '${report.equipment} (${report.equipmentCode})' : report.equipment)}
     ${row('رافع البلاغ', report.reportedBy)}
     ${row('تاريخ ووقت الرفع', ArabicFormat.dateTime(report.reportedAt))}
     ${report.assignedAt != null ? row('تاريخ التعيين', ArabicFormat.dateTime(report.assignedAt!)) : ''}
