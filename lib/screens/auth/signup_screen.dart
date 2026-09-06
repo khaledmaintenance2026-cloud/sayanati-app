@@ -30,7 +30,10 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   bool get _canSubmit =>
-      _nameCtrl.text.trim().isNotEmpty && _emailCtrl.text.trim().isNotEmpty && _passCtrl.text.length >= 6;
+      _nameCtrl.text.trim().isNotEmpty &&
+      _emailCtrl.text.trim().isNotEmpty &&
+      _phoneCtrl.text.trim().isNotEmpty &&
+      _passCtrl.text.length >= 6;
 
   Future<void> _submit() async {
     if (!_canSubmit) return;
@@ -71,7 +74,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     decoration: _decoration(hint: 'name@example.com'),
                   ),
                   const SizedBox(height: 14),
-                  const _FieldLabel('رقم الجوال (اختياري)'),
+                  const _FieldLabel('رقم الجوال'),
                   TextField(
                     controller: _phoneCtrl,
                     keyboardType: TextInputType.phone,
@@ -80,7 +83,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'يُستخدم لإرسال إشعارات واتساب موجَّهة لك شخصيًا (مثل نتيجة تصريح سلامة)، يمكنك إضافته لاحقًا أيضًا.',
+                    'إلزامي — يُستخدم لإرسال إشعارات واتساب موجَّهة لك شخصيًا (تعيين بلاغ، إنجازه، نتيجة تصريح سلامة...).',
                     style: TextStyle(fontSize: 11.5, color: AppColors.textMuted, height: 1.5),
                   ),
                   const SizedBox(height: 14),
