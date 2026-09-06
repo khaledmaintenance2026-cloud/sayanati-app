@@ -121,7 +121,7 @@ class _RootNavState extends State<RootNav> {
     final role = context.read<AuthService>().currentUser?.role ?? AppRole.production;
     final keys = <String>['home'];
     if (role == AppRole.admin || isMaintenanceRole(role)) keys.add('maintenance');
-    if (role == AppRole.admin || role == AppRole.production) keys.add('production');
+    if (role == AppRole.admin || isProductionRole(role)) keys.add('production');
     if (role == AppRole.admin || role == AppRole.safety) keys.add('safety');
     if (role == AppRole.admin) keys.add('admin');
     return keys;
