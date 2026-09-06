@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
+import '../models/app_notification.dart';
 import '../models/maintenance_report.dart';
 import '../models/production.dart';
 import '../models/safety_permit.dart';
@@ -53,6 +56,7 @@ class AppState extends ChangeNotifier {
   final List<Technician> technicians = [];
 
   bool _attached = false;
+  Timer? _notificationsTimer;
   bool techniciansLoaded = false;
   String? techniciansError;
 
@@ -66,6 +70,12 @@ class AppState extends ChangeNotifier {
     _loadIncidentsFromCloud();
     _loadBatchesFromCloud();
     _loadWorkOrdersFromCloud();
+    _loadNotificationsFromCloud();
+    // لا توجد إشعارات Push حقيقية بعد — نستطلع (Poll) قائمة الإشعارات كل ٤٥
+    // ثانية طالما المستخدم مسجّل دخوله، حتى يظهر جرس الإشعارات محدَّثًا بلا
+    // حاجة لإعادة فتح الشاشة يدويًا.
+    _notificationsTimer?.cancel();
+    _notificationsTimer = Timer.periodic(const Duration(seconds: 45), (_) => _loadNotificationsFromCloud());
   }
 
   void detachAuth() {
@@ -80,6 +90,10 @@ class AppState extends ChangeNotifier {
     batches.clear();
     workOrdersLoaded = false;
     maintenanceReports.clear();
+    notificationsLoaded = false;
+    notifications.clear();
+    _notificationsTimer?.cancel();
+    _notificationsTimer = null;
   }
 
   Future<void> reloadTechnicians() => _loadTechniciansFromCloud();
@@ -218,7 +232,7 @@ class AppState extends ChangeNotifier {
   Future<MaintenanceReport> createWorkOrder({
     required String facility,
     required String description,
-    required String technicianId,
+    required List<String> technicianIds,
     int? reminderIntervalDays,
     String? equipmentCode,
   }) async {
@@ -230,11 +244,13 @@ class AppState extends ChangeNotifier {
       if (equipmentCode != null && equipmentCode.trim().isNotEmpty) 'equipmentCode': equipmentCode.trim(),
     });
     final workOrderId = (createData['workOrder'] as Map<String, dynamic>)['id'].toString();
-    final assignData = await _api.patch('/work-orders/$workOrderId/assign', {'technicianId': technicianId});
+    final assignData = await _api.patch('/work-orders/$workOrderId/assign', {'technicianIds': technicianIds});
     final order = MaintenanceReport.fromApi(assignData['workOrder'] as Map<String, dynamic>);
 
-    final techIdx = technicians.indexWhere((t) => t.id == technicianId);
-    if (techIdx != -1) technicians[techIdx].available = false;
+    for (final id in technicianIds) {
+      final techIdx = technicians.indexWhere((t) => t.id == id);
+      if (techIdx != -1) technicians[techIdx].available = false;
+    }
 
     maintenanceReports.insert(0, order);
     _log('تم إنشاء أمر عمل وقائي جديد — $facility');
@@ -242,24 +258,34 @@ class AppState extends ChangeNotifier {
     return order;
   }
 
-  Future<void> assignTechnician(String reportId, String technicianId) async {
-    final data = await _api.patch('/work-orders/$reportId/assign', {'technicianId': technicianId});
+  /// تعيين فني واحد أو أكثر لنفس البلاغ — يدعم النظام الآن أكثر من فني لنفس
+  /// أمر العمل (راجع work_order_technicians على السيرفر).
+  Future<void> assignTechnicians(String reportId, List<String> technicianIds) async {
+    final data = await _api.patch('/work-orders/$reportId/assign', {'technicianIds': technicianIds});
     final updated = MaintenanceReport.fromApi(data['workOrder'] as Map<String, dynamic>);
     final i = maintenanceReports.indexWhere((r) => r.id == reportId);
     if (i != -1) maintenanceReports[i] = updated;
-    // السيرفر يحدّث حالة الفني إلى "مشغول" فعليًا ضمن نفس العملية — هذا فقط
+    // السيرفر يحدّث حالة كل فني إلى "مشغول" فعليًا ضمن نفس العملية — هذا فقط
     // تحديث محلي متفائل (Optimistic) ليظهر أثره فورًا بلا انتظار طلب تحميل
     // جديد للفنيين.
-    final techIdx = technicians.indexWhere((t) => t.id == technicianId);
-    if (techIdx != -1) technicians[techIdx].available = false;
-    _log('تم إسناد بلاغ "${updated.equipment}" للفني ${updated.technicianName ?? ''}');
+    for (final id in technicianIds) {
+      final techIdx = technicians.indexWhere((t) => t.id == id);
+      if (techIdx != -1) technicians[techIdx].available = false;
+    }
+    _log('تم إسناد بلاغ "${updated.equipment}" لـ ${updated.technicianDisplayNames}');
     notifyListeners();
   }
 
-  Future<void> closeReport(String reportId, {required String closeDescription, required String partsUsed}) async {
+  Future<void> closeReport(
+    String reportId, {
+    required String closeDescription,
+    required String partsUsed,
+    String? closeNotes,
+  }) async {
     final data = await _api.patch('/work-orders/$reportId/close', {
       'closeDescription': closeDescription,
       'spareParts': partsUsed.trim().isEmpty ? [] : [{'partName': partsUsed.trim()}],
+      if (closeNotes != null && closeNotes.trim().isNotEmpty) 'closeNotes': closeNotes.trim(),
     });
     final updated = MaintenanceReport.fromApi(data['workOrder'] as Map<String, dynamic>);
     // القطع المستخدمة لا تعود ضمن استجابة الإغلاق نفسها (تُحفظ في جدول
@@ -271,9 +297,10 @@ class AppState extends ChangeNotifier {
     final i = maintenanceReports.indexWhere((r) => r.id == reportId);
     if (i != -1) maintenanceReports[i] = updated;
 
-    final assignedTechId = updated.assignedTechnicianIds.isNotEmpty ? updated.assignedTechnicianIds.first : null;
-    final techIdx = assignedTechId == null ? -1 : technicians.indexWhere((t) => t.id == assignedTechId);
-    if (techIdx != -1) technicians[techIdx].available = true;
+    // السيرفر يُعيد كل الفنيين (وليس فنيًا واحدًا فقط) المُسنَد إليهم هذا
+    // البلاغ إلى حالة "متاح" ضمن نفس عملية الإغلاق — نطلب قائمة الفنيين من
+    // جديد بدل تحديث محلي متفائل جزئي قد لا يشمل كل فني عمل على البلاغ.
+    unawaited(reloadTechnicians());
 
     _log('تم إنجاز بلاغ "${updated.equipment}" '
         '(المدة: ${updated.duration != null ? updated.duration!.inMinutes : 0} دقيقة)');
@@ -419,6 +446,9 @@ class AppState extends ChangeNotifier {
     String? operationalNotes,
     String? actionsTaken,
     int? workersCount,
+    String? timeFrom,
+    String? timeTo,
+    String? preventionMethods,
   }) async {
     final data = await _api.post('/production/batches', {
       'lineId': lineId,
@@ -431,6 +461,9 @@ class AppState extends ChangeNotifier {
       if (operationalNotes != null) 'operationalNotes': operationalNotes,
       if (actionsTaken != null) 'actionsTaken': actionsTaken,
       if (workersCount != null) 'workersCount': workersCount,
+      if (timeFrom != null) 'timeFrom': timeFrom,
+      if (timeTo != null) 'timeTo': timeTo,
+      if (preventionMethods != null) 'preventionMethods': preventionMethods,
     });
     final batch = Batch.fromApi(data['batch'] as Map<String, dynamic>);
     batches.insert(0, batch);
@@ -515,11 +548,13 @@ class AppState extends ChangeNotifier {
     String? lineId,
     String? equipmentId,
     required String description,
+    String? severity,
   }) async {
     final data = await _api.post('/production/incidents', {
       if (lineId != null) 'lineId': lineId,
       if (equipmentId != null) 'equipmentId': equipmentId,
       'description': description,
+      if (severity != null) 'severity': severity,
     });
     incidents.insert(0, Incident.fromApi(data['incident'] as Map<String, dynamic>));
     _log('🔔 بلاغ عطل جديد في الإنتاج: $description');
@@ -626,12 +661,71 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------
+  // إشعارات داخل التطبيق — مربوطة بالسيرفر فعليًا عبر /api/notifications
+  // (راجع routes/notifications.js وservices/notifications.js). كل مستخدم
+  // يرى إشعاراته الخاصة فقط. لا توجد إشعارات Push حقيقية بعد، لذا نستطلع
+  // (Poll) هذه القائمة دوريًا (راجع [attachAuth] أعلاه) بدل الاعتماد على
+  // دفعة فورية من السيرفر.
+  // ---------------------------------------------------------------------
+  final List<AppNotification> notifications = [];
+  bool notificationsLoaded = false;
+  String? notificationsError;
+
+  int get unreadNotificationsCount => notifications.where((n) => !n.isRead).length;
+
+  Future<void> reloadNotifications() => _loadNotificationsFromCloud();
+
+  Future<void> _loadNotificationsFromCloud() async {
+    if (!_attached) return;
+    try {
+      final data = await _api.get('/notifications');
+      final list = (data['notifications'] as List).cast<Map<String, dynamic>>();
+      notifications
+        ..clear()
+        ..addAll(list.map(AppNotification.fromApi));
+      notificationsLoaded = true;
+      notificationsError = null;
+      notifyListeners();
+    } catch (e) {
+      // نُبقي القائمة كما كانت (لا نظهر خطأً مزعجًا لمجرد فشل استطلاع دوري
+      // صامت) — الخطأ يظهر فقط لو طلب المستخدم تحديثًا يدويًا صريحًا.
+      notificationsError = 'تعذّر تحميل الإشعارات من السيرفر: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<void> markNotificationRead(String id) async {
+    final i = notifications.indexWhere((n) => n.id == id);
+    if (i == -1 || notifications[i].isRead) return;
+    notifications[i].isRead = true; // تفاؤلي فورًا، قبل تأكيد السيرفر
+    notifyListeners();
+    try {
+      await _api.patch('/notifications/$id/read');
+    } catch (_) {
+      // فشل التحديث على السيرفر لا يستحق إزعاج المستخدم — ستُصحَّح الحالة
+      // تلقائيًا عند الاستطلاع الدوري التالي.
+    }
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    if (unreadNotificationsCount == 0) return;
+    for (final n in notifications) {
+      n.isRead = true;
+    }
+    notifyListeners();
+    try {
+      await _api.patch('/notifications/read-all');
+    } catch (_) {}
+  }
+
+  // ---------------------------------------------------------------------
   void seedAll() {
     seedSafety();
   }
 
   @override
   void dispose() {
+    _notificationsTimer?.cancel();
     detachAuth();
     super.dispose();
   }
