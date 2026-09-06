@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/app_state.dart';
+import '../../services/auth_service.dart';
 import '../../services/constants.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -17,6 +18,7 @@ class _MaintenanceNewReportScreenState extends State<MaintenanceNewReportScreen>
   String _line = kFacilityLocations.first;
   final _equipmentCtrl = TextEditingController(text: 'ماكينة الخلط');
   final _descriptionCtrl = TextEditingController();
+  bool _submitting = false;
 
   final _lines = kFacilityLocations;
 
@@ -27,27 +29,45 @@ class _MaintenanceNewReportScreenState extends State<MaintenanceNewReportScreen>
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (_descriptionCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('وصف العطل إلزامي')),
       );
       return;
     }
-    context.read<AppState>().createReport(
-          equipment: _equipmentCtrl.text.trim(),
-          line: _line,
-          description: _descriptionCtrl.text.trim(),
-          reportedBy: 'محمد — مشرف الإنتاج',
-        );
-    Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم إرسال البلاغ لقسم الصيانة')),
-    );
+    setState(() => _submitting = true);
+    try {
+      await context.read<AppState>().createReport(
+            equipment: _equipmentCtrl.text.trim(),
+            facility: _line,
+            description: _descriptionCtrl.text.trim(),
+          );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم إرسال البلاغ لقسم الصيانة')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذّر إرسال البلاغ: $e')),
+      );
+    }
+  }
+
+  String _initialsOf(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty || parts.first.isEmpty) return '؟';
+    if (parts.length == 1) return parts.first.substring(0, 1);
+    return '${parts[0].substring(0, 1)}.${parts[1].substring(0, 1)}';
   }
 
   @override
   Widget build(BuildContext context) {
+    final currentUser = context.watch<AuthService>().currentUser;
+    final userName = currentUser?.name ?? 'مستخدم';
     return Scaffold(
       appBar: const ScreenTopBar(title: 'بلاغ عطل جديد'),
       body: Padding(
@@ -65,15 +85,15 @@ class _MaintenanceNewReportScreenState extends State<MaintenanceNewReportScreen>
                       border: Border.all(color: AppColors.maintenance.withOpacity(0.16)),
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: const Row(
+                    child: Row(
                       children: [
-                        CircleAvatar(radius: 18, backgroundColor: Color(0x1F2B3487), child: Text('م.ع', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppColors.maintenance))),
-                        SizedBox(width: 10),
+                        CircleAvatar(radius: 18, backgroundColor: const Color(0x1F2B3487), child: Text(_initialsOf(userName), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppColors.maintenance))),
+                        const SizedBox(width: 10),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('محمد — مشرف الإنتاج', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
-                            Text('رافع البلاغ (تلقائيًا من حسابك)', style: TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+                            Text(userName, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
+                            const Text('رافع البلاغ (تلقائيًا من حسابك)', style: TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
                           ],
                         ),
                       ],
@@ -113,7 +133,9 @@ class _MaintenanceNewReportScreenState extends State<MaintenanceNewReportScreen>
               ),
             ),
             const SizedBox(height: 14),
-            PrimaryButton(label: 'إرسال البلاغ', color: AppColors.maintenance, icon: Icons.send, onPressed: _submit),
+            _submitting
+                ? const Center(child: Padding(padding: EdgeInsets.all(10), child: CircularProgressIndicator(color: AppColors.maintenance)))
+                : PrimaryButton(label: 'إرسال البلاغ', color: AppColors.maintenance, icon: Icons.send, onPressed: _submit),
           ],
         ),
       ),
