@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import 'api_client.dart';
 
@@ -126,7 +127,18 @@ class AppUser {
       );
 }
 
-enum AuthStatus { loading, signedOut, pendingApproval, signedIn }
+/// needsPhone: حساب سُجّل دخوله بنجاح (عادةً عبر جوجل) لكنه بلا رقم جوال —
+/// إلزامي الآن لكل حساب (راجع مسار التسجيل العادي) — يُطلب مباشرة قبل أي شيء
+/// آخر، بما في ذلك قبل شاشة "بانتظار الاعتماد" لو كان الحساب جديدًا كليًا.
+enum AuthStatus { loading, signedOut, needsPhone, pendingApproval, signedIn }
+
+/// يحسم حالة الجلسة التالية بناءً على بيانات المستخدم نفسها: رقم الجوال أولًا
+/// (إلزامي لإكمال أي شيء)، ثم حالة الاعتماد. دالة واحدة مشتركة بدل تكرار
+/// المنطق نفسه في كل مكان (تسجيل الدخول، التسجيل، جوجل، استرجاع الجلسة).
+AuthStatus _statusFor(AppUser user) {
+  if (user.phone == null || user.phone!.trim().isEmpty) return AuthStatus.needsPhone;
+  return user.approved ? AuthStatus.signedIn : AuthStatus.pendingApproval;
+}
 
 /// خدمة الدخول/الجلسة — تتحدث الآن مع سيرفر صيانتي المحلي (Node.js +
 /// PostgreSQL) عبر [ApiClient] بدل Firebase Authentication + Cloud Firestore.
@@ -155,7 +167,7 @@ class AuthService extends ChangeNotifier {
     try {
       final data = await _api.get('/auth/me');
       currentUser = AppUser.fromApi(data['user'] as Map<String, dynamic>);
-      status = currentUser!.approved ? AuthStatus.signedIn : AuthStatus.pendingApproval;
+      status = _statusFor(currentUser!);
     } catch (e) {
       // الرمز المحفوظ لم يعد صالحًا (انتهت صلاحيته، أو أُلغي اعتماد الحساب
       // وحُذف) — وليس بالضرورة خطأ شبكة عابر؛ في حالة تعذّر الاتصال نُبقي
@@ -184,7 +196,7 @@ class AuthService extends ChangeNotifier {
       });
       await _api.setToken(data['token'] as String);
       currentUser = AppUser.fromApi(data['user'] as Map<String, dynamic>);
-      status = currentUser!.approved ? AuthStatus.signedIn : AuthStatus.pendingApproval;
+      status = _statusFor(currentUser!);
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -205,7 +217,95 @@ class AuthService extends ChangeNotifier {
       });
       await _api.setToken(data['token'] as String);
       currentUser = AppUser.fromApi(data['user'] as Map<String, dynamic>);
-      status = currentUser!.approved ? AuthStatus.signedIn : AuthStatus.pendingApproval;
+      status = _statusFor(currentUser!);
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      lastError = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  String? _googleClientId;
+  bool _googleConfigLoaded = false;
+
+  /// يجلب معرّف عميل جوجل من السيرفر (site_settings) مرة واحدة فقط لكل جلسة
+  /// تطبيق، ويخزّنه محليًا — لو تعذّر الوصول للسيرفر أو لم يُضبط المعرّف بعد
+  /// يبقى null، ونتعامل مع ذلك كـ"تسجيل الدخول عبر جوجل غير مفعَّل" بدل خطأ.
+  Future<String?> _fetchGoogleClientId() async {
+    if (_googleConfigLoaded) return _googleClientId;
+    try {
+      final data = await _api.get('/auth/google-config');
+      _googleClientId = data['clientId'] as String?;
+    } catch (_) {
+      _googleClientId = null;
+    }
+    _googleConfigLoaded = true;
+    return _googleClientId;
+  }
+
+  /// تستخدمها شاشة الدخول لتقرير إظهار زر جوجل أو إخفاءه تمامًا — إخفاؤه
+  /// أفضل من زر يفشل دائمًا لو لم يُضبط معرّف العميل على السيرفر بعد.
+  Future<bool> googleSignInAvailable() async => (await _fetchGoogleClientId()) != null;
+
+  /// يسجّل الدخول عبر جوجل (أو ينشئ حسابًا جديدًا بنفس دورة الاعتماد
+  /// المعتادة لو كانت أول مرة) — يرجع true عند النجاح (حتى لو احتاج المستخدم
+  /// بعدها إدخال رقم جواله، راجع [AuthStatus.needsPhone])، أو false مع تفصيل
+  /// السبب في [lastError] عند الفشل، أو false بصمت لو أغلق المستخدم نافذة
+  /// اختيار الحساب بنفسه (ليس خطأ يستدعي رسالة).
+  Future<bool> signInWithGoogle() async {
+    lastError = null;
+    try {
+      final clientId = await _fetchGoogleClientId();
+      if (clientId == null) {
+        lastError = 'تسجيل الدخول عبر جوجل غير مُفعَّل على السيرفر بعد';
+        notifyListeners();
+        return false;
+      }
+
+      final googleSignIn = GoogleSignIn(scopes: const ['email'], serverClientId: clientId);
+      final account = await googleSignIn.signIn();
+      if (account == null) return false; // المستخدم أغلق نافذة الاختيار بنفسه
+
+      final googleAuth = await account.authentication;
+      final idToken = googleAuth.idToken;
+      if (idToken == null) {
+        lastError = 'تعذّر الحصول على بيانات حساب جوجل، حاول مرة أخرى';
+        notifyListeners();
+        return false;
+      }
+
+      final data = await _api.post('/auth/google', {'idToken': idToken});
+      await _api.setToken(data['token'] as String);
+      currentUser = AppUser.fromApi(data['user'] as Map<String, dynamic>);
+      status = _statusFor(currentUser!);
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      lastError = e.message;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      lastError = 'تعذّر تسجيل الدخول عبر جوجل، حاول مرة أخرى';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// يُستدعى من شاشة "استكمال البيانات" التي تظهر إلزاميًا حين تكون الحالة
+  /// [AuthStatus.needsPhone] (حساب جوجل جديد بلا رقم جوال بعد).
+  Future<bool> submitPhone(String phone) async {
+    if (phone.trim().isEmpty) {
+      lastError = 'رقم الجوال إلزامي';
+      notifyListeners();
+      return false;
+    }
+    lastError = null;
+    try {
+      final data = await _api.patch('/auth/phone', {'phone': phone.trim()});
+      currentUser = AppUser.fromApi(data['user'] as Map<String, dynamic>);
+      status = _statusFor(currentUser!);
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -222,7 +322,7 @@ class AuthService extends ChangeNotifier {
     try {
       final data = await _api.get('/auth/me');
       currentUser = AppUser.fromApi(data['user'] as Map<String, dynamic>);
-      status = currentUser!.approved ? AuthStatus.signedIn : AuthStatus.pendingApproval;
+      status = _statusFor(currentUser!);
       notifyListeners();
     } on ApiException catch (e) {
       // لو رفض السيرفر الرمز (401) فهذا يعني إلغاء الحساب أو حذفه من قِبل
