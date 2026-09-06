@@ -21,6 +21,7 @@ class _MaintenanceTaskCloseScreenState extends State<MaintenanceTaskCloseScreen>
   final _partsCtrl = TextEditingController();
   Timer? _ticker;
   Duration _elapsed = Duration.zero;
+  bool _submitting = false;
 
   @override
   void initState() {
@@ -42,19 +43,29 @@ class _MaintenanceTaskCloseScreenState extends State<MaintenanceTaskCloseScreen>
     super.dispose();
   }
 
-  bool get _canClose => _descCtrl.text.trim().isNotEmpty && _partsCtrl.text.trim().isNotEmpty;
+  bool get _canClose => !_submitting && _descCtrl.text.trim().isNotEmpty && _partsCtrl.text.trim().isNotEmpty;
 
-  void _close() {
+  Future<void> _close() async {
     if (!_canClose) return;
-    context.read<AppState>().closeReport(
-          widget.report.id,
-          closeDescription: _descCtrl.text.trim(),
-          partsUsed: _partsCtrl.text.trim(),
-        );
-    Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم إنجاز البلاغ نهائيًا — وصل إشعار لقسم الإنتاج')),
-    );
+    setState(() => _submitting = true);
+    try {
+      await context.read<AppState>().closeReport(
+            widget.report.id,
+            closeDescription: _descCtrl.text.trim(),
+            partsUsed: _partsCtrl.text.trim(),
+          );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم إنجاز البلاغ نهائيًا')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذّر إنجاز البلاغ: $e')),
+      );
+    }
   }
 
   @override
@@ -130,7 +141,7 @@ class _MaintenanceTaskCloseScreenState extends State<MaintenanceTaskCloseScreen>
                   ),
                   const SizedBox(height: 16),
                   const InfoNote(
-                    text: 'الإنجاز نهائي فور الضغط على الزر — بدون حاجة لاعتماد إضافي، وسيصل إشعار لقسم الإنتاج',
+                    text: 'الإنجاز نهائي فور الضغط على الزر — بدون حاجة لاعتماد إضافي',
                     color: AppColors.successText,
                     icon: Icons.check_circle_outline,
                   ),
@@ -138,12 +149,14 @@ class _MaintenanceTaskCloseScreenState extends State<MaintenanceTaskCloseScreen>
               ),
             ),
             const SizedBox(height: 14),
-            PrimaryButton(
-              label: 'إنجاز',
-              color: _canClose ? AppColors.successText : AppColors.textFaint,
-              icon: Icons.check,
-              onPressed: _canClose ? _close : null,
-            ),
+            _submitting
+                ? const Center(child: Padding(padding: EdgeInsets.all(10), child: CircularProgressIndicator(color: AppColors.successText)))
+                : PrimaryButton(
+                    label: 'إنجاز',
+                    color: _canClose ? AppColors.successText : AppColors.textFaint,
+                    icon: Icons.check,
+                    onPressed: _canClose ? _close : null,
+                  ),
           ],
         ),
       ),
