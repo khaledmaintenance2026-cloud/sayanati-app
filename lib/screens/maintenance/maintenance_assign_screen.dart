@@ -16,13 +16,16 @@ class MaintenanceAssignScreen extends StatefulWidget {
 }
 
 class _MaintenanceAssignScreenState extends State<MaintenanceAssignScreen> {
-  String? _selectedId;
+  // يدعم النظام الآن تعيين أكثر من فني لنفس البلاغ — راجع
+  // work_order_technicians على السيرفر وservices/notifications.js حيث تصل
+  // رسالة واتساب الإنجاز بأسماء كل الفنيين معًا.
+  final Set<String> _selectedIds = {};
   bool _submitting = false;
 
-  Future<void> _assign(String technicianId) async {
+  Future<void> _assign() async {
     setState(() => _submitting = true);
     try {
-      await context.read<AppState>().assignTechnician(widget.report.id, technicianId);
+      await context.read<AppState>().assignTechnicians(widget.report.id, _selectedIds.toList());
       if (!mounted) return;
       Navigator.of(context).pop();
     } catch (e) {
@@ -37,7 +40,10 @@ class _MaintenanceAssignScreenState extends State<MaintenanceAssignScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final selected = _selectedId != null ? state.technicians.firstWhere((t) => t.id == _selectedId) : null;
+    final selectedNames = state.technicians
+        .where((t) => _selectedIds.contains(t.id))
+        .map((t) => t.name)
+        .join('، ');
 
     return Scaffold(
       appBar: const ScreenTopBar(title: 'تعيين فني'),
@@ -73,7 +79,10 @@ class _MaintenanceAssignScreenState extends State<MaintenanceAssignScreen> {
               ),
             ),
             const SizedBox(height: 18),
-            const Align(alignment: Alignment.centerRight, child: Text('اختر فنيًا متاحًا', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600))),
+            const Align(
+              alignment: Alignment.centerRight,
+              child: Text('اختر فنيًا واحدًا أو أكثر متاحًا', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            ),
             const SizedBox(height: 10),
             Expanded(
               child: ListView.separated(
@@ -81,11 +90,19 @@ class _MaintenanceAssignScreenState extends State<MaintenanceAssignScreen> {
                 separatorBuilder: (_, __) => const SizedBox(height: 10),
                 itemBuilder: (context, i) {
                   final tech = state.technicians[i];
-                  final isSelected = tech.id == _selectedId;
+                  final isSelected = _selectedIds.contains(tech.id);
                   return _TechnicianTile(
                     technician: tech,
                     selected: isSelected,
-                    onTap: tech.available ? () => setState(() => _selectedId = tech.id) : null,
+                    onTap: tech.available
+                        ? () => setState(() {
+                              if (isSelected) {
+                                _selectedIds.remove(tech.id);
+                              } else {
+                                _selectedIds.add(tech.id);
+                              }
+                            })
+                        : null,
                   );
                 },
               ),
@@ -94,9 +111,9 @@ class _MaintenanceAssignScreenState extends State<MaintenanceAssignScreen> {
             _submitting
                 ? const Center(child: Padding(padding: EdgeInsets.all(10), child: CircularProgressIndicator(color: AppColors.maintenance)))
                 : PrimaryButton(
-                    label: selected != null ? 'تعيين البلاغ لـ ${selected.name}' : 'اختر فنيًا للمتابعة',
+                    label: selectedNames.isNotEmpty ? 'تعيين البلاغ لـ $selectedNames' : 'اختر فنيًا للمتابعة',
                     color: AppColors.maintenance,
-                    onPressed: selected == null ? null : () => _assign(selected.id),
+                    onPressed: _selectedIds.isEmpty ? null : _assign,
                   ),
           ],
         ),
