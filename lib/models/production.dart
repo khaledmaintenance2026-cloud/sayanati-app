@@ -44,6 +44,10 @@ class Batch {
   /// وجود توقف. تظهر في رسالة واتساب كـ"Avoidance methods".
   final String? preventionMethods;
 
+  /// وقت الإدخال الحقيقي في النظام — لا يتغيّر أبدًا حتى لو عُدِّل [date]
+  /// لاحقًا. يُستخدم فقط للمقارنة/العرض التقني، لا في أي واجهة عادية.
+  final DateTime recordedAt;
+
   Batch({
     required this.id,
     required this.lineId,
@@ -61,17 +65,20 @@ class Batch {
     this.timeFrom,
     this.timeTo,
     this.preventionMethods,
-  });
+    DateTime? recordedAt,
+  }) : recordedAt = recordedAt ?? date;
 
   /// يبني باتشًا من استجابة سيرفر صيانتي المحلي (جدول production_batches) —
-  /// كانت الباتشات محلية فقط على جهاز المشرف قبل هذا التحديث.
+  /// كانت الباتشات محلية فقط على جهاز المشرف قبل هذا التحديث. [date] هو
+  /// occurred_at (التاريخ "الفعلي" — قد يكون سابقًا لو سُجِّل الباتش متأخرًا)
+  /// لا created_at (وقت الإدخال الحقيقي، محفوظ في [recordedAt] فقط).
   factory Batch.fromApi(Map<String, dynamic> d) => Batch(
         id: d['id'].toString(),
         lineId: d['line_id'].toString(),
         batchNumber: (d['batch_number'] as String?) ?? '',
         productName: (d['product_name'] as String?) ?? '',
         quantity: ((d['quantity'] as num?) ?? 0).round(),
-        date: DateTime.tryParse(d['created_at']?.toString() ?? '') ?? DateTime.now(),
+        date: DateTime.tryParse((d['occurred_at'] ?? d['created_at'])?.toString() ?? '') ?? DateTime.now(),
         hasStoppage: (d['has_stoppage'] as bool?) ?? false,
         stoppageReason: d['stoppage_reason'] as String?,
         stoppageMinutes: (d['stoppage_minutes'] as num?)?.round(),
@@ -82,6 +89,7 @@ class Batch {
         timeFrom: d['time_from'] as String?,
         timeTo: d['time_to'] as String?,
         preventionMethods: d['prevention_methods'] as String?,
+        recordedAt: DateTime.tryParse(d['created_at']?.toString() ?? ''),
       );
 }
 
