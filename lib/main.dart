@@ -5,6 +5,7 @@ import 'services/app_state.dart';
 import 'services/auth_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/auth/login_screen.dart';
+import 'screens/auth/complete_phone_screen.dart';
 import 'screens/auth/pending_approval_screen.dart';
 import 'screens/auth/welcome_screen.dart';
 import 'screens/home/home_screen.dart';
@@ -91,6 +92,8 @@ class _AuthGateState extends State<AuthGate> {
           return WelcomeScreen(onContinue: () => setState(() => _welcomeShown = true));
         }
         return const LoginScreen();
+      case AuthStatus.needsPhone:
+        return const CompletePhoneScreen();
       case AuthStatus.pendingApproval:
         return const PendingApprovalScreen();
       case AuthStatus.signedIn:
