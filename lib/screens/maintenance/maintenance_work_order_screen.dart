@@ -19,7 +19,8 @@ class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen>
   String _line = kFacilityLocations.first;
   final _descCtrl = TextEditingController();
   final _reminderCtrl = TextEditingController(text: '30');
-  final Set<String> _selectedTechIds = {};
+  String? _selectedTechId;
+  bool _submitting = false;
 
   final _lines = kFacilityLocations;
 
@@ -30,10 +31,33 @@ class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen>
     super.dispose();
   }
 
+  Future<void> _submit() async {
+    setState(() => _submitting = true);
+    try {
+      await context.read<AppState>().createWorkOrder(
+            facility: _line,
+            description: _descCtrl.text.trim(),
+            technicianId: _selectedTechId!,
+            reminderIntervalDays: int.tryParse(_reminderCtrl.text.trim()),
+          );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم إنشاء أمر العمل الوقائي')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذّر إنشاء أمر العمل: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final canSubmit = _descCtrl.text.trim().isNotEmpty && _selectedTechIds.isNotEmpty;
+    final canSubmit = !_submitting && _descCtrl.text.trim().isNotEmpty && _selectedTechId != null;
 
     return Scaffold(
       appBar: const ScreenTopBar(title: 'أمر عمل وقائي جديد'),
@@ -64,13 +88,13 @@ class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen>
                     decoration: _decoration(hint: 'مثال: فحص وتشحيم لوحة الكهرباء الدورية'),
                   ),
                   const SizedBox(height: 14),
-                  const Text('الفني أو الفنيون (يمكن اختيار أكثر من واحد)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                  const Text('الفني المسؤول', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: state.technicians.map((t) {
-                      final selected = _selectedTechIds.contains(t.id);
+                      final selected = _selectedTechId == t.id;
                       return FilterChip(
                         label: Text(t.name),
                         selected: selected,
@@ -78,7 +102,7 @@ class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen>
                         checkmarkColor: AppColors.maintenance,
                         labelStyle: TextStyle(color: selected ? AppColors.maintenance : AppColors.textSecondary, fontWeight: FontWeight.w600, fontSize: 12.5),
                         side: BorderSide(color: selected ? AppColors.maintenance : AppColors.border),
-                        onSelected: (v) => setState(() => v ? _selectedTechIds.add(t.id) : _selectedTechIds.remove(t.id)),
+                        onSelected: (v) => setState(() => _selectedTechId = v ? t.id : null),
                       );
                     }).toList(),
                   ),
@@ -100,24 +124,14 @@ class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen>
               ),
             ),
             const SizedBox(height: 14),
-            PrimaryButton(
-              label: 'إنشاء أمر العمل',
-              color: canSubmit ? AppColors.maintenance : AppColors.textFaint,
-              onPressed: canSubmit
-                  ? () {
-                      context.read<AppState>().createWorkOrder(
-                            line: _line,
-                            description: _descCtrl.text.trim(),
-                            technicianIds: _selectedTechIds.toList(),
-                            reminderIntervalDays: int.tryParse(_reminderCtrl.text.trim()),
-                          );
-                      Navigator.of(context).pop();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('تم إنشاء أمر العمل الوقائي')),
-                      );
-                    }
-                  : null,
-            ),
+            if (_submitting)
+              const Center(child: Padding(padding: EdgeInsets.all(10), child: CircularProgressIndicator(color: AppColors.maintenance)))
+            else
+              PrimaryButton(
+                label: 'إنشاء أمر العمل',
+                color: canSubmit ? AppColors.maintenance : AppColors.textFaint,
+                onPressed: canSubmit ? _submit : null,
+              ),
           ],
         ),
       ),
