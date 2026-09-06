@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/app_notification.dart';
+import '../models/batch_edit.dart';
 import '../models/maintenance_report.dart';
 import '../models/production.dart';
 import '../models/safety_permit.dart';
@@ -449,6 +450,7 @@ class AppState extends ChangeNotifier {
     String? timeFrom,
     String? timeTo,
     String? preventionMethods,
+    DateTime? occurredAt,
   }) async {
     final data = await _api.post('/production/batches', {
       'lineId': lineId,
@@ -464,6 +466,7 @@ class AppState extends ChangeNotifier {
       if (timeFrom != null) 'timeFrom': timeFrom,
       if (timeTo != null) 'timeTo': timeTo,
       if (preventionMethods != null) 'preventionMethods': preventionMethods,
+      if (occurredAt != null) 'occurredAt': occurredAt.toIso8601String(),
     });
     final batch = Batch.fromApi(data['batch'] as Map<String, dynamic>);
     batches.insert(0, batch);
@@ -476,6 +479,62 @@ class AppState extends ChangeNotifier {
     await _api.delete('/production/batches/$id');
     batches.removeWhere((b) => b.id == id);
     notifyListeners();
+  }
+
+  /// تعديل باتش قديم — صلاحية "مسؤول إنتاج" أو مدير النظام فقط على السيرفر
+  /// (راجع canManageBatches في auth_service.dart للتحقق في الواجهة قبل حتى
+  /// إظهار زر التعديل). يُرسَل فقط الحقول التي فعلاً تغيّرت لتقليل حجم سجل
+  /// التعديلات على السيرفر (production_batch_edits).
+  Future<Batch> editBatchCloud(
+    String id, {
+    String? lineId,
+    String? batchNumber,
+    String? productName,
+    int? quantity,
+    bool? hasStoppage,
+    String? stoppageReason,
+    int? stoppageMinutes,
+    String? operationalNotes,
+    String? actionsTaken,
+    int? workersCount,
+    String? timeFrom,
+    String? timeTo,
+    String? preventionMethods,
+    DateTime? occurredAt,
+  }) async {
+    final data = await _api.patch('/production/batches/$id', {
+      if (lineId != null) 'lineId': lineId,
+      if (batchNumber != null) 'batchNumber': batchNumber,
+      if (productName != null) 'productName': productName,
+      if (quantity != null) 'quantity': quantity,
+      if (hasStoppage != null) 'hasStoppage': hasStoppage,
+      if (stoppageReason != null) 'stoppageReason': stoppageReason,
+      if (stoppageMinutes != null) 'stoppageMinutes': stoppageMinutes,
+      if (operationalNotes != null) 'operationalNotes': operationalNotes,
+      if (actionsTaken != null) 'actionsTaken': actionsTaken,
+      if (workersCount != null) 'workersCount': workersCount,
+      if (timeFrom != null) 'timeFrom': timeFrom,
+      if (timeTo != null) 'timeTo': timeTo,
+      if (preventionMethods != null) 'preventionMethods': preventionMethods,
+      if (occurredAt != null) 'occurredAt': occurredAt.toIso8601String(),
+    });
+    final batch = Batch.fromApi(data['batch'] as Map<String, dynamic>);
+    final index = batches.indexWhere((b) => b.id == id);
+    if (index >= 0) {
+      batches[index] = batch;
+    } else {
+      batches.insert(0, batch);
+    }
+    notifyListeners();
+    return batch;
+  }
+
+  /// سجل تعديلات باتش معيّن (الأحدث أولًا) — يُحمَّل عند الطلب فقط (مثلاً عند
+  /// فتح تفاصيل الباتش)، وليس ضمن التحميل العام كبقية القوائم.
+  Future<List<BatchEdit>> loadBatchEdits(String batchId) async {
+    final data = await _api.get('/production/batches/$batchId/edits');
+    final list = (data['edits'] as List).cast<Map<String, dynamic>>();
+    return list.map(BatchEdit.fromApi).toList();
   }
 
   /// طلب تقرير إنتاج بمدة مخصّصة — يُنشئ السيرفر ملف تقرير HTML لباتشات
@@ -515,6 +574,22 @@ class AppState extends ChangeNotifier {
   List<Batch> batchesByFacility(String facility) {
     final lineIds = linesByFacility(facility).map((l) => l.id).toSet();
     return batches.where((b) => lineIds.contains(b.lineId) && _isToday(b.date)).toList();
+  }
+
+  /// كل الباتشات (بلا قيد "اليوم") على خطوط قسم/مصنع معيّن ضمن مدة زمنية
+  /// اختيارية — [b.date] هو occurred_at، فيظهر باتش سُجِّل اليوم بتاريخ أمس
+  /// ضمن نطاق أمس لا اليوم. تُستخدم لعرض/تعديل الباتشات القديمة (خلافًا عن
+  /// [batchesByFacility] المخصصة لعرض "اليوم" السريع فقط)، الأحدث تاريخًا أولًا.
+  List<Batch> batchesInRange(String facility, {DateTime? from, DateTime? to}) {
+    final lineIds = linesByFacility(facility).map((l) => l.id).toSet();
+    final list = batches.where((b) {
+      if (!lineIds.contains(b.lineId)) return false;
+      if (from != null && b.date.isBefore(from)) return false;
+      if (to != null && b.date.isAfter(to)) return false;
+      return true;
+    }).toList();
+    list.sort((a, b) => b.date.compareTo(a.date));
+    return list;
   }
 
   // ---------------------------------------------------------------------
