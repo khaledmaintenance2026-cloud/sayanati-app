@@ -18,6 +18,7 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> w
   final _batchNumberCtrl = TextEditingController();
   final _productCtrl = TextEditingController();
   final _qtyCtrl = TextEditingController();
+  final _workersCtrl = TextEditingController();
   final _reasonCtrl = TextEditingController();
   final _minutesCtrl = TextEditingController();
   final _operationalNotesCtrl = TextEditingController();
@@ -38,6 +39,7 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> w
     _batchNumberCtrl.dispose();
     _productCtrl.dispose();
     _qtyCtrl.dispose();
+    _workersCtrl.dispose();
     _reasonCtrl.dispose();
     _minutesCtrl.dispose();
     _operationalNotesCtrl.dispose();
@@ -48,8 +50,10 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> w
   bool get _canSubmit {
     if (_submitting) return false;
     final qty = int.tryParse(_qtyCtrl.text.trim());
+    final workers = int.tryParse(_workersCtrl.text.trim());
     if (_batchNumberCtrl.text.trim().isEmpty) return false;
     if (_productCtrl.text.trim().isEmpty || qty == null || qty <= 0) return false;
+    if (workers == null || workers <= 0) return false;
     if (_hasStoppage && _reasonCtrl.text.trim().isEmpty) return false;
     return true;
   }
@@ -70,6 +74,7 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> w
             actionsTaken: _hasStoppage && _actionsTakenCtrl.text.trim().isNotEmpty
                 ? _actionsTakenCtrl.text.trim()
                 : null,
+            workersCount: int.tryParse(_workersCtrl.text.trim()),
           );
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -125,6 +130,14 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> w
                         controller: _qtyCtrl,
                         keyboardType: TextInputType.number,
                         decoration: _decoration(hint: 'مثال: 310'),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 14),
+                      const _Label('عدد العمال'),
+                      TextField(
+                        controller: _workersCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: _decoration(hint: 'مثال: 12'),
                         onChanged: (_) => setState(() {}),
                       ),
                       const SizedBox(height: 18),
