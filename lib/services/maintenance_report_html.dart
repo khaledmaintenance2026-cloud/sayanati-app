@@ -6,9 +6,7 @@ import 'arabic_format.dart';
 /// محرك عرض النظام نفسه، فتُخرج النص العربي بشكل سليم دون أي إعداد إضافي).
 String buildMaintenanceReportHtml(MaintenanceReport report) {
   final duration = report.duration;
-  final techLine = report.assignedTechnicianIds.isEmpty
-      ? '—'
-      : report.assignedTechnicianIds.join('، ');
+  final techLine = report.technicianName ?? (report.assignedTechnicianIds.isEmpty ? '—' : 'فني #${report.assignedTechnicianIds.first}');
 
   String row(String label, String value, {bool bold = false}) => '''
     <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid #EDEFF2;">
@@ -33,7 +31,7 @@ String buildMaintenanceReportHtml(MaintenanceReport report) {
   <div style="display:flex; align-items:flex-start; justify-content:space-between; padding-bottom:20px; border-bottom:2px solid #2B3487;">
     <div style="display:flex; flex-direction:column; gap:6px;">
       <div style="font-size:22px; font-weight:700; color:#2B3487;">تقرير بلاغ صيانة</div>
-      <div style="font-size:14px; color:#5C6673;">رقم البلاغ: ${report.id.substring(0, 8)}</div>
+      <div style="font-size:14px; color:#5C6673;">رقم البلاغ: #${report.id}</div>
     </div>
     <div style="text-align:left; font-size:12.5px; color:#8892A0;">صيانتي — إدارة الصيانة والإنتاج والسلامة</div>
   </div>
