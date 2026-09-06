@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/production.dart';
 import '../../services/app_state.dart';
+import '../../services/arabic_format.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
@@ -26,6 +27,11 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> w
   final _preventionMethodsCtrl = TextEditingController();
   TimeOfDay? _timeFrom;
   TimeOfDay? _timeTo;
+
+  /// تاريخ الباتش "الفعلي" — افتراضيًا اليوم (نفس السلوك السابق تمامًا)، مع
+  /// إمكانية اختيار تاريخ سابق لتسجيل باتش نُسي تسجيله في وقته — بلا حد على
+  /// القدم. راجع occurred_at في routes/production.js على السيرفر.
+  DateTime _occurredDate = DateTime.now();
   bool _hasStoppage = false;
   bool _submitting = false;
   late final TabController _tabController;
@@ -55,6 +61,17 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> w
   String? _timeOfDayToString(TimeOfDay? t) {
     if (t == null) return null;
     return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:00';
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _occurredDate,
+      // بلا حد على القدم — أقدم تاريخ ممكن اختياره بعيد جدًا عمدًا.
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) setState(() => _occurredDate = picked);
   }
 
   Future<void> _pickTime(bool isFrom) async {
@@ -87,11 +104,21 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> w
   Future<void> _submit() async {
     setState(() => _submitting = true);
     try {
+      final now = DateTime.now();
+      final occurredAt = DateTime(
+        _occurredDate.year,
+        _occurredDate.month,
+        _occurredDate.day,
+        now.hour,
+        now.minute,
+        now.second,
+      );
       await context.read<AppState>().recordBatchCloud(
             lineId: widget.line.id,
             batchNumber: _batchNumberCtrl.text.trim(),
             productName: _productCtrl.text.trim(),
             quantity: int.parse(_qtyCtrl.text.trim()),
+            occurredAt: occurredAt,
             hasStoppage: _hasStoppage,
             stoppageReason: _hasStoppage ? _reasonCtrl.text.trim() : null,
             stoppageMinutes: _hasStoppage ? int.tryParse(_minutesCtrl.text.trim()) : null,
@@ -146,6 +173,19 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> w
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
                   child: ListView(
                     children: [
+                      const _Label('تاريخ الباتش'),
+                      OutlinedButton.icon(
+                        onPressed: _pickDate,
+                        icon: const Icon(Icons.event_outlined, size: 18),
+                        label: Text(ArabicFormat.date(_occurredDate)),
+                        style: OutlinedButton.styleFrom(alignment: Alignment.centerRight),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'افتراضيًا اليوم — غيّره فقط لو تسجّل باتشًا نُسي تسجيله في وقته.',
+                        style: TextStyle(fontSize: 11.5, color: AppColors.textMuted, height: 1.5),
+                      ),
+                      const SizedBox(height: 14),
                       const _Label('رقم الباتش'),
                       TextField(
                         controller: _batchNumberCtrl,
