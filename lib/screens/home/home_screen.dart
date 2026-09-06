@@ -22,7 +22,7 @@ class HomeScreen extends StatelessWidget {
     final pendingPermits = state.permits.where((p) => p.status.name == 'pending').length;
 
     final showMaintenance = role == AppRole.admin || isMaintenanceRole(role);
-    final showProduction = role == AppRole.admin || role == AppRole.production;
+    final showProduction = role == AppRole.admin || isProductionRole(role);
     final showSafety = role == AppRole.admin || role == AppRole.safety;
 
     return SafeArea(
