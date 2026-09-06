@@ -14,9 +14,23 @@ import 'api_client.dart';
 /// المسمّى الظاهر عند الاعتماد وفي بطاقة المستخدم؛ استخدم [isMaintenanceRole]
 /// بدل مقارنة الدور مباشرة عند التحقق من "هل هذا مستخدم صيانة؟" بغض النظر
 /// عن أيهما تحديدًا.
-enum AppRole { admin, maintenanceTechnician, maintenanceManager, production, safety }
+///
+/// "مسؤول إنتاج" (productionManager) دور مختلف عن ذلك: لا يرى شيئًا إضافيًا
+/// في قسم الإنتاج، لكنه الوحيد (مع مدير النظام) القادر على تعديل أو حذف
+/// باتش بعد تسجيله — راجع [canManageBatches] بدل مقارنة الدور مباشرة.
+enum AppRole { admin, maintenanceTechnician, maintenanceManager, production, productionManager, safety }
 
 bool isMaintenanceRole(AppRole r) => r == AppRole.maintenanceTechnician || r == AppRole.maintenanceManager;
+
+/// هل هذا مستخدم إنتاج (عادي أو مسؤول)؟ استخدمها بدل مقارنة
+/// `role == AppRole.production` مباشرة في أي مكان يتعلق بقسم الإنتاج عمومًا
+/// (رؤية القسم، تقييد المصنع) — لا في التحقق من صلاحية تعديل/حذف الباتش
+/// تحديدًا (استخدم [canManageBatches] لتلك الحالة).
+bool isProductionRole(AppRole r) => r == AppRole.production || r == AppRole.productionManager;
+
+/// هل يملك هذا الدور صلاحية تعديل/حذف باتش إنتاج قديم؟ (مدير النظام أو
+/// مسؤول إنتاج فقط — راجع PATCH/DELETE /api/production/batches/:id).
+bool canManageBatches(AppRole r) => r == AppRole.admin || r == AppRole.productionManager;
 
 AppRole roleFromString(String? s) {
   switch (s) {
@@ -32,6 +46,8 @@ AppRole roleFromString(String? s) {
       return AppRole.maintenanceManager;
     case 'production':
       return AppRole.production;
+    case 'production_manager':
+      return AppRole.productionManager;
     case 'safety':
       return AppRole.safety;
     default:
@@ -45,6 +61,8 @@ String roleToString(AppRole r) {
       return 'maintenance_technician';
     case AppRole.maintenanceManager:
       return 'maintenance_manager';
+    case AppRole.productionManager:
+      return 'production_manager';
     default:
       return r.name;
   }
@@ -60,6 +78,8 @@ String roleLabel(AppRole r) {
       return 'مسؤول صيانة';
     case AppRole.production:
       return 'الإنتاج';
+    case AppRole.productionManager:
+      return 'مسؤول إنتاج';
     case AppRole.safety:
       return 'السلامة';
   }
