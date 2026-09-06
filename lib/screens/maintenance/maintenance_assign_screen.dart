@@ -17,6 +17,22 @@ class MaintenanceAssignScreen extends StatefulWidget {
 
 class _MaintenanceAssignScreenState extends State<MaintenanceAssignScreen> {
   String? _selectedId;
+  bool _submitting = false;
+
+  Future<void> _assign(String technicianId) async {
+    setState(() => _submitting = true);
+    try {
+      await context.read<AppState>().assignTechnician(widget.report.id, technicianId);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذّر تعيين الفني: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -75,16 +91,13 @@ class _MaintenanceAssignScreenState extends State<MaintenanceAssignScreen> {
               ),
             ),
             const SizedBox(height: 10),
-            PrimaryButton(
-              label: selected != null ? 'تعيين البلاغ لـ ${selected.name}' : 'اختر فنيًا للمتابعة',
-              color: AppColors.maintenance,
-              onPressed: selected == null
-                  ? null
-                  : () {
-                      context.read<AppState>().assignTechnician(widget.report.id, selected.id);
-                      Navigator.of(context).pop();
-                    },
-            ),
+            _submitting
+                ? const Center(child: Padding(padding: EdgeInsets.all(10), child: CircularProgressIndicator(color: AppColors.maintenance)))
+                : PrimaryButton(
+                    label: selected != null ? 'تعيين البلاغ لـ ${selected.name}' : 'اختر فنيًا للمتابعة',
+                    color: AppColors.maintenance,
+                    onPressed: selected == null ? null : () => _assign(selected.id),
+                  ),
           ],
         ),
       ),
