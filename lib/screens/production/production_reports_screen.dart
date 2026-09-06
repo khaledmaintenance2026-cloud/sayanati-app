@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/production.dart';
 import '../../services/app_state.dart';
 import '../../services/arabic_format.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import 'production_batch_edit_screen.dart';
 
 /// تقرير إنتاج مستقل تمامًا لكل قسم/مصنع على حِدة — يُفتح من تبويب القسم
 /// نفسه في شاشة الإنتاج، فلا تختلط بيانات "مصنع الرجال" مع "مصنع النساء".
@@ -84,11 +86,45 @@ class _ProductionReportsScreenState extends State<ProductionReportsScreen> {
     }
   }
 
+  Future<void> _deleteBatch(Batch b) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حذف الباتش؟', style: TextStyle(fontSize: 15)),
+        content: Text('سيُحذف الباتش رقم ${b.batchNumber} نهائيًا — لا يمكن التراجع عن هذا.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('إلغاء')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFFB3261E)),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await context.read<AppState>().removeBatchCloud(b.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم حذف الباتش')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذّر حذف الباتش: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final role = context.watch<AuthService>().currentUser?.role ?? AppRole.production;
+    final canManage = canManageBatches(role);
     final lines = state.linesByFacility(widget.facility);
-    final batches = state.batchesByFacility(widget.facility);
+    // لو اختار المستخدم مدة مخصّصة (لطلب تقرير واتساب)، نعرض باتشات نفس
+    // المدة بدل "اليوم" فقط — حتى يقدر مسؤول الإنتاج يصل لباتش قديم ليعدّله.
+    final range = _selectedRange;
+    final batches = range != null
+        ? state.batchesInRange(widget.facility, from: range.start, to: DateTime(range.end.year, range.end.month, range.end.day, 23, 59, 59))
+        : state.batchesByFacility(widget.facility);
     final totalToday = batches.fold<int>(0, (sum, b) => sum + b.quantity);
     final activeLines = lines.where((l) => l.activeToday).length;
 
@@ -178,7 +214,10 @@ class _ProductionReportsScreenState extends State<ProductionReportsScreen> {
                 },
               ),
               const SizedBox(height: 22),
-              Text('باتشات ${widget.facility} اليوم', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+              Text(
+                _selectedRange == null ? 'باتشات ${widget.facility} اليوم' : 'باتشات ${widget.facility} — المدة المختارة أعلاه',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+              ),
               const SizedBox(height: 10),
               if (state.batchesError != null)
                 Padding(
@@ -191,7 +230,10 @@ class _ProductionReportsScreenState extends State<ProductionReportsScreen> {
                   child: Center(child: CircularProgressIndicator()),
                 )
               else if (batches.isEmpty)
-                const Text('لا توجد باتشات مسجّلة اليوم', style: TextStyle(fontSize: 13, color: AppColors.textMuted))
+                Text(
+                  _selectedRange == null ? 'لا توجد باتشات مسجّلة اليوم' : 'لا توجد باتشات في هذه المدة',
+                  style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+                )
               else
                 ...batches.map(
                   (b) => Padding(
@@ -209,13 +251,41 @@ class _ProductionReportsScreenState extends State<ProductionReportsScreen> {
                             ],
                           ),
                           const SizedBox(height: 3),
-                          Text('باتش رقم: ${b.batchNumber}', style: const TextStyle(fontSize: 11.5, color: AppColors.textFaint)),
+                          Text(
+                            'باتش رقم: ${b.batchNumber} — ${ArabicFormat.date(b.date)}',
+                            style: const TextStyle(fontSize: 11.5, color: AppColors.textFaint),
+                          ),
                           if ((b.operationalNotes?.isNotEmpty ?? false) || (b.hasStoppage && (b.actionsTaken?.isNotEmpty ?? false))) ...[
                             const SizedBox(height: 6),
                             if (b.operationalNotes?.isNotEmpty ?? false)
                               Text('ملاحظات تشغيلية: ${b.operationalNotes}', style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
                             if (b.hasStoppage && (b.actionsTaken?.isNotEmpty ?? false))
                               Text('الإجراءات المتخذة: ${b.actionsTaken}', style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+                          ],
+                          if (canManage) ...[
+                            const SizedBox(height: 6),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                TextButton.icon(
+                                  onPressed: () => Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => ProductionBatchEditScreen(batch: b, line: state.lineById(b.lineId)),
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.edit_outlined, size: 16),
+                                  label: const Text('تعديل', style: TextStyle(fontSize: 12)),
+                                  style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32)),
+                                ),
+                                const SizedBox(width: 6),
+                                TextButton.icon(
+                                  onPressed: () => _deleteBatch(b),
+                                  icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFB3261E)),
+                                  label: const Text('حذف', style: TextStyle(fontSize: 12, color: Color(0xFFB3261E))),
+                                  style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32)),
+                                ),
+                              ],
+                            ),
                           ],
                         ],
                       ),
