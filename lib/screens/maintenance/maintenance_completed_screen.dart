@@ -17,7 +17,7 @@ class MaintenanceCompletedScreen extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('حذف نهائي', style: TextStyle(fontSize: 15)),
-        content: Text('سيُحذف "$title" نهائيًا من سجل الصيانة على هذا الجهاز. لا يمكن التراجع عن هذا الإجراء.'),
+        content: Text('سيُحذف "$title" نهائيًا من قاعدة البيانات على السيرفر — يختفي من كل الأجهزة. لا يمكن التراجع عن هذا الإجراء.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('إلغاء')),
           ElevatedButton(
@@ -28,9 +28,14 @@ class MaintenanceCompletedScreen extends StatelessWidget {
         ],
       ),
     );
-    if (confirmed == true && context.mounted) {
-      context.read<AppState>().deleteMaintenanceReport(reportId);
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await context.read<AppState>().deleteMaintenanceReport(reportId);
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم حذف العمل من السجل')));
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذّر الحذف: $e')));
     }
   }
 
