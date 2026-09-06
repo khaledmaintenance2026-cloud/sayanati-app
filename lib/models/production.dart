@@ -33,6 +33,7 @@ class Batch {
   final String? operationalNotes; // الملاحظات التشغيلية — عامة، مستقلة عن وجود توقف
   final String? actionsTaken; // الحلول والإجراءات المتخذة عند التوقف
   final String recordedBy; // مشرف الخط
+  final int? workersCount; // عدد العمال على هذا الباتش — لمطابقة عمود "workers" في التقرير الأسبوعي القديم
 
   Batch({
     required this.id,
@@ -47,6 +48,7 @@ class Batch {
     this.operationalNotes,
     this.actionsTaken,
     required this.recordedBy,
+    this.workersCount,
   });
 
   /// يبني باتشًا من استجابة سيرفر صيانتي المحلي (جدول production_batches) —
@@ -64,6 +66,7 @@ class Batch {
         operationalNotes: d['operational_notes'] as String?,
         actionsTaken: d['actions_taken'] as String?,
         recordedBy: (d['recorded_by'] as String?) ?? '',
+        workersCount: (d['workers_count'] as num?)?.round(),
       );
 }
 
