@@ -9,26 +9,26 @@ import 'api_client.dart';
 
 /// نتيجة طلب تقرير إنتاج بمدة مخصصة — الرابط دائمًا متاح لو نجح الإنشاء
 /// (حتى لو فشل إرسال واتساب لسبب ما)، و[warning] يحمل سبب فشل الإرسال إن وُجد.
-class ProductionReportResult {
+class ReportRequestResult {
   final String reportUrl;
   final bool whatsappSent;
   final String? warning;
-  const ProductionReportResult({required this.reportUrl, required this.whatsappSent, this.warning});
+  const ReportRequestResult({required this.reportUrl, required this.whatsappSent, this.warning});
 }
 
 /// طبقة الحالة/البيانات لكل التطبيق.
 ///
 /// ⚠️ حالة كل قسم مختلفة الآن بعد الانتقال لسيرفر صيانتي المحلي:
 /// - الفنيون (technicians)، خطوط الإنتاج (productionLines)، بلاغات الأعطال
-///   (incidents)، وباتشات الإنتاج (batches) مربوطون فعليًا بالسيرفر
-///   (Node.js + PostgreSQL) عبر [ApiClient] — كل عملية هنا تُخزَّن فعليًا
-///   وتظهر لكل المستخدمين (لا حاجة لأي إشعار فوري إضافي، البيانات تُحمَّل
-///   من جديد عند فتح/تحديث الشاشة).
-/// - بلاغات الصيانة (maintenanceReports) وتصاريح السلامة (permits) ما زالت
-///   بذاكرة محلية مؤقتة (Mock) — لم تُهاجَر بعد. عند ربطها اتبعوا نفس نمط
-///   الفنيين/الإنتاج أعلاه: تحميل (load...FromCloud) + إضافة/تعديل/حذف
-///   (...Cloud) تتصل بمسارات REST الموجودة فعليًا على السيرفر (مثال:
-///   POST /safety-permits و/work-orders).
+///   (incidents)، باتشات الإنتاج (batches)، وبلاغات/أوامر عمل الصيانة
+///   (maintenanceReports) مربوطون فعليًا بالسيرفر (Node.js + PostgreSQL) عبر
+///   [ApiClient] — كل عملية هنا تُخزَّن فعليًا وتظهر لكل المستخدمين (لا حاجة
+///   لأي إشعار فوري إضافي، البيانات تُحمَّل من جديد عند فتح/تحديث الشاشة).
+/// - تصاريح السلامة (permits) ما زالت بذاكرة محلية مؤقتة (Mock) — لم تُهاجَر
+///   بعد رغم أن مسارات REST الحقيقية (POST /safety-permits وغيرها) موجودة
+///   فعليًا وتُرسل إشعارات واتساب حقيقية أيضًا. عند ربطها اتبعوا نفس نمط
+///   الفنيين/الإنتاج/الصيانة أعلاه: تحميل (load...FromCloud) + إضافة/تعديل
+///   (...Cloud).
 class AppState extends ChangeNotifier {
   final _uuid = const Uuid();
   final ApiClient _api = ApiClient.instance;
@@ -65,6 +65,7 @@ class AppState extends ChangeNotifier {
     _loadProductionLinesFromCloud();
     _loadIncidentsFromCloud();
     _loadBatchesFromCloud();
+    _loadWorkOrdersFromCloud();
   }
 
   void detachAuth() {
@@ -77,6 +78,8 @@ class AppState extends ChangeNotifier {
     incidents.clear();
     batchesLoaded = false;
     batches.clear();
+    workOrdersLoaded = false;
+    maintenanceReports.clear();
   }
 
   Future<void> reloadTechnicians() => _loadTechniciansFromCloud();
@@ -142,53 +145,32 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------
-  // الصيانة — البلاغات وأوامر العمل (لا تزال محلية Mock — راجع الملاحظة
-  // أعلى الملف وتقرير المراجعة لخطة ربطها بمسارات /production/incidents
-  // و /work-orders و /loto على السيرفر المحلي)
+  // الصيانة — البلاغات وأوامر العمل (مربوطة بالسيرفر المحلي فعليًا الآن عبر
+  // /work-orders، بنفس نمط الفنيين/الإنتاج أعلاه). كانت بيانات وهمية محلية
+  // على كل جهاز — تختفي عند إعادة تشغيل التطبيق، لا تصل لأي جهاز آخر، ولا
+  // تُرسل أي إشعار واتساب حقيقي رغم أن الواجهة كانت تعرض نصًا يوحي بذلك.
   // ---------------------------------------------------------------------
   final List<MaintenanceReport> maintenanceReports = [];
+  bool workOrdersLoaded = false;
+  String? workOrdersError;
 
-  void seedMaintenance() {
-    final now = DateTime.now();
-    maintenanceReports.addAll([
-      MaintenanceReport(
-        id: _uuid.v4(),
-        equipment: 'ماكينة الخلط',
-        line: 'خط ٩',
-        description: 'توقف مفاجئ — صوت غير طبيعي بالمحرك، وتوقف كامل لخط الإنتاج.',
-        kind: MaintenanceKind.emergency,
-        status: MaintenanceStatus.pendingAssignment,
-        reportedBy: 'محمد — الإنتاج',
-        reportedAt: now.subtract(const Duration(minutes: 8)),
-      ),
-      MaintenanceReport(
-        id: _uuid.v4(),
-        equipment: 'سير النقل',
-        line: 'خط ٧',
-        description: 'اهتزاز غير طبيعي في السير الرئيسي.',
-        kind: MaintenanceKind.emergency,
-        status: MaintenanceStatus.inProgress,
-        reportedBy: 'خالد — الإنتاج',
-        reportedAt: now.subtract(const Duration(minutes: 25)),
-        assignedTechnicianIds: ['t1'],
-        assignedAt: now.subtract(const Duration(minutes: 20)),
-      ),
-      MaintenanceReport(
-        id: _uuid.v4(),
-        equipment: 'مضخة تبريد',
-        line: 'خط ١١',
-        description: 'استبدال حلقة إحكام مسربة.',
-        kind: MaintenanceKind.emergency,
-        status: MaintenanceStatus.completed,
-        reportedBy: 'أحمد — الإنتاج',
-        reportedAt: now.subtract(const Duration(days: 1, minutes: 31)),
-        assignedTechnicianIds: ['t3'],
-        assignedAt: now.subtract(const Duration(days: 1, minutes: 28)),
-        closedAt: now.subtract(const Duration(days: 1)),
-        closeDescription: 'تم استبدال حلقة الإحكام وتشغيل المضخة والتأكد من عدم وجود تسريب.',
-        partsUsed: 'حلقة إحكام مقاس ٤٠مم × ١',
-      ),
-    ]);
+  Future<void> reloadWorkOrders() => _loadWorkOrdersFromCloud();
+
+  Future<void> _loadWorkOrdersFromCloud() async {
+    if (!_attached) return;
+    try {
+      final data = await _api.get('/work-orders');
+      final list = (data['workOrders'] as List).cast<Map<String, dynamic>>();
+      maintenanceReports
+        ..clear()
+        ..addAll(list.map(MaintenanceReport.fromApi));
+      workOrdersLoaded = true;
+      workOrdersError = null;
+      notifyListeners();
+    } catch (e) {
+      workOrdersError = 'تعذّر تحميل بلاغات الصيانة من السيرفر: $e';
+      notifyListeners();
+    }
   }
 
   List<MaintenanceReport> get openEmergencyReports => maintenanceReports
@@ -200,99 +182,133 @@ class AppState extends ChangeNotifier {
   List<MaintenanceReport> get completedMaintenanceReports =>
       maintenanceReports.where((r) => r.status == MaintenanceStatus.completed).toList();
 
-  /// يحذف بلاغًا/أمر عمل منجزًا نهائيًا من السجل — البيانات محلية على هذا
-  /// الجهاز فقط (راجع الملاحظة أعلى القسم)، فلا يوجد أي أثر لها على أي جهاز
-  /// آخر أو على السيرفر بعد الحذف.
-  void deleteMaintenanceReport(String reportId) {
+  /// يحذف بلاغًا/أمر عمل منجزًا نهائيًا — حذف حقيقي من قاعدة البيانات على
+  /// السيرفر (وليس من هذا الجهاز فقط كما كان سابقًا)، فيختفي من كل الأجهزة.
+  Future<void> deleteMaintenanceReport(String reportId) async {
+    await _api.delete('/work-orders/$reportId');
     maintenanceReports.removeWhere((r) => r.id == reportId);
     notifyListeners();
   }
 
-  MaintenanceReport createReport({
+  /// بلاغ عطل طارئ جديد يرفعه الإنتاج — يُنشئ أمر عمل حقيقي على السيرفر
+  /// (kind: emergency)، والسيرفر نفسه يرسل إشعار واتساب فوري لجروب الصيانة
+  /// (راجع routes/workOrders.js و services/notifications.js).
+  Future<MaintenanceReport> createReport({
     required String equipment,
-    required String line,
+    required String facility,
     required String description,
-    required String reportedBy,
-  }) {
-    final report = MaintenanceReport(
-      id: _uuid.v4(),
-      equipment: equipment,
-      line: line,
-      description: description,
-      kind: MaintenanceKind.emergency,
-      reportedBy: reportedBy,
-      reportedAt: DateTime.now(),
-    );
+  }) async {
+    final data = await _api.post('/work-orders', {
+      'kind': 'emergency',
+      'equipmentName': equipment,
+      'facility': facility,
+      'description': description,
+    });
+    final report = MaintenanceReport.fromApi(data['workOrder'] as Map<String, dynamic>);
     maintenanceReports.insert(0, report);
-    _log('🔔 إشعار فوري + واتساب لجروب الصيانة: بلاغ جديد "$equipment — $line"');
+    _log('تم إرسال بلاغ عطل جديد: $equipment — $facility');
     notifyListeners();
     return report;
   }
 
-  MaintenanceReport createWorkOrder({
-    required String line,
+  /// أمر عمل وقائي جديد يبادر به مشرف الصيانة، مع تعيين فني واحد له مباشرة —
+  /// عمليتان متتاليتان على السيرفر (إنشاء ثم تعيين) لأن أمر العمل يُنشأ
+  /// دائمًا بلا فني مُسنَد أولًا (راجع POST /work-orders)، لكن التطبيق يُظهر
+  /// النتيجة النهائية فقط بعد اكتمال الاثنين معًا.
+  Future<MaintenanceReport> createWorkOrder({
+    required String facility,
     required String description,
-    required List<String> technicianIds,
+    required String technicianId,
     int? reminderIntervalDays,
-  }) {
-    final order = MaintenanceReport(
-      id: _uuid.v4(),
-      equipment: description,
-      line: line,
-      description: description,
-      kind: MaintenanceKind.preventive,
-      status: MaintenanceStatus.inProgress,
-      reportedBy: 'مشرف الصيانة',
-      reportedAt: DateTime.now(),
-      assignedTechnicianIds: technicianIds,
-      assignedAt: DateTime.now(),
-      reminderIntervalDays: reminderIntervalDays,
-    );
+  }) async {
+    final createData = await _api.post('/work-orders', {
+      'kind': 'preventive',
+      'facility': facility,
+      'description': description,
+      if (reminderIntervalDays != null) 'reminderIntervalDays': reminderIntervalDays,
+    });
+    final workOrderId = (createData['workOrder'] as Map<String, dynamic>)['id'].toString();
+    final assignData = await _api.patch('/work-orders/$workOrderId/assign', {'technicianId': technicianId});
+    final order = MaintenanceReport.fromApi(assignData['workOrder'] as Map<String, dynamic>);
+
+    final techIdx = technicians.indexWhere((t) => t.id == technicianId);
+    if (techIdx != -1) technicians[techIdx].available = false;
+
     maintenanceReports.insert(0, order);
-    _log('🔔 واتساب لجروب الصيانة: أمر عمل وقائي جديد — $line');
+    _log('تم إنشاء أمر عمل وقائي جديد — $facility');
     notifyListeners();
     return order;
   }
 
-  void assignTechnician(String reportId, String technicianId) {
-    final report = maintenanceReports.firstWhere((r) => r.id == reportId);
-    report.assignedTechnicianIds = [technicianId];
-    report.assignedAt = DateTime.now();
-    report.status = MaintenanceStatus.inProgress;
-    final tech = technicians.firstWhere((t) => t.id == technicianId);
-    // تصحيح لعلّة كانت موجودة في نسخة Firebase: حالة "متاح/مشغول" للفني لم
-    // تكن تتغيّر تلقائيًا عند التعيين — الآن تُحدَّث فعليًا على السيرفر (الفنيون
-    // مربوطون به فعليًا)، حتى لو بقي البلاغ نفسه محليًا مؤقتًا. لا ننتظر
-    // (await) النتيجة حتى تبقى هذه الدالة متزامنة كما تتوقعها الشاشات الحالية.
-    tech.available = false;
-    updateTechnicianCloud(technicianId, available: false).catchError((e) {
-      techniciansError = 'تعذّر تحديث حالة الفني على السيرفر: $e';
-      notifyListeners();
-    });
-    _log('🔔 واتساب لجروب الصيانة: تم إسناد بلاغ "${report.equipment}" للفني ${tech.name}');
+  Future<void> assignTechnician(String reportId, String technicianId) async {
+    final data = await _api.patch('/work-orders/$reportId/assign', {'technicianId': technicianId});
+    final updated = MaintenanceReport.fromApi(data['workOrder'] as Map<String, dynamic>);
+    final i = maintenanceReports.indexWhere((r) => r.id == reportId);
+    if (i != -1) maintenanceReports[i] = updated;
+    // السيرفر يحدّث حالة الفني إلى "مشغول" فعليًا ضمن نفس العملية — هذا فقط
+    // تحديث محلي متفائل (Optimistic) ليظهر أثره فورًا بلا انتظار طلب تحميل
+    // جديد للفنيين.
+    final techIdx = technicians.indexWhere((t) => t.id == technicianId);
+    if (techIdx != -1) technicians[techIdx].available = false;
+    _log('تم إسناد بلاغ "${updated.equipment}" للفني ${updated.technicianName ?? ''}');
     notifyListeners();
   }
 
-  void closeReport(String reportId, {required String closeDescription, required String partsUsed}) {
-    final report = maintenanceReports.firstWhere((r) => r.id == reportId);
-    report.closeDescription = closeDescription;
-    report.partsUsed = partsUsed;
-    report.closedAt = DateTime.now();
-    report.status = MaintenanceStatus.completed;
-    // نفس تصحيح العلّة أعلاه: نُعيد الفني/الفنيين المعيّنين لحالة "متاح" فعليًا
-    // على السيرفر عند إنجاز البلاغ، بدل تركهم "مشغولين" للأبد بالخطأ.
-    for (final techId in report.assignedTechnicianIds) {
-      final idx = technicians.indexWhere((t) => t.id == techId);
-      if (idx == -1) continue;
-      technicians[idx].available = true;
-      updateTechnicianCloud(techId, available: true).catchError((e) {
-        techniciansError = 'تعذّر تحديث حالة الفني على السيرفر: $e';
-        notifyListeners();
-      });
-    }
-    _log('🔔 إشعار لقسم الإنتاج + واتساب الصيانة: أُنجز بلاغ "${report.equipment}" '
-        '(المدة: ${report.duration != null ? report.duration!.inMinutes : 0} دقيقة)');
+  Future<void> closeReport(String reportId, {required String closeDescription, required String partsUsed}) async {
+    final data = await _api.patch('/work-orders/$reportId/close', {
+      'closeDescription': closeDescription,
+      'spareParts': partsUsed.trim().isEmpty ? [] : [{'partName': partsUsed.trim()}],
+    });
+    final updated = MaintenanceReport.fromApi(data['workOrder'] as Map<String, dynamic>);
+    // القطع المستخدمة لا تعود ضمن استجابة الإغلاق نفسها (تُحفظ في جدول
+    // منفصل) — نعرضها فورًا من النص الذي أدخله المستخدم للتو بدل طلب إضافي؛
+    // راجع [fetchWorkOrderDetail] للحصول عليها بدقة من السيرفر لاحقًا (بعد
+    // إعادة تشغيل التطبيق مثلًا).
+    updated.partsUsed = partsUsed.trim().isEmpty ? null : partsUsed.trim();
+
+    final i = maintenanceReports.indexWhere((r) => r.id == reportId);
+    if (i != -1) maintenanceReports[i] = updated;
+
+    final assignedTechId = updated.assignedTechnicianIds.isNotEmpty ? updated.assignedTechnicianIds.first : null;
+    final techIdx = assignedTechId == null ? -1 : technicians.indexWhere((t) => t.id == assignedTechId);
+    if (techIdx != -1) technicians[techIdx].available = true;
+
+    _log('تم إنجاز بلاغ "${updated.equipment}" '
+        '(المدة: ${updated.duration != null ? updated.duration!.inMinutes : 0} دقيقة)');
     notifyListeners();
+  }
+
+  /// تفاصيل كاملة لأمر عمل واحد (بما فيها القطع المستخدمة الفعلية من جدول
+  /// spare_parts_used) — تُستخدم عند فتح تقرير PDF لعمل مُنجز، لضمان دقة
+  /// القطع المعروضة حتى بعد إعادة تشغيل التطبيق (بخلاف الاعتماد على القيمة
+  /// المحلية المؤقتة في [closeReport] أعلاه).
+  Future<MaintenanceReport> fetchWorkOrderDetail(String id) async {
+    final data = await _api.get('/work-orders/$id');
+    final report = MaintenanceReport.fromApi(data['workOrder'] as Map<String, dynamic>);
+    final parts = (data['spareParts'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    if (parts.isNotEmpty) {
+      report.partsUsed = parts.map((p) => '${p['part_name']}${(p['quantity'] ?? 1) != 1 ? ' × ${p['quantity']}' : ''}').join('، ');
+    }
+    return report;
+  }
+
+  /// طلب تقرير صيانة بمدة مخصّصة — يُنشئ السيرفر ملف تقرير HTML احترافي
+  /// لكل بلاغات وأوامر عمل الصيانة خلال المدة المحددة، ويحاول إرسال رابطه
+  /// مباشرة عبر واتساب لرقم طالب التقرير نفسه فقط (راجع routes/workOrders.js
+  /// و services/maintenanceReport.js) — بنفس نمط [requestProductionReport] تمامًا.
+  Future<ReportRequestResult> requestMaintenanceReport({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final data = await _api.post('/work-orders/reports/request', {
+      'from': from.toIso8601String(),
+      'to': to.toIso8601String(),
+    });
+    return ReportRequestResult(
+      reportUrl: data['reportUrl'] as String,
+      whatsappSent: data['whatsappSent'] as bool? ?? false,
+      warning: data['warning'] as String?,
+    );
   }
 
   // ---------------------------------------------------------------------
@@ -400,6 +416,7 @@ class AppState extends ChangeNotifier {
     int? stoppageMinutes,
     String? operationalNotes,
     String? actionsTaken,
+    int? workersCount,
   }) async {
     final data = await _api.post('/production/batches', {
       'lineId': lineId,
@@ -411,6 +428,7 @@ class AppState extends ChangeNotifier {
       if (stoppageMinutes != null) 'stoppageMinutes': stoppageMinutes,
       if (operationalNotes != null) 'operationalNotes': operationalNotes,
       if (actionsTaken != null) 'actionsTaken': actionsTaken,
+      if (workersCount != null) 'workersCount': workersCount,
     });
     final batch = Batch.fromApi(data['batch'] as Map<String, dynamic>);
     batches.insert(0, batch);
@@ -432,7 +450,7 @@ class AppState extends ChangeNotifier {
   /// نُعيد النتيجة كاملة (وليس الرابط فقط) لأن الإرسال عبر واتساب قد يفشل
   /// (مثلاً: مفتاح TextMeBot غير مضبوط بعد) بينما التقرير نفسه أُنشئ بنجاح —
   /// نريد عرض الرابط للمستخدم في كل الأحوال.
-  Future<ProductionReportResult> requestProductionReport({
+  Future<ReportRequestResult> requestProductionReport({
     required String facility,
     required DateTime from,
     required DateTime to,
@@ -442,7 +460,7 @@ class AppState extends ChangeNotifier {
       'from': from.toIso8601String(),
       'to': to.toIso8601String(),
     });
-    return ProductionReportResult(
+    return ReportRequestResult(
       reportUrl: data['reportUrl'] as String,
       whatsappSent: data['whatsappSent'] as bool? ?? false,
       warning: data['warning'] as String?,
@@ -607,7 +625,6 @@ class AppState extends ChangeNotifier {
 
   // ---------------------------------------------------------------------
   void seedAll() {
-    seedMaintenance();
     seedSafety();
   }
 
