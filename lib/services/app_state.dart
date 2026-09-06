@@ -220,12 +220,14 @@ class AppState extends ChangeNotifier {
     required String description,
     required String technicianId,
     int? reminderIntervalDays,
+    String? equipmentCode,
   }) async {
     final createData = await _api.post('/work-orders', {
       'kind': 'preventive',
       'facility': facility,
       'description': description,
       if (reminderIntervalDays != null) 'reminderIntervalDays': reminderIntervalDays,
+      if (equipmentCode != null && equipmentCode.trim().isNotEmpty) 'equipmentCode': equipmentCode.trim(),
     });
     final workOrderId = (createData['workOrder'] as Map<String, dynamic>)['id'].toString();
     final assignData = await _api.patch('/work-orders/$workOrderId/assign', {'technicianId': technicianId});
