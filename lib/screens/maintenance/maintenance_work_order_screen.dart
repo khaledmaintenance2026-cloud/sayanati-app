@@ -17,6 +17,7 @@ class MaintenanceWorkOrderScreen extends StatefulWidget {
 
 class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen> {
   String _line = kFacilityLocations.first;
+  final _equipmentCodeCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final _reminderCtrl = TextEditingController(text: '30');
   String? _selectedTechId;
@@ -26,6 +27,7 @@ class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen>
 
   @override
   void dispose() {
+    _equipmentCodeCtrl.dispose();
     _descCtrl.dispose();
     _reminderCtrl.dispose();
     super.dispose();
@@ -39,6 +41,7 @@ class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen>
             description: _descCtrl.text.trim(),
             technicianId: _selectedTechId!,
             reminderIntervalDays: int.tryParse(_reminderCtrl.text.trim()),
+            equipmentCode: _equipmentCodeCtrl.text.trim().isEmpty ? null : _equipmentCodeCtrl.text.trim(),
           );
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -76,6 +79,13 @@ class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen>
                     decoration: _decoration(),
                     items: _lines.map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
                     onChanged: (v) => setState(() => _line = v ?? _line),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text('كود المكينة (اختياري)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: _equipmentCodeCtrl,
+                    decoration: _decoration(hint: 'مثال: CMP-03'),
                   ),
                   const SizedBox(height: 14),
                   const Text('البيان (وصف العمل المطلوب)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
