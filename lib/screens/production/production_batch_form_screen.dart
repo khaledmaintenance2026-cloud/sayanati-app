@@ -23,6 +23,9 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> w
   final _minutesCtrl = TextEditingController();
   final _operationalNotesCtrl = TextEditingController();
   final _actionsTakenCtrl = TextEditingController();
+  final _preventionMethodsCtrl = TextEditingController();
+  TimeOfDay? _timeFrom;
+  TimeOfDay? _timeTo;
   bool _hasStoppage = false;
   bool _submitting = false;
   late final TabController _tabController;
@@ -44,7 +47,30 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> w
     _minutesCtrl.dispose();
     _operationalNotesCtrl.dispose();
     _actionsTakenCtrl.dispose();
+    _preventionMethodsCtrl.dispose();
     super.dispose();
+  }
+
+  // TimeOfDay → "08:00:00" لإرسالها كعمود TIME للسيرفر.
+  String? _timeOfDayToString(TimeOfDay? t) {
+    if (t == null) return null;
+    return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:00';
+  }
+
+  Future<void> _pickTime(bool isFrom) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: (isFrom ? _timeFrom : _timeTo) ?? TimeOfDay.now(),
+    );
+    if (picked != null) {
+      setState(() {
+        if (isFrom) {
+          _timeFrom = picked;
+        } else {
+          _timeTo = picked;
+        }
+      });
+    }
   }
 
   bool get _canSubmit {
@@ -75,6 +101,11 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> w
                 ? _actionsTakenCtrl.text.trim()
                 : null,
             workersCount: int.tryParse(_workersCtrl.text.trim()),
+            timeFrom: _timeOfDayToString(_timeFrom),
+            timeTo: _timeOfDayToString(_timeTo),
+            preventionMethods: _hasStoppage && _preventionMethodsCtrl.text.trim().isNotEmpty
+                ? _preventionMethodsCtrl.text.trim()
+                : null,
           );
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -140,6 +171,25 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> w
                         decoration: _decoration(hint: 'مثال: 12'),
                         onChanged: (_) => setState(() {}),
                       ),
+                      const SizedBox(height: 14),
+                      const _Label('وقت البدء / الانتهاء الفعلي (اختياري)'),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => _pickTime(true),
+                              child: Text(_timeFrom != null ? 'من: ${_timeFrom!.format(context)}' : 'وقت البدء'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => _pickTime(false),
+                              child: Text(_timeTo != null ? 'إلى: ${_timeTo!.format(context)}' : 'وقت الانتهاء'),
+                            ),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 18),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -176,6 +226,13 @@ class _ProductionBatchFormScreenState extends State<ProductionBatchFormScreen> w
                           controller: _actionsTakenCtrl,
                           maxLines: 3,
                           decoration: _decoration(hint: 'ما الذي تم اتخاذه لحل المشكلة؟'),
+                        ),
+                        const SizedBox(height: 14),
+                        const _Label('طرق تجنّب تكرار المشكلة'),
+                        TextField(
+                          controller: _preventionMethodsCtrl,
+                          maxLines: 3,
+                          decoration: _decoration(hint: 'ما الذي سيُتَّبع لمنع تكرار هذا التوقف مستقبلاً؟'),
                         ),
                       ],
                     ],
