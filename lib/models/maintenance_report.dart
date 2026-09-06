@@ -37,10 +37,20 @@ class MaintenanceReport {
   DateTime? assignedAt;
 
   /// اسم الفني المُسنَد إليه أمر العمل — يصل جاهزًا من السيرفر (JOIN على جدول
-  /// الفنيين)، يُستخدم للعرض بدل معرّف الفني الخام.
+  /// الفنيين)، يُستخدم للعرض بدل معرّف الفني الخام. يبقى "الفني الأساسي"
+  /// فقط لأي شاشة قديمة تعرضه وحده.
   String? technicianName;
 
+  /// كل الفنيين المُسنَد إليهم أمر العمل نفسه، مفصولين بـ"، " — يدعم النظام
+  /// الآن تعيين أكثر من فني لنفس البلاغ (راجع work_order_technicians على
+  /// السيرفر). يُستخدم للعرض بدل [technicianName] حين يتوفر.
+  String? technicianNames;
+
   String? closeDescription;
+
+  /// ملاحظات اختيارية منفصلة عن "بيان العمل المنجز" — يعبّئها الفني عند
+  /// إغلاق أمر العمل، تظهر لاحقًا في رسالة واتساب "تم النجاح في الصيانة".
+  String? closeNotes;
   String? partsUsed;
   DateTime? closedAt;
 
@@ -60,7 +70,9 @@ class MaintenanceReport {
     List<String>? assignedTechnicianIds,
     this.assignedAt,
     this.technicianName,
+    this.technicianNames,
     this.closeDescription,
+    this.closeNotes,
     this.partsUsed,
     this.closedAt,
     this.reminderIntervalDays,
@@ -82,10 +94,16 @@ class MaintenanceReport {
         assignedTechnicianIds: d['assigned_technician_id'] != null ? [d['assigned_technician_id'].toString()] : [],
         assignedAt: d['assigned_at'] == null ? null : DateTime.tryParse(d['assigned_at'].toString()),
         technicianName: d['technician_name'] as String?,
+        technicianNames: d['technician_names'] as String?,
         closeDescription: d['close_description'] as String?,
+        closeNotes: d['close_notes'] as String?,
         closedAt: d['completed_at'] == null ? null : DateTime.tryParse(d['completed_at'].toString()),
         reminderIntervalDays: (d['reminder_interval_days'] as num?)?.round(),
       );
+
+  /// اسم/أسماء الفني(ين) الجاهزة للعرض — تُفضّل قائمة الفنيين المتعددين
+  /// [technicianNames] إن توفرت، وإلا تعود لاسم الفني الأساسي وحده.
+  String get technicianDisplayNames => technicianNames ?? technicianName ?? '—';
 
   /// المدة الزمنية من لحظة رفع البلاغ إلى لحظة إغلاقه — يحسبها التطبيق تلقائيًا،
   /// وليس على الفني إدخالها يدويًا.
