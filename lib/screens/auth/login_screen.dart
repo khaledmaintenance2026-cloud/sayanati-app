@@ -18,7 +18,20 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _loading = false;
+  bool _googleLoading = false;
   bool _obscure = true;
+
+  /// null = لم يُعرف بعد (طلب جارٍ)، true/false بعد استجابة السيرفر — الزر
+  /// يبقى مخفيًا تمامًا (لا حتى معطّلًا) حتى نعرف أن السيرفر مفعِّل له فعليًا.
+  bool? _googleAvailable;
+
+  @override
+  void initState() {
+    super.initState();
+    context.read<AuthService>().googleSignInAvailable().then((available) {
+      if (mounted) setState(() => _googleAvailable = available);
+    });
+  }
 
   @override
   void dispose() {
@@ -33,6 +46,13 @@ class _LoginScreenState extends State<LoginScreen> {
     final auth = context.read<AuthService>();
     await auth.signIn(_emailCtrl.text.trim(), _passCtrl.text);
     if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _submitGoogle() async {
+    setState(() => _googleLoading = true);
+    final auth = context.read<AuthService>();
+    await auth.signInWithGoogle();
+    if (mounted) setState(() => _googleLoading = false);
   }
 
   @override
@@ -90,6 +110,37 @@ class _LoginScreenState extends State<LoginScreen> {
               _loading
                   ? const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
                   : PrimaryButton(label: 'تسجيل الدخول', color: AppColors.maintenance, onPressed: _submit),
+              if (_googleAvailable == true) ...[
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    const Expanded(child: Divider()),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Text('أو', style: TextStyle(color: AppColors.textMuted, fontSize: 12.5)),
+                    ),
+                    const Expanded(child: Divider()),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _googleLoading
+                    ? const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
+                    : SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: OutlinedButton(
+                          onPressed: _submitGoogle,
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: AppColors.border),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          child: const Text(
+                            'تسجيل الدخول عبر جوجل',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                          ),
+                        ),
+                      ),
+              ],
               const SizedBox(height: 16),
               Center(
                 child: TextButton(
