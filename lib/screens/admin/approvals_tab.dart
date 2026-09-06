@@ -50,7 +50,7 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
 
   Future<void> _approve(String uid, AppRole role, String? productionFacility) async {
     await _api.patch('/users/$uid/approve', {'role': roleToString(role)});
-    if (role == AppRole.production) {
+    if (isProductionRole(role)) {
       await _api.patch('/users/$uid/production-facility', {'facility': productionFacility});
     }
     await _load();
@@ -182,7 +182,7 @@ class _PendingCardState extends State<_PendingCard> {
               ),
             ],
           ),
-          if (_role == AppRole.production) ...[
+          if (isProductionRole(_role)) ...[
             const SizedBox(height: 10),
             Row(
               children: [
@@ -220,7 +220,7 @@ class _PendingCardState extends State<_PendingCard> {
               const SizedBox(width: 10),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: () => widget.onApprove(_role, _role == AppRole.production ? _facility : null),
+                  onPressed: () => widget.onApprove(_role, isProductionRole(_role) ? _facility : null),
                   style: ElevatedButton.styleFrom(backgroundColor: AppColors.successText, foregroundColor: Colors.white),
                   child: const Text('اعتماد'),
                 ),
@@ -330,7 +330,7 @@ class _ApprovedCard extends StatelessWidget {
               ],
             ],
           ),
-          if (!isSelf && role == AppRole.production) ...[
+          if (!isSelf && isProductionRole(role)) ...[
             const SizedBox(height: 8),
             Row(
               children: [
