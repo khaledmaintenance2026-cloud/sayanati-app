@@ -31,3 +31,9 @@ const String kApiBaseUrl = 'https://app.almas2.com/api';
 /// true فقط لو عُدِّل kApiBaseUrl أعلاه عن قيمته الافتراضية (المثال) —
 /// تُستخدم لعرض تنبيه بأعلى شاشة الدخول لو نُسي ضبط الرابط الفعلي.
 const bool kApiBaseUrlConfigured = kApiBaseUrl != 'http://192.168.1.100:3000/api';
+
+/// أصل السيرفر بدون بادئة /api — يُستخدم لبناء روابط كاملة لملفات مرفوعة
+/// مخزَّنة كمسار نسبي فقط (مثال: equipment_photo في تصاريح السلامة يأتي من
+/// السيرفر كـ "/uploads/safety-permits/xxx.jpg" ويحتاج إضافة هذا الأصل قبله
+/// ليصبح رابطًا صالحًا للعرض).
+String get kApiOrigin => kApiBaseUrl.endsWith('/api') ? kApiBaseUrl.substring(0, kApiBaseUrl.length - 4) : kApiBaseUrl;
