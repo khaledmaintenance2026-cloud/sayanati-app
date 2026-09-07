@@ -32,6 +32,13 @@ dependencies:
   intl: ^0.19.0
   uuid: ^4.4.2
 
+  # التقاط/اختيار صورة معدات تصريح العمل (تصاريح السلامة) — تعمل على
+  # أندرويد وويب من نفس الكود، وتحوَّل الصورة إلى base64 قبل إرسالها للسيرفر
+  # (راجع lib/screens/safety/safety_permit_request_screen.dart). لا تحتاج أي
+  # إذن يدوي على الويب أو عند اختيار صورة من المعرض على أندرويد؛ إذن الكاميرا
+  # على أندرويد يُضاف تلقائيًا ضمن بناء CI (راجع .github/workflows/build-apk.yml).
+  image_picker: ^1.1.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
