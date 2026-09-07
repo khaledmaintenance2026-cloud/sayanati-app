@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:uuid/uuid.dart';
 
 import '../models/app_notification.dart';
 import '../models/batch_edit.dart';
@@ -28,13 +27,11 @@ class ReportRequestResult {
 ///   (maintenanceReports) مربوطون فعليًا بالسيرفر (Node.js + PostgreSQL) عبر
 ///   [ApiClient] — كل عملية هنا تُخزَّن فعليًا وتظهر لكل المستخدمين (لا حاجة
 ///   لأي إشعار فوري إضافي، البيانات تُحمَّل من جديد عند فتح/تحديث الشاشة).
-/// - تصاريح السلامة (permits) ما زالت بذاكرة محلية مؤقتة (Mock) — لم تُهاجَر
-///   بعد رغم أن مسارات REST الحقيقية (POST /safety-permits وغيرها) موجودة
-///   فعليًا وتُرسل إشعارات واتساب حقيقية أيضًا. عند ربطها اتبعوا نفس نمط
-///   الفنيين/الإنتاج/الصيانة أعلاه: تحميل (load...FromCloud) + إضافة/تعديل
-///   (...Cloud).
+/// - تصاريح السلامة (permits) أصبحت أيضًا مربوطة فعليًا بالسيرفر (راجع
+///   routes/safetyPermits.js) — كانت بذاكرة محلية مؤقتة (Mock) تُمسح عند
+///   إغلاق التطبيق ولا تصل لأي جهاز آخر ولا تُرسل واتساب حقيقيًا رغم أن
+///   مسارات REST كانت جاهزة على السيرفر منذ فترة.
 class AppState extends ChangeNotifier {
-  final _uuid = const Uuid();
   final ApiClient _api = ApiClient.instance;
 
   // ---------------------------------------------------------------------
@@ -71,6 +68,7 @@ class AppState extends ChangeNotifier {
     _loadIncidentsFromCloud();
     _loadBatchesFromCloud();
     _loadWorkOrdersFromCloud();
+    _loadPermitsFromCloud();
     _loadNotificationsFromCloud();
     // لا توجد إشعارات Push حقيقية بعد — نستطلع (Poll) قائمة الإشعارات كل ٤٥
     // ثانية طالما المستخدم مسجّل دخوله، حتى يظهر جرس الإشعارات محدَّثًا بلا
@@ -91,6 +89,8 @@ class AppState extends ChangeNotifier {
     batches.clear();
     workOrdersLoaded = false;
     maintenanceReports.clear();
+    permitsLoaded = false;
+    permits.clear();
     notificationsLoaded = false;
     notifications.clear();
     _notificationsTimer?.cancel();
@@ -704,45 +704,64 @@ class AppState extends ChangeNotifier {
       batches.where((b) => b.lineId == lineId && _isToday(b.date)).length;
 
   // ---------------------------------------------------------------------
-  // السلامة (لا يزال محليًا Mock — راجع POST /safety-permits و /loto و
-  // /near-miss على السيرفر المحلي)
+  // السلامة — تصاريح العمل (مربوطة بالسيرفر المحلي فعليًا عبر
+  // /safety-permits، بنفس نمط الفنيين/الإنتاج/الصيانة أعلاه).
   // ---------------------------------------------------------------------
   final List<SafetyPermit> permits = [];
+  bool permitsLoaded = false;
+  String? permitsError;
 
-  void seedSafety() {
-    permits.add(SafetyPermit(
-      id: _uuid.v4(),
-      requesterName: 'عبدالله حسن',
-      requesterRole: 'فني صيانة',
-      location: 'خط ٩ — ماكينة الخلط',
-      description: 'أعمال لحام لإصلاح تسريب في خط الأنابيب.',
-      techniciansCount: 2,
-      requestedBy: 'عبدالله حسن',
-      requestedAt: DateTime.now().subtract(const Duration(minutes: 12)),
-    ));
+  Future<void> reloadPermits() => _loadPermitsFromCloud();
+
+  Future<void> _loadPermitsFromCloud() async {
+    if (!_attached) return;
+    try {
+      final data = await _api.get('/safety-permits');
+      final list = (data['permits'] as List).cast<Map<String, dynamic>>();
+      permits
+        ..clear()
+        ..addAll(list.map(SafetyPermit.fromApi));
+      permitsLoaded = true;
+      permitsError = null;
+      notifyListeners();
+    } catch (e) {
+      permitsError = 'تعذّر تحميل تصاريح السلامة من السيرفر: $e';
+      notifyListeners();
+    }
   }
 
-  SafetyPermit requestPermit({
-    required String requesterName,
-    required String requesterRole,
+  /// طلب تصريح عمل جديد — equipmentPhotoBase64 بصيغة data URL كاملة
+  /// (data:image/jpeg;base64,...) كما يتوقعها POST /safety-permits تمامًا؛
+  /// اسم/دور مقدّم الطلب يُحدَّدان تلقائيًا على السيرفر من رمز الدخول، فلا
+  /// حاجة لإرسالهما هنا.
+  Future<SafetyPermit> requestPermitCloud({
     required String location,
     required String description,
-    required int techniciansCount,
-    String? relatedReportId,
-  }) {
-    final permit = SafetyPermit(
-      id: _uuid.v4(),
-      requesterName: requesterName,
-      requesterRole: requesterRole,
-      location: location,
-      description: description,
-      techniciansCount: techniciansCount,
-      relatedReportId: relatedReportId,
-      requestedBy: requesterName,
-      requestedAt: DateTime.now(),
-    );
+    required int workersCount,
+    required List<String> operationTypes,
+    required String equipmentPhotoBase64,
+    String? officeName,
+    String? equipmentUsed,
+    String? responsiblePhone,
+    DateTime? startAt,
+    DateTime? endAt,
+    String? relatedWorkOrderId,
+  }) async {
+    final data = await _api.post('/safety-permits', {
+      'location': location,
+      'description': description,
+      'workersCount': workersCount,
+      'operationTypes': operationTypes,
+      'equipmentPhoto': equipmentPhotoBase64,
+      if (officeName != null && officeName.isNotEmpty) 'officeName': officeName,
+      if (equipmentUsed != null && equipmentUsed.isNotEmpty) 'equipmentUsed': equipmentUsed,
+      if (responsiblePhone != null && responsiblePhone.isNotEmpty) 'responsiblePhone': responsiblePhone,
+      if (startAt != null) 'startAt': startAt.toIso8601String(),
+      if (endAt != null) 'endAt': endAt.toIso8601String(),
+      if (relatedWorkOrderId != null) 'relatedWorkOrderId': relatedWorkOrderId,
+    });
+    final permit = SafetyPermit.fromApi(data['permit'] as Map<String, dynamic>);
     permits.insert(0, permit);
-    _log('🔔 إشعار لقسم السلامة: طلب تصريح عمل جديد — $location');
     notifyListeners();
     return permit;
   }
@@ -751,31 +770,36 @@ class AppState extends ChangeNotifier {
   /// "خلو الموقع من التالي" و"المخاطر المحتملة" و"معدات الوقاية الشخصية"
   /// بالإضافة إلى الإجراءات الإلزامية (precautions)؛ وعند الرفض يجب تمرير
   /// سبب الرفض (rejectionReason) فقط — نفس حقول PATCH /safety-permits/:id/review
-  /// الموجودة فعليًا على سيرفر صيانتي المحلي.
-  void reviewPermit(
+  /// الموجودة فعليًا على سيرفر صيانتي المحلي. اسم المراجِع يُحدَّد تلقائيًا
+  /// على السيرفر من رمز الدخول.
+  Future<void> reviewPermitCloud(
     String permitId, {
     required bool approve,
-    required String reviewer,
     List<String> siteHazards = const [],
     List<String> potentialRisks = const [],
     List<String> ppeRequired = const [],
     String? precautions,
     String? rejectionReason,
-  }) {
-    final permit = permits.firstWhere((p) => p.id == permitId);
-    permit.status = approve ? PermitStatus.approved : PermitStatus.rejected;
-    permit.reviewedBy = reviewer;
-    permit.reviewedAt = DateTime.now();
-    if (approve) {
-      permit.siteHazards = siteHazards;
-      permit.potentialRisks = potentialRisks;
-      permit.ppeRequired = ppeRequired;
-      permit.precautions = precautions;
-      permit.rejectionReason = null;
-    } else {
-      permit.rejectionReason = rejectionReason;
-    }
-    _log('🔔 إشعار لمقدّم الطلب: تصريح "${permit.location}" ${approve ? 'تمت الموافقة عليه' : 'رُفض'}');
+  }) async {
+    final data = await _api.patch('/safety-permits/$permitId/review', {
+      'approve': approve,
+      if (approve) 'siteHazards': siteHazards,
+      if (approve) 'potentialRisks': potentialRisks,
+      if (approve) 'ppeRequired': ppeRequired,
+      if (approve) 'precautions': precautions,
+      if (!approve) 'rejectionReason': rejectionReason,
+    });
+    final updated = SafetyPermit.fromApi(data['permit'] as Map<String, dynamic>);
+    final i = permits.indexWhere((p) => p.id == permitId);
+    if (i != -1) permits[i] = updated;
+    notifyListeners();
+  }
+
+  /// يحذف طلب تصريح نهائيًا من قاعدة البيانات (قسم السلامة أو مدير النظام
+  /// فقط — راجع DELETE /safety-permits/:id).
+  Future<void> removePermitCloud(String id) async {
+    await _api.delete('/safety-permits/$id');
+    permits.removeWhere((p) => p.id == id);
     notifyListeners();
   }
 
@@ -835,11 +859,6 @@ class AppState extends ChangeNotifier {
     try {
       await _api.patch('/notifications/read-all');
     } catch (_) {}
-  }
-
-  // ---------------------------------------------------------------------
-  void seedAll() {
-    seedSafety();
   }
 
   @override
