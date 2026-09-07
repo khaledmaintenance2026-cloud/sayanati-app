@@ -1,0 +1,113 @@
+name: نشر نسخة الويب (PWA) على GitHub Pages
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# يمنع تراكب عمليتَي نشر في نفس الوقت — لا حاجة لإلغاء عملية قيد التنفيذ،
+# فقط الانتظار حتى تنتهي قبل بدء التالية.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy-web:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout الكود
+        uses: actions/checkout@v4
+
+      - name: تثبيت Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: توليد مجلد الويب الأصلي (بدون المساس بـ lib أو pubspec)
+        run: flutter create --platforms=web --org com.sayanati --project-name sayanati_app .
+
+      - name: تحميل الحزم
+        run: flutter pub get
+
+      # نستبدل صفحة الويب الافتراضية (إنجليزية LTR بأيقونة فلتر العامة)
+      # بنسخة عربية RTL بعنوان واسم التطبيق الحقيقيين. تُكتب من جديد في كل
+      # بناء (نفس فلسفة مجلد android/ — لا تُعدَّل هذه الملفات يدويًا أبدًا).
+      - name: تخصيص صفحة الويب الرئيسية (عنوان عربي، RTL، أيقونة التطبيق)
+        run: |
+          cat > web/index.html <<'HTMLEOF'
+          <!DOCTYPE html>
+          <html lang="ar" dir="rtl">
+          <head>
+            <base href="/">
+            <meta charset="UTF-8">
+            <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+            <meta name="description" content="نظام صيانتي لإدارة الصيانة والإنتاج والسلامة - الماس للعطور">
+            <meta name="apple-mobile-web-app-capable" content="yes">
+            <meta name="apple-mobile-web-app-status-bar-style" content="black">
+            <meta name="apple-mobile-web-app-title" content="صيانتي">
+            <link rel="apple-touch-icon" href="icons/Icon-192.png">
+            <link rel="icon" type="image/png" href="favicon.png"/>
+            <title>صيانتي</title>
+            <link rel="manifest" href="manifest.json">
+          </head>
+          <body>
+            <script src="flutter_bootstrap.js" async></script>
+          </body>
+          </html>
+          HTMLEOF
+
+      - name: تخصيص ملف Manifest (اسم التطبيق وألوانه)
+        run: |
+          cat > web/manifest.json <<'JSONEOF'
+          {
+              "name": "صيانتي",
+              "short_name": "صيانتي",
+              "start_url": ".",
+              "display": "standalone",
+              "background_color": "#F7F8FA",
+              "theme_color": "#2B3487",
+              "description": "نظام صيانتي لإدارة الصيانة والإنتاج والسلامة - الماس للعطور",
+              "orientation": "portrait-primary",
+              "prefer_related_applications": false,
+              "icons": [
+                  { "src": "icons/Icon-192.png", "sizes": "192x192", "type": "image/png" },
+                  { "src": "icons/Icon-512.png", "sizes": "512x512", "type": "image/png" },
+                  { "src": "icons/Icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+                  { "src": "icons/Icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+              ]
+          }
+          JSONEOF
+
+      # نولّد أيقونات الويب من نفس شعار التطبيق الفعلي (assets/images/app_icon.png)
+      # بدل ترك أيقونة فلتر الافتراضية — تمامًا كخطوة توليد أيقونة أندرويد.
+      - name: توليد أيقونات الويب من الشعار الفعلي
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
+          convert assets/images/app_icon.png -resize 192x192 web/icons/Icon-192.png
+          convert assets/images/app_icon.png -resize 512x512 web/icons/Icon-512.png
+          convert assets/images/app_icon.png -resize 192x192 web/icons/Icon-maskable-192.png
+          convert assets/images/app_icon.png -resize 512x512 web/icons/Icon-maskable-512.png
+          convert assets/images/app_icon.png -resize 32x32 web/favicon.png
+
+      # --base-href لازم يطابق اسم المستودع بالضبط، لأن GitHub Pages يخدم
+      # مواقع المستودعات (غير صفحة المستخدم الرئيسية) من مسار فرعي وليس من
+      # جذر الدومين. إن غُيّر اسم المستودع مستقبلًا، يجب تحديث هذا السطر معه.
+      - name: بناء نسخة الويب
+        run: flutter build web --release --base-href "/sayanati-app/"
+
+      - name: تجهيز الملفات لرفعها إلى GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+      - name: نشر على GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
