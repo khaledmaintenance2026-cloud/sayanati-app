@@ -1,4 +1,4 @@
-name: نشر نسخة الويب (PWA) على GitHub Pages
+name: بناء نسخة الويب (PWA) من تطبيق صيانتي
 
 on:
   push:
@@ -6,22 +6,11 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-# يمنع تراكب عمليتَي نشر في نفس الوقت — لا حاجة لإلغاء عملية قيد التنفيذ،
-# فقط الانتظار حتى تنتهي قبل بدء التالية.
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  contents: write
 
 jobs:
-  build-and-deploy-web:
+  build-web:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout الكود
         uses: actions/checkout@v4
@@ -46,7 +35,7 @@ jobs:
           <!DOCTYPE html>
           <html lang="ar" dir="rtl">
           <head>
-            <base href="/">
+            <base href="/app/">
             <meta charset="UTF-8">
             <meta content="IE=Edge" http-equiv="X-UA-Compatible">
             <meta name="description" content="نظام صيانتي لإدارة الصيانة والإنتاج والسلامة - الماس للعطور">
@@ -70,7 +59,7 @@ jobs:
           {
               "name": "صيانتي",
               "short_name": "صيانتي",
-              "start_url": ".",
+              "start_url": "/app/",
               "display": "standalone",
               "background_color": "#F7F8FA",
               "theme_color": "#2B3487",
@@ -97,17 +86,30 @@ jobs:
           convert assets/images/app_icon.png -resize 512x512 web/icons/Icon-maskable-512.png
           convert assets/images/app_icon.png -resize 32x32 web/favicon.png
 
-      # --base-href لازم يطابق اسم المستودع بالضبط، لأن GitHub Pages يخدم
-      # مواقع المستودعات (غير صفحة المستخدم الرئيسية) من مسار فرعي وليس من
-      # جذر الدومين. إن غُيّر اسم المستودع مستقبلًا، يجب تحديث هذا السطر معه.
+      # --base-href هنا "/app/" لأننا نستضيف النسخة على سيرفرنا نفسه
+      # (app.almas2.com) تحت هذا المسار الفرعي بالضبط — راجع server.js
+      # وسطر app.serveStaticAt('/app', ...). لو تغيّر المسار مستقبلًا يجب
+      # تحديث هذا السطر وسطر server.js معًا.
       - name: بناء نسخة الويب
-        run: flutter build web --release --base-href "/sayanati-app/"
+        run: flutter build web --release --base-href "/app/"
 
-      - name: تجهيز الملفات لرفعها إلى GitHub Pages
-        uses: actions/upload-pages-artifact@v3
+      # نضغط ناتج البناء في ملف واحد سهل التحميل والفكّ يدويًا على سيرفر
+      # المستخدم (لا يوجد اتصال مباشر من GitHub Actions إلى سيرفر Windows
+      # الخاص به، فالخطوة التالية تجهّز رابط تحميل ثابت بدل نشر تلقائي).
+      - name: ضغط ناتج البناء في ملف واحد
+        run: |
+          cd build/web
+          zip -r ../../sayanati-web.zip .
+
+      # رابط تحميل مباشر وثابت لملف نسخة الويب المضغوط — يُحدَّث تلقائيًا مع
+      # كل بناء جديد، بنفس أسلوب رابط تحميل الـ APK لكن بعلامة (tag) مختلفة
+      # تمامًا (web-latest بدل apk-latest) حتى لا يتعارض مع نشر ملف الـ APK
+      # الذي يعمل من ملف build-apk.yml المستقل عن هذا الملف.
+      - name: نشر رابط تحميل ثابت لملف نسخة الويب
+        uses: softprops/action-gh-release@v2
         with:
-          path: build/web
-
-      - name: نشر على GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          tag_name: web-latest
+          name: أحدث نسخة من نسخة الويب (PWA) لتطبيق صيانتي
+          body: يُحدَّث تلقائيًا مع كل رفع كود جديد. حمّل sayanati-web.zip وفكّه داخل مجلد public-app بجانب مجلد public على سيرفر صيانتي، ثم أعد تشغيل الخدمة.
+          make_latest: false
+          files: sayanati-web.zip
