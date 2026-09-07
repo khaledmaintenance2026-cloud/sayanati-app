@@ -12,6 +12,13 @@ const List<String?> kProductionFacilityChoices = [null, 'مصنع الرجال',
 
 String productionFacilityLabel(String? f) => f ?? 'بلا تقييد (كل المصانع)';
 
+/// نفس القيم تمامًا لتقييد مسؤول قسم السلامة بقسم واحد (رجال أو نساء) —
+/// عمود مستقل (safety_facility) عن الإنتاج أعلاه. null يعني بلا تقييد (يرى
+/// تصاريح كل الأقسام)، وهو الافتراضي حتى يُخصَّص قسم صراحة.
+const List<String?> kSafetyFacilityChoices = [null, 'مصنع الرجال', 'مصنع النساء'];
+
+String safetyFacilityLabel(String? f) => f ?? 'بلا تقييد (كل الأقسام)';
+
 class ApprovalsTab extends StatefulWidget {
   const ApprovalsTab({super.key});
 
@@ -48,10 +55,12 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
     }
   }
 
-  Future<void> _approve(String uid, AppRole role, String? productionFacility) async {
+  Future<void> _approve(String uid, AppRole role, String? facility) async {
     await _api.patch('/users/$uid/approve', {'role': roleToString(role)});
     if (isProductionRole(role)) {
-      await _api.patch('/users/$uid/production-facility', {'facility': productionFacility});
+      await _api.patch('/users/$uid/production-facility', {'facility': facility});
+    } else if (isSafetyRole(role)) {
+      await _api.patch('/users/$uid/safety-facility', {'facility': facility});
     }
     await _load();
   }
@@ -68,6 +77,11 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
 
   Future<void> _setFacility(String uid, String? facility) async {
     await _api.patch('/users/$uid/production-facility', {'facility': facility});
+    await _load();
+  }
+
+  Future<void> _setSafetyFacility(String uid, String? facility) async {
+    await _api.patch('/users/$uid/safety-facility', {'facility': facility});
     await _load();
   }
 
@@ -118,6 +132,7 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
                 isSelf: u['id'].toString() == myUid,
                 onChangeRole: (role) => _setRole(u['id'].toString(), role),
                 onChangeFacility: (facility) => _setFacility(u['id'].toString(), facility),
+                onChangeSafetyFacility: (facility) => _setSafetyFacility(u['id'].toString(), facility),
                 onChangePhone: (phone) => _setPhone(u['id'].toString(), phone),
                 onRevoke: () => _revoke(u['id'].toString()),
               )),
@@ -206,6 +221,30 @@ class _PendingCardState extends State<_PendingCard> {
                 ),
               ],
             ),
+          ] else if (isSafetyRole(_role)) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Text('قسم السلامة:', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<String?>(
+                    value: _facility,
+                    isDense: true,
+                    decoration: const InputDecoration(
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      filled: true,
+                      fillColor: AppColors.background,
+                      border: OutlineInputBorder(),
+                    ),
+                    items: kSafetyFacilityChoices
+                        .map((f) => DropdownMenuItem(value: f, child: Text(safetyFacilityLabel(f), style: const TextStyle(fontSize: 12.5))))
+                        .toList(),
+                    onChanged: (v) => setState(() => _facility = v),
+                  ),
+                ),
+              ],
+            ),
           ],
           const SizedBox(height: 10),
           Row(
@@ -220,7 +259,7 @@ class _PendingCardState extends State<_PendingCard> {
               const SizedBox(width: 10),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: () => widget.onApprove(_role, isProductionRole(_role) ? _facility : null),
+                  onPressed: () => widget.onApprove(_role, (isProductionRole(_role) || isSafetyRole(_role)) ? _facility : null),
                   style: ElevatedButton.styleFrom(backgroundColor: AppColors.successText, foregroundColor: Colors.white),
                   child: const Text('اعتماد'),
                 ),
@@ -238,6 +277,7 @@ class _ApprovedCard extends StatelessWidget {
   final bool isSelf;
   final void Function(AppRole role) onChangeRole;
   final void Function(String? facility) onChangeFacility;
+  final void Function(String? facility) onChangeSafetyFacility;
   final void Function(String? phone) onChangePhone;
   final VoidCallback onRevoke;
 
@@ -246,6 +286,7 @@ class _ApprovedCard extends StatelessWidget {
     required this.isSelf,
     required this.onChangeRole,
     required this.onChangeFacility,
+    required this.onChangeSafetyFacility,
     required this.onChangePhone,
     required this.onRevoke,
   });
@@ -275,6 +316,7 @@ class _ApprovedCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final role = roleFromString(user['role'] as String?);
     final facility = user['production_facility'] as String?;
+    final safetyFacility = user['safety_facility'] as String?;
     final phone = user['phone'] as String?;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -345,6 +387,26 @@ class _ApprovedCard extends StatelessWidget {
                         .map((f) => DropdownMenuItem(value: f, child: Text(productionFacilityLabel(f), style: const TextStyle(fontSize: 12.5))))
                         .toList(),
                     onChanged: onChangeFacility,
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (!isSelf && isSafetyRole(role)) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Text('قسم السلامة:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButton<String?>(
+                    value: kSafetyFacilityChoices.contains(safetyFacility) ? safetyFacility : null,
+                    isExpanded: true,
+                    underline: const SizedBox(),
+                    items: kSafetyFacilityChoices
+                        .map((f) => DropdownMenuItem(value: f, child: Text(safetyFacilityLabel(f), style: const TextStyle(fontSize: 12.5))))
+                        .toList(),
+                    onChanged: onChangeSafetyFacility,
                   ),
                 ),
               ],
