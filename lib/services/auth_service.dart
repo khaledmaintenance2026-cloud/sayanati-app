@@ -264,7 +264,16 @@ class AuthService extends ChangeNotifier {
         return false;
       }
 
-      final googleSignIn = GoogleSignIn(scopes: const ['email'], serverClientId: clientId);
+      // على الويب لا يوجد "تطبيق أندرويد" يتعرّف عليه جوجل عبر بصمة توقيع —
+      // يجب تمرير معرّف العميل مباشرة عبر clientId (بدل serverClientId) حتى
+      // تعرف مكتبة جوجل أي عميل ويب تستخدمه لعرض نافذة الدخول نفسها. على
+      // أندرويد نُبقي على serverClientId كالمعتاد (فقط للتحقق من الـ aud في
+      // رمز الدخول على السيرفر، دون أن يحتاج التطبيق أي معرّف عميل أندرويد).
+      final googleSignIn = GoogleSignIn(
+        scopes: const ['email'],
+        clientId: kIsWeb ? clientId : null,
+        serverClientId: kIsWeb ? null : clientId,
+      );
       final account = await googleSignIn.signIn();
       if (account == null) return false; // المستخدم أغلق نافذة الاختيار بنفسه
 
