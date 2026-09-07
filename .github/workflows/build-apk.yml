@@ -34,6 +34,14 @@ jobs:
             echo "تنبيه: ANDROID_DEBUG_KEYSTORE_B64 غير مضبوط — سيُستخدم مفتاح عشوائي جديد لهذا البناء."
           fi
 
+      # خطوة تشخيص مؤقتة: تطبع بصمة SHA-1 الفعلية للمفتاح المستخدم فعليًا في
+      # هذا البناء، لمقارنتها يدويًا ببصمة عميل Android المسجّلة في Google
+      # Cloud Console والتأكد من تطابقهما تمامًا. تُحذف لاحقًا بعد التأكد.
+      - name: طباعة بصمة SHA-1 الفعلية للتأكد (خطوة تشخيص مؤقتة)
+        run: |
+          echo "بصمة SHA-1 الفعلية لمفتاح التوقيع المستخدم في هذا البناء:"
+          keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android 2>/dev/null | grep "SHA1:"
+
       - name: تثبيت Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -41,6 +49,15 @@ jobs:
 
       - name: توليد مجلد Android الأصلي (بدون المساس بـ lib أو pubspec)
         run: flutter create --platforms=android --org com.sayanati --project-name sayanati_app .
+
+      # مجلد android/ يُولَّد من جديد بالكامل في كل بناء (الخطوة أعلاه)، لذا لا
+      # يمكن إضافة إذن الكاميرا مباشرة في ملف AndroidManifest.xml داخل الكود
+      # المرفوع — يُضاف هنا بعد كل توليد بدل ذلك. يحتاجه image_picker عند
+      # التقاط صورة معدات تصريح سلامة بالكاميرا مباشرة (اختيار صورة من
+      # المعرض لا يحتاج أي إذن إضافي، الحزمة تتولاه تلقائيًا).
+      - name: إضافة إذن الكاميرا لصور تصاريح السلامة
+        run: |
+          sed -i '/<manifest /a\    <uses-permission android:name="android.permission.CAMERA" />' android/app/src/main/AndroidManifest.xml
 
       - name: تحميل الحزم
         run: flutter pub get
