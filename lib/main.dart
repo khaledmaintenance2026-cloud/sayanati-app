@@ -26,7 +26,7 @@ class SayanatiApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthService()),
-        ChangeNotifierProvider(create: (_) => AppState()..seedAll()),
+        ChangeNotifierProvider(create: (_) => AppState()),
       ],
       child: MaterialApp(
         title: 'صيانتي',
