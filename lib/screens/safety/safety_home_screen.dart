@@ -8,8 +8,41 @@ import '../../widgets/common.dart';
 import 'safety_approval_screen.dart';
 import 'safety_permit_request_screen.dart';
 
-class SafetyHomeScreen extends StatelessWidget {
+class SafetyHomeScreen extends StatefulWidget {
   const SafetyHomeScreen({super.key});
+
+  @override
+  State<SafetyHomeScreen> createState() => _SafetyHomeScreenState();
+}
+
+class _SafetyHomeScreenState extends State<SafetyHomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => context.read<AppState>().reloadPermits());
+  }
+
+  Future<void> _confirmDelete(SafetyPermit permit) async {
+    final appState = context.read<AppState>();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حذف طلب التصريح؟'),
+        content: Text('سيُحذف طلب التصريح الخاص بـ "${permit.location}" نهائيًا ولا يمكن التراجع.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('إلغاء')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('حذف', style: TextStyle(color: Color(0xFFB3261E)))),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await appState.removePermitCloud(permit.id);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذّر حذف طلب التصريح: $e')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,16 +63,35 @@ class SafetyHomeScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Expanded(
-                  child: state.permits.isEmpty
-                      ? const Center(child: Text('لا توجد تصاريح', style: TextStyle(color: AppColors.textMuted)))
-                      : ListView.separated(
-                          itemCount: state.permits.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 10),
-                          itemBuilder: (context, i) {
-                            final permit = state.permits[i];
-                            return _PermitCard(permit: permit);
-                          },
-                        ),
+                  child: RefreshIndicator(
+                    onRefresh: () => state.reloadPermits(),
+                    child: !state.permitsLoaded && state.permitsError == null
+                        ? const Center(child: CircularProgressIndicator())
+                        : state.permitsError != null && state.permits.isEmpty
+                            ? ListView(
+                                children: [
+                                  const SizedBox(height: 60),
+                                  Center(
+                                    child: Text(state.permitsError!, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.textMuted)),
+                                  ),
+                                ],
+                              )
+                            : state.permits.isEmpty
+                                ? ListView(
+                                    children: const [
+                                      SizedBox(height: 60),
+                                      Center(child: Text('لا توجد تصاريح', style: TextStyle(color: AppColors.textMuted))),
+                                    ],
+                                  )
+                                : ListView.separated(
+                                    itemCount: state.permits.length,
+                                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                                    itemBuilder: (context, i) {
+                                      final permit = state.permits[i];
+                                      return _PermitCard(permit: permit, onDelete: () => _confirmDelete(permit));
+                                    },
+                                  ),
+                  ),
                 ),
               ],
             ),
@@ -64,7 +116,8 @@ class SafetyHomeScreen extends StatelessWidget {
 
 class _PermitCard extends StatelessWidget {
   final SafetyPermit permit;
-  const _PermitCard({required this.permit});
+  final VoidCallback onDelete;
+  const _PermitCard({required this.permit, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -89,13 +142,21 @@ class _PermitCard extends StatelessWidget {
               children: [
                 Expanded(child: Text(permit.location, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold))),
                 StatusPill(label: statusInfo.label, color: statusInfo.color, background: statusInfo.bg),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.textMuted),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  onPressed: onDelete,
+                  tooltip: 'حذف',
+                ),
               ],
             ),
             const SizedBox(height: 6),
             Text(permit.description, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
             const SizedBox(height: 6),
-            Text('مقدّم الطلب: ${permit.requesterName} — ${permit.requesterRole}', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
-            if (permit.relatedReportId != null)
+            Text('مقدّم الطلب: ${permit.requesterName}', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+            Text('نوع العمل: ${permit.operationTypesLabel}', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+            if (permit.relatedWorkOrderId != null)
               const Padding(
                 padding: EdgeInsets.only(top: 4),
                 child: Text('مرتبط ببلاغ صيانة قائم', style: TextStyle(fontSize: 11.5, color: AppColors.maintenance, fontWeight: FontWeight.w600)),
