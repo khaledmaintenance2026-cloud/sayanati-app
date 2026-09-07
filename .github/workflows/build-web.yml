@@ -86,12 +86,17 @@ jobs:
           convert assets/images/app_icon.png -resize 512x512 web/icons/Icon-maskable-512.png
           convert assets/images/app_icon.png -resize 32x32 web/favicon.png
 
-      # --base-href هنا "/app/" لأننا نستضيف النسخة على سيرفرنا نفسه
-      # (app.almas2.com) تحت هذا المسار الفرعي بالضبط — راجع server.js
-      # وسطر app.serveStaticAt('/app', ...). لو تغيّر المسار مستقبلًا يجب
-      # تحديث هذا السطر وسطر server.js معًا.
+      # لا نستخدم خيار --base-href هنا لأننا كتبنا المسار "/app/" مباشرة
+      # وبشكل ثابت داخل <base href="/app/"> في web/index.html أعلاه (خطوة
+      # "تخصيص صفحة الويب الرئيسية"). خيار --base-href في أمر البناء يعمل
+      # فقط عند وجود عنصر نائب $FLUTTER_BASE_HREF داخل الملف ليستبدله به —
+      # وبما أننا كتبنا القيمة النهائية يدويًا بدل العنصر النائب، تمرير
+      # الخيار يسبب فشل البناء بالخطأ:
+      # "Couldn't find the placeholder for base href". لو تغيّر المسار
+      # "/app/" مستقبلًا يجب تحديثه في مكانين: <base href> بالأعلى، وسطر
+      # app.serveStaticAt('/app', ...) في server.js.
       - name: بناء نسخة الويب
-        run: flutter build web --release --base-href "/app/"
+        run: flutter build web --release
 
       # نضغط ناتج البناء في ملف واحد سهل التحميل والفكّ يدويًا على سيرفر
       # المستخدم (لا يوجد اتصال مباشر من GitHub Actions إلى سيرفر Windows
