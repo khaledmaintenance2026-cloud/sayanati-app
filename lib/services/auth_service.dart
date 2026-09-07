@@ -33,6 +33,11 @@ bool isProductionRole(AppRole r) => r == AppRole.production || r == AppRole.prod
 /// مسؤول إنتاج فقط — راجع PATCH/DELETE /api/production/batches/:id).
 bool canManageBatches(AppRole r) => r == AppRole.admin || r == AppRole.productionManager;
 
+/// هل هذا مستخدم سلامة؟ دالة صغيرة للتناسق مع [isProductionRole] أعلاه رغم
+/// وجود قيمة واحدة فقط للدور حاليًا — تُستخدم عند إظهار حقل "قسم السلامة"
+/// (تقييد بمصنع الرجال أو النساء) في لوحة اعتماد المستخدمين.
+bool isSafetyRole(AppRole r) => r == AppRole.safety;
+
 AppRole roleFromString(String? s) {
   switch (s) {
     case 'admin':
@@ -98,6 +103,12 @@ class AppUser {
   /// يُحدَّد فقط من لوحة الإدارة (راجع PATCH /users/:id/production-facility).
   final String? productionFacility;
 
+  /// قسم السلامة الذي يُقيَّد به مسؤول السلامة (مصنع الرجال/مصنع النساء) —
+  /// عمود مستقل عن [productionFacility] أعلاه رغم القيم المشتركة. null يعني
+  /// بلا تقييد (يرى تصاريح كل الأقسام)، وهذا الافتراضي حتى يُحدَّد له قسم
+  /// صراحة من لوحة الإدارة (راجع PATCH /users/:id/safety-facility).
+  final String? safetyFacility;
+
   /// رقم الهاتف الشخصي للمستخدم — اختياري، يُدخله عند التسجيل أو يضيفه مدير
   /// النظام لاحقًا. يُستخدم لتوجيه إشعارات واتساب لهذا المستخدم تحديدًا (مثل
   /// نتيجة تصريح سلامة قدّمه) بدل جروب عام فقط.
@@ -110,12 +121,13 @@ class AppUser {
     required this.role,
     required this.approved,
     this.productionFacility,
+    this.safetyFacility,
     this.phone,
   });
 
   /// يبني مستخدمًا من استجابة سيرفر صيانتي المحلي (حقل "user" في ردود
   /// /api/auth/* و /api/users) — الشكل: {id, name, email, role, status,
-  /// production_facility, phone}.
+  /// production_facility, safety_facility, phone}.
   factory AppUser.fromApi(Map<String, dynamic> d) => AppUser(
         uid: d['id'].toString(),
         email: (d['email'] as String?) ?? '',
@@ -123,6 +135,7 @@ class AppUser {
         role: roleFromString(d['role'] as String?),
         approved: d['status'] == 'approved',
         productionFacility: d['production_facility'] as String?,
+        safetyFacility: d['safety_facility'] as String?,
         phone: d['phone'] as String?,
       );
 }
