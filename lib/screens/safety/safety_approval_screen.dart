@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/safety_permit.dart';
 import '../../services/app_state.dart';
+import '../../services/constants.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
@@ -27,6 +28,7 @@ class _SafetyApprovalScreenState extends State<SafetyApprovalScreen> {
   final _otherPpeCtrl = TextEditingController();
   final _precautionsCtrl = TextEditingController();
   final _rejectionReasonCtrl = TextEditingController();
+  bool _submitting = false;
 
   @override
   void dispose() {
@@ -37,6 +39,7 @@ class _SafetyApprovalScreenState extends State<SafetyApprovalScreen> {
   }
 
   bool get _canConfirm {
+    if (_submitting) return false;
     if (_approve == null) return false;
     if (_approve == true) {
       return _siteHazards.isNotEmpty &&
@@ -47,31 +50,39 @@ class _SafetyApprovalScreenState extends State<SafetyApprovalScreen> {
     return _rejectionReasonCtrl.text.trim().isNotEmpty;
   }
 
-  void _confirm() {
+  Future<void> _confirm() async {
     final appState = context.read<AppState>();
-    if (_approve == true) {
-      final ppe = {
-        ..._ppeRequired,
-        if (_otherPpeCtrl.text.trim().isNotEmpty) 'أخرى: ${_otherPpeCtrl.text.trim()}',
-      };
-      appState.reviewPermit(
-        widget.permit.id,
-        approve: true,
-        reviewer: 'مسؤول السلامة',
-        siteHazards: _siteHazards.toList(),
-        potentialRisks: _potentialRisks.toList(),
-        ppeRequired: ppe.toList(),
-        precautions: _precautionsCtrl.text.trim(),
-      );
-    } else {
-      appState.reviewPermit(
-        widget.permit.id,
-        approve: false,
-        reviewer: 'مسؤول السلامة',
-        rejectionReason: _rejectionReasonCtrl.text.trim(),
+    setState(() => _submitting = true);
+    try {
+      if (_approve == true) {
+        final ppe = {
+          ..._ppeRequired,
+          if (_otherPpeCtrl.text.trim().isNotEmpty) 'أخرى: ${_otherPpeCtrl.text.trim()}',
+        };
+        await appState.reviewPermitCloud(
+          widget.permit.id,
+          approve: true,
+          siteHazards: _siteHazards.toList(),
+          potentialRisks: _potentialRisks.toList(),
+          ppeRequired: ppe.toList(),
+          precautions: _precautionsCtrl.text.trim(),
+        );
+      } else {
+        await appState.reviewPermitCloud(
+          widget.permit.id,
+          approve: false,
+          rejectionReason: _rejectionReasonCtrl.text.trim(),
+        );
+      }
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذّر حفظ قرار المراجعة: $e')),
       );
     }
-    Navigator.of(context).pop();
   }
 
   @override
@@ -105,9 +116,43 @@ class _SafetyApprovalScreenState extends State<SafetyApprovalScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  _InfoRow(label: 'مقدّم الطلب', value: '${permit.requesterName} — ${permit.requesterRole}'),
-                  _InfoRow(label: 'عدد العمال المطلوبين', value: permit.techniciansCount.toString()),
-                  if (permit.relatedReportId != null) const _InfoRow(label: 'الحالة', value: 'مرتبط ببلاغ صيانة قائم'),
+                  if (permit.officeName != null && permit.officeName!.isNotEmpty)
+                    _InfoRow(label: 'الجهة الطالبة', value: permit.officeName!),
+                  _InfoRow(label: 'مقدّم الطلب', value: permit.requesterName),
+                  _InfoRow(label: 'عدد العمال المطلوبين', value: permit.workersCount.toString()),
+                  _InfoRow(label: 'نوع العمل الخطر', value: permit.operationTypesLabel),
+                  if (permit.equipmentUsed != null && permit.equipmentUsed!.isNotEmpty)
+                    _InfoRow(label: 'المعدات المستخدمة', value: permit.equipmentUsed!),
+                  if (permit.responsiblePhone != null && permit.responsiblePhone!.isNotEmpty)
+                    _InfoRow(label: 'جوال المسؤول', value: permit.responsiblePhone!),
+                  if (permit.startAt != null)
+                    _InfoRow(label: 'بداية العمل', value: _formatDateTime(permit.startAt!)),
+                  if (permit.endAt != null)
+                    _InfoRow(label: 'نهاية العمل', value: _formatDateTime(permit.endAt!)),
+                  if (permit.relatedWorkOrderId != null) const _InfoRow(label: 'الحالة', value: 'مرتبط ببلاغ صيانة قائم'),
+                  if (permit.equipmentPhoto != null) ...[
+                    const SizedBox(height: 4),
+                    const Align(
+                      alignment: Alignment.centerRight,
+                      child: Text('صورة المعدات/موقع العمل', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Image.network(
+                        '$kApiOrigin${permit.equipmentPhoto}',
+                        height: 180,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          height: 100,
+                          alignment: Alignment.center,
+                          color: AppColors.surface,
+                          child: const Text('تعذّر تحميل الصورة', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   const InfoNote(
                     text: 'موافقة قسم السلامة فقط — قسم الصيانة منفصل تمامًا ودوره الفني لا علاقة له بالاعتماد',
@@ -205,7 +250,9 @@ class _SafetyApprovalScreenState extends State<SafetyApprovalScreen> {
             ),
             const SizedBox(height: 14),
             PrimaryButton(
-              label: _approve == false ? 'تأكيد الرفض' : 'تأكيد الموافقة على التصريح',
+              label: _submitting
+                  ? 'جارٍ الحفظ...'
+                  : (_approve == false ? 'تأكيد الرفض' : 'تأكيد الموافقة على التصريح'),
               color: !_canConfirm
                   ? AppColors.textFaint
                   : (_approve == false ? const Color(0xFFB3261E) : AppColors.safety),
@@ -326,6 +373,14 @@ class _InfoRow extends StatelessWidget {
       ),
     );
   }
+}
+
+String _formatDateTime(DateTime dt) {
+  final d = dt.day.toString().padLeft(2, '0');
+  final m = dt.month.toString().padLeft(2, '0');
+  final h = dt.hour.toString().padLeft(2, '0');
+  final mi = dt.minute.toString().padLeft(2, '0');
+  return '$d/$m/${dt.year} — $h:$mi';
 }
 
 InputDecoration _decoration({String? hint}) {
