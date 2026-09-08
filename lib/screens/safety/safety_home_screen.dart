@@ -5,17 +5,51 @@ import '../../models/safety_permit.dart';
 import '../../services/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import 'injury_reports_list_screen.dart';
 import 'safety_approval_screen.dart';
 import 'safety_permit_request_screen.dart';
 
-class SafetyHomeScreen extends StatefulWidget {
+/// شاشة السلامة — تبويبان: تصاريح العمل، وإصابات العمل (QMS-SAF-007)، بنفس
+/// أسلوب AdminHomeScreen (DefaultTabController + TabBar واحد أعلى الشاشة).
+class SafetyHomeScreen extends StatelessWidget {
   const SafetyHomeScreen({super.key});
 
   @override
-  State<SafetyHomeScreen> createState() => _SafetyHomeScreenState();
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('السلامة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          bottom: const TabBar(
+            labelColor: AppColors.safetyText,
+            unselectedLabelColor: AppColors.textMuted,
+            indicatorColor: AppColors.safety,
+            tabs: [
+              Tab(text: 'تصاريح العمل'),
+              Tab(text: 'إصابات العمل'),
+            ],
+          ),
+        ),
+        body: const TabBarView(
+          children: [
+            _SafetyPermitsTab(),
+            InjuryReportsListScreen(),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _SafetyHomeScreenState extends State<SafetyHomeScreen> {
+class _SafetyPermitsTab extends StatefulWidget {
+  const _SafetyPermitsTab();
+
+  @override
+  State<_SafetyPermitsTab> createState() => _SafetyPermitsTabState();
+}
+
+class _SafetyPermitsTabState extends State<_SafetyPermitsTab> {
   @override
   void initState() {
     super.initState();
@@ -48,9 +82,7 @@ class _SafetyHomeScreenState extends State<SafetyHomeScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
 
-    return Scaffold(
-      appBar: const ScreenTopBar(title: 'السلامة'),
-      body: Stack(
+    return Stack(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
@@ -109,7 +141,6 @@ class _SafetyHomeScreenState extends State<SafetyHomeScreen> {
             ),
           ),
         ],
-      ),
     );
   }
 }
