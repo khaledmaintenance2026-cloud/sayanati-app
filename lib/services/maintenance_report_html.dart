@@ -35,6 +35,7 @@ String buildMaintenanceReportHtml(MaintenanceReport report) {
 <meta charset="utf-8">
 <style>
   @page { size: A4; margin: 0; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
   body { margin: 0; }
 </style>
 </head>
