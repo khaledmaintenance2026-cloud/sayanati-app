@@ -1,18 +1,27 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 
 import '../../models/injury_report.dart';
+import '../../services/html_report_opener.dart';
 import '../../services/injury_report_html.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
 /// تقرير PDF قابل للطباعة/المشاركة لتحقيق إصابة عمل واحد — يُبنى كـHTML بنفس
-/// هوية تقرير الصيانة ثم يُحوَّل لملف PDF عبر محرك عرض النظام. راجع
-/// lib/screens/maintenance/maintenance_report_print_screen.dart لنفس الأسلوب
-/// والملاحظة المهمة عن الاعتماد على Android System WebView ومهلة التحويل.
+/// هوية تقرير الصيانة. على أندرويد يُحوَّل مباشرة لملف PDF عبر محرك عرض
+/// النظام (Printing.convertHtml، يعتمد على مكوّن Android System WebView).
+///
+/// على الويب هذا التحويل غير مدعوم إطلاقًا — حزمة printing لا تملك أي تنفيذ
+/// لـ convertHtml على منصة الويب، فيرمي الاستدعاء UnimplementedError فور
+/// تنفيذه (وهو ما كان يظهر للمستخدم كشاشة فارغة بعبارة "UnimplementedError").
+/// لذلك نفتح على الويب نفس تقرير الـHTML في تبويب متصفح جديد بدلًا من ذلك
+/// (راجع lib/services/html_report_opener.dart)، ليستخدم المستخدم خاصية
+/// الطباعة/الحفظ كـPDF المدمجة في المتصفح نفسه (Ctrl+P). راجع أيضًا
+/// lib/screens/maintenance/maintenance_report_print_screen.dart لنفس الأسلوب.
 class InjuryReportPrintScreen extends StatefulWidget {
   final InjuryReport report;
   const InjuryReportPrintScreen({super.key, required this.report});
@@ -45,18 +54,63 @@ class _InjuryReportPrintScreenState extends State<InjuryReportPrintScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const ScreenTopBar(title: 'تقرير تحقيق الإصابة'),
-      body: _timedOut
-          ? _ConversionTimeoutView(onRetry: _retry)
-          : PdfPreview(
-              key: ValueKey(_attempt),
-              build: _build,
-              allowSharing: true,
-              allowPrinting: true,
-              canChangeOrientation: false,
-              canChangePageFormat: false,
-              pdfFileName: 'تحقيق_إصابة_${widget.report.id}.pdf',
-              loadingWidget: const Center(child: CircularProgressIndicator(color: AppColors.safety)),
+      body: kIsWeb
+          ? _WebPrintView(
+              color: AppColors.safety,
+              onOpen: () => openHtmlReportInNewTab(buildInjuryReportHtml(widget.report)),
+            )
+          : (_timedOut
+              ? _ConversionTimeoutView(onRetry: _retry)
+              : PdfPreview(
+                  key: ValueKey(_attempt),
+                  build: _build,
+                  allowSharing: true,
+                  allowPrinting: true,
+                  canChangeOrientation: false,
+                  canChangePageFormat: false,
+                  pdfFileName: 'تحقيق_إصابة_${widget.report.id}.pdf',
+                  loadingWidget: const Center(child: CircularProgressIndicator(color: AppColors.safety)),
+                )),
+    );
+  }
+}
+
+/// شاشة فتح التقرير على الويب — بدل معاينة PDF داخل التطبيق (غير مدعومة على
+/// الويب)، نعرض زرًا يفتح التقرير في تبويب جديد ليطبعه المستخدم أو يحفظه
+/// كـPDF من نافذة الطباعة الخاصة بالمتصفح نفسه.
+class _WebPrintView extends StatelessWidget {
+  final Color color;
+  final VoidCallback onOpen;
+  const _WebPrintView({required this.color, required this.onOpen});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.picture_as_pdf_outlined, size: 48, color: color),
+            const SizedBox(height: 16),
+            const Text(
+              'التقرير جاهز للفتح',
+              style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
             ),
+            const SizedBox(height: 10),
+            const Text(
+              'اضغط الزر بالأسفل لفتح التقرير في تبويب جديد، ثم استخدم خاصية '
+              'الطباعة في المتصفح (Ctrl+P أو ⌘+P) واختر "حفظ كـ PDF" لحفظه، '
+              'أو اختر طابعتك للطباعة مباشرة.',
+              style: TextStyle(fontSize: 13, color: AppColors.textMuted, height: 1.6),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            PrimaryButton(label: 'فتح التقرير', color: color, icon: Icons.open_in_new, onPressed: onOpen),
+          ],
+        ),
+      ),
     );
   }
 }
