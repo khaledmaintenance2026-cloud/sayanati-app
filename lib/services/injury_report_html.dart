@@ -9,18 +9,18 @@ import '../models/injury_report.dart';
 /// تحت كل عنصر) ونفس رسوماتها الثابتة (الشعار، مخطط الجسم، مخطط عظمة
 /// السمكة، هرم هرمية الضوابط الملون) ونفس مقاس الورق (Letter).
 ///
-/// ملاحظات مهمة عن بعض الاختلافات الحتمية عن النسخة الورقية (تم الاتفاق
-/// عليها كأقرب بديل ممكن لأن استمارتنا الرقمية نصية وليست ملء استمارة يدويًا):
-/// 1) "تظليل" مخطط الجسم لتحديد مكان الإصابة غير ممكن آليًا، فاستُبدل بقائمة
-///    نصية تحت نفس رسم المخطط الأصلي توضح الأجزاء المُدخَلة في التطبيق.
-/// 2) خانتا "Sign" (توقيع الإجراء) والتوقيع النهائي لا يوجد لهما مقابل توقيع
-///    رقمي حقيقي في النظام، فاستُبدلتا: علامة (✓) للإجراء المُنجز في جدول
-///    CAR/PAR، والاسم المكتوب (المعتمِد) في خانة التوقيع النهائية.
+/// ملاحظات مهمة عن بعض الاختلافات عن النسخة الورقية (بحسب توجيه العميل):
+/// 1) مكان الإصابة على مخطط الجسم يُعلَّم تلقائيًا بدائرة حمراء (بدل التظليل
+///    اليدوي) فوق كل جزء مُدخَل في التطبيق — راجع خريطة bodyMarks أدناه؛ يبقى
+///    السطر النصي أسفل الرسم أيضًا كملخص واضح لنفس المعلومة.
+/// 2) خانة "Sign" في جدول CAR/PAR وخانة "Signature" النهائية تُتركان فارغتين
+///    عمدًا (بدون أي علامة أو اسم) ليوقّعهما المسؤول يدويًا على الورق بعد
+///    طباعة التقرير، بناءً على طلب العميل صراحة.
 /// 3) حقل "التاريخ" المرافق لـ"Written by" لا يوجد له حقل مطابق صريح في
 ///    النظام، فاستُخدم تاريخ التحقيق (investigationDate) كأقرب قيمة منطقية.
-/// 4) نص شارات الخطوات الإنجليزية (مثل "employee Injured  1: Step") منسوخ
-///    حرفيًا من الاستمارة الأصلية كما هو (بما فيه الترتيب المعكوس للكلمات)
-///    التزامًا بطلب المطابقة التامة دون أي تعديل.
+/// 4) نص شارات الخطوات الإنجليزية مكتوب بترتيبه الصحيح (مثال: "Step 1:
+///    Employee Injured") — الاستمارة الأصلية كانت تحمل خطأ مطبعيًا بترتيب
+///    الكلمات معكوسًا في هذه الشارات تحديدًا، وصحّحناه بناءً على طلب العميل.
 String buildInjuryReportHtml(InjuryReport r) {
   const chk = '☒';
   const unchk = '☐';
@@ -138,6 +138,42 @@ String buildInjuryReportHtml(InjuryReport r) {
     ('ppe', 'Provide PPE', '#2470b8'),
   ];
 
+  // إحداثيات تقريبية (نسبة % من عرض/ارتفاع صورة مخطط الجسم الأصلية 360×422)
+  // لوضع دائرة حمراء تلقائيًا على مكان كل إصابة مُدخَلة بدل التظليل اليدوي —
+  // بما أن جهة الإصابة (يمين/يسار) غير مسجَّلة في النظام، توضع دائرة على
+  // الجانبين معًا (وعلى الرسمين الأمامي والخلفي لو الجزء ظاهر فيهما) لتغطية
+  // الاحتمالين. "other" بلا موضع محدد فيبقى في السطر النصي أسفل الرسم فقط.
+  const bodyMarks = <String, List<(double, double)>>{
+    'head': [(26.4, 8.3), (80.6, 8.3)],
+    'face': [(26.4, 13.0)],
+    'eye': [(26.4, 11.8)],
+    'neck': [(26.4, 19.0), (80.6, 19.0)],
+    'shoulder': [(15.3, 28.4), (38.1, 28.4), (69.4, 28.4), (91.7, 28.4)],
+    'arm': [(13.3, 40.8), (40.3, 40.8), (68.1, 40.8), (93.1, 40.8)],
+    'elbow': [(9.7, 47.9), (43.1, 47.4), (64.4, 47.9), (96.7, 47.4)],
+    'wrist': [(5.6, 54.0), (46.7, 52.1), (57.8, 54.0), (97.8, 52.1)],
+    'hand_fingers': [(2.2, 58.8), (50.6, 57.3), (54.4, 58.8), (99.0, 57.3)],
+    'chest': [(26.4, 35.5)],
+    'back': [(80.6, 37.9)],
+    'abdomen': [(26.4, 46.2)],
+    'pelvis': [(26.4, 51.7), (80.6, 51.7)],
+    'thigh': [(20.8, 64.0), (31.9, 64.0), (75.0, 64.0), (86.1, 64.0)],
+    'knee': [(20.8, 71.1), (31.9, 71.1), (75.0, 71.1), (86.1, 71.1)],
+    'leg': [(21.7, 78.2), (31.1, 78.2), (75.6, 78.2), (85.6, 78.2)],
+    'ankle': [(22.2, 87.7), (30.6, 87.7), (76.4, 87.7), (84.7, 87.7)],
+    'foot_toes': [(20.8, 93.6), (31.9, 93.6), (75.0, 93.6), (86.1, 93.6)],
+  };
+
+  String bodyDiagramWithMarks(List<String> bodyLabels) {
+    final marksHtml = StringBuffer();
+    for (final k in bodyLabels) {
+      for (final pt in bodyMarks[k] ?? const <(double, double)>[]) {
+        marksHtml.write('<div class="body-mark" style="left:${pt.$1}%; top:${pt.$2}%;"></div>');
+      }
+    }
+    return '<div class="body-diagram-wrap"><img src="data:image/jpeg;base64,$bodyDiagramB64" />$marksHtml</div>';
+  }
+
   String chkLineEn(List<(String, String, String)> options, List<String> selected, {String? otherText, String otherKey = 'other'}) {
     final items = options.map((o) {
       final mark = selected.contains(o.$1) ? chk : unchk;
@@ -221,7 +257,7 @@ String buildInjuryReportHtml(InjuryReport r) {
     final lwdText = emp.lostWorkDays <= 0 ? 'N/A' : '${emp.lostWorkDays}';
     final empType = emp.employmentType != null ? [emp.employmentType!] : <String>[];
     return '''
-    ${stepBanner('employee Injured  1: Step', 'الخطوة الأولى: الموظف المصاب')}
+    ${stepBanner('Step 1: Employee Injured', 'الخطوة الأولى: الموظف المصاب')}
     <table class="form-table">
       <tr class="yellow-row">
         <td class="lbl" style="width:40%">This part should be filled for each injured employee<br/><span class="ar">يجب تعبئة هذا الجزء لكل موظف مصاب</span></td>
@@ -234,7 +270,7 @@ String buildInjuryReportHtml(InjuryReport r) {
         <td class="lbl">${lbl('Name', 'الاسم')}</td><td class="ar">${esc(emp.employeeName)}</td>
         <td class="lbl">${lbl('Nationality', 'الجنسية')}</td><td class="ar">${esc(emp.nationality)}</td>
         <td class="lbl">${lbl('ID No.', 'الرقم الوظيفي')}</td><td>${esc(emp.employeeIdNo)}</td>
-        <td class="lbl">${lbl('Age', 'العمر')}</td><td>${emp.age?.toString() ?? ''}</td>
+        <td class="lbl">${lbl('Age', 'العمر')}</td><td>${emp.age ?? ''}</td>
       </tr>
       <tr>
         <td class="lbl">${lbl('Dept./ Section', 'الإدارة/القسم')}</td><td class="ar">${esc(emp.department)}</td>
@@ -244,7 +280,7 @@ String buildInjuryReportHtml(InjuryReport r) {
       <tr>
         <td class="lbl" colspan="4" rowspan="5" style="vertical-align:top">
           <div style="text-align:center;font-weight:700">Part of body affected (shade all that apply)<br/><span class="ar">الجزء المتضرر في الجسم (ظلل الأماكن المتضررة)</span></div>
-          <div class="body-diagram"><img src="data:image/jpeg;base64,$bodyDiagramB64" /></div>
+          ${bodyDiagramWithMarks(emp.bodyPartsAffected)}
           <div class="body-affected-list ar"><b>الأجزاء المتأثرة المُدخَلة:</b> ${esc(bodyText.isEmpty ? '—' : bodyText)}</div>
         </td>
         <td class="lbl" colspan="2">${lbl('No. of Lost Work Days', 'عدد أيام الغياب')}</td>
@@ -259,11 +295,11 @@ String buildInjuryReportHtml(InjuryReport r) {
       </tr>
       <tr>
         <td class="lbl" colspan="2">Number of months doing this job<br/><span class="ar">عدد الأشهر التي عمل بها العامل بهذه الوظيفة</span></td>
-        <td colspan="2">${emp.monthsInJob?.toString() ?? ''}</td>
+        <td colspan="2">${emp.monthsInJob ?? ''}</td>
       </tr>
       <tr>
         <td class="lbl" colspan="2">Number of months in organization<br/><span class="ar">عدد الأشهر التي عمل بها الموظف بالشركة</span></td>
-        <td colspan="2">${emp.monthsInCompany?.toString() ?? ''}</td>
+        <td colspan="2">${emp.monthsInCompany ?? ''}</td>
       </tr>
       <tr><td class="lbl" colspan="8">Nature of injury: (most serious one)</td></tr>
       <tr><td colspan="8">${chkLineEn(injuryNatureOptions, emp.injuryNature, otherText: emp.injuryNatureOther)}</td></tr>
@@ -277,7 +313,7 @@ String buildInjuryReportHtml(InjuryReport r) {
     final workday = r.workdayPart != null ? [r.workdayPart!] : <String>[];
     return '''
     ${headerBlock()}
-    ${stepBanner('Incident the Describe  2: Step', 'الخطوة الثانية: وصف الحادث')}
+    ${stepBanner('Step 2: Describe the Incident', 'الخطوة الثانية: وصف الحادث')}
     <table class="form-table">
       <tr>
         <td class="lbl" style="width:20%">${lbl('Exact location of the Incident', 'موقع الحادث')}</td>
@@ -325,7 +361,7 @@ String buildInjuryReportHtml(InjuryReport r) {
 
   String pageFishbone() => '''
     ${headerBlock()}
-    <div class="step3-title"><span>happen? Incident they did Why  3: Step</span><span class="ar">الخطوة الثالثة: ما سبب حدوث الحادث؟</span></div>
+    <div class="step3-title"><span>Step 3: Why did the Incident happen?</span><span class="ar">الخطوة الثالثة: ما سبب حدوث الحادث؟</span></div>
     <div class="fishbone"><img src="data:image/jpeg;base64,$fishboneB64" /></div>
   ''';
 
@@ -385,7 +421,7 @@ String buildInjuryReportHtml(InjuryReport r) {
       actionRows.write('''<tr>
           <td class="ar">${esc(a.actionDescription)}</td>
           <td class="ar">${esc(a.responsiblePerson)}</td>
-          <td class="center">${a.done ? '✓' : ''}</td>
+          <td class="center"></td>
           <td>${fmtDate(a.targetDate)}</td>
         </tr>''');
     }
@@ -413,7 +449,7 @@ String buildInjuryReportHtml(InjuryReport r) {
       $actionRows
     </table>
 
-    ${stepBanner('form? this reviewed and completed Who  5: Step', 'الخطوة الخامسة: من تمت مراجعة هذا وإكماله؟')}
+    ${stepBanner('Step 5: Who completed and reviewed this form?', 'الخطوة الخامسة: من تمت مراجعة هذا وإكماله؟')}
     <table class="form-table">
       <tr>
         <td class="lbl">${lbl('Written by', 'كتب التقرير بواسطة')}</td><td class="ar">${esc(r.writtenBy)}</td>
@@ -427,7 +463,7 @@ String buildInjuryReportHtml(InjuryReport r) {
         <td class="lbl">${lbl('Job title', 'المسمى الوظيفي')}</td><td class="ar" colspan="2">${esc(r.approvedByTitle)}</td>
       </tr>
       <tr>
-        <td class="lbl">${lbl('Signature', 'التوقيع')}</td><td class="ar" colspan="2" style="font-style:italic">${esc(r.approvedBy)}</td>
+        <td class="lbl">${lbl('Signature', 'التوقيع')}</td><td class="ar" colspan="2">&nbsp;</td>
         <td class="lbl">${lbl('Date', 'التاريخ')}</td><td colspan="2">${fmtDate(r.approvedAt)}</td>
       </tr>
     </table>
@@ -476,8 +512,9 @@ String buildInjuryReportHtml(InjuryReport r) {
     .chk-line.ar { text-align:right; direction:rtl; }
     .chk-line.stacked { display:flex; flex-direction:column; gap:2px; }
 
-    .body-diagram { text-align:center; margin: 4px 0; }
-    .body-diagram img { height: 170px; }
+    .body-diagram-wrap { position:relative; display:inline-block; margin: 4px auto; text-align:center; }
+    .body-diagram-wrap img { height: 170px; display:block; margin:0 auto; }
+    .body-mark { position:absolute; width:12px; height:12px; margin:-6px 0 0 -6px; border:2px solid #c0392b; border-radius:50%; background:rgba(192,57,43,0.12); }
     .body-affected-list { font-size: 9.6px; text-align:center; padding: 0 4px; }
 
     .fishbone { text-align:center; margin-top: 10px; }
