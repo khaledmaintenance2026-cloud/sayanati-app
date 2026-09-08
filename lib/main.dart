@@ -15,6 +15,7 @@ import 'screens/safety/safety_home_screen.dart';
 import 'screens/admin/admin_home_screen.dart';
 
 void main() {
+  print('DIAG_TEST_9182');
   runApp(const SayanatiApp());
 }
 
