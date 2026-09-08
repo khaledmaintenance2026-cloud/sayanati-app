@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/app_notification.dart';
 import '../models/batch_edit.dart';
+import '../models/injury_report.dart';
 import '../models/maintenance_report.dart';
 import '../models/production.dart';
 import '../models/safety_permit.dart';
@@ -55,6 +56,7 @@ class AppState extends ChangeNotifier {
 
   bool _attached = false;
   Timer? _notificationsTimer;
+  Timer? _liveDataTimer;
   bool techniciansLoaded = false;
   String? techniciansError;
 
@@ -75,6 +77,26 @@ class AppState extends ChangeNotifier {
     // حاجة لإعادة فتح الشاشة يدويًا.
     _notificationsTimer?.cancel();
     _notificationsTimer = Timer.periodic(const Duration(seconds: 45), (_) => _loadNotificationsFromCloud());
+    // بدون هذا، كل شاشة كانت تجلب بياناتها مرة واحدة فقط عند فتحها ولا
+    // تتحدّث بعدها إطلاقًا إلا بسحب يدوي للتحديث أو بإغلاق الشاشة وإعادة
+    // فتحها — فباتش جديد يُسجَّل من جوال زميل لا يظهر عندك إلا هكذا. الآن
+    // تُعاد كل البيانات "الحيّة" (الفنيون، خطوط الإنتاج، البلاغات، الباتشات،
+    // بلاغات/أوامر الصيانة، تصاريح السلامة) تلقائيًا كل ١٥ ثانية طالما
+    // المستخدم مسجّل دخوله، بغض النظر عن الشاشة المفتوحة حاليًا.
+    _liveDataTimer?.cancel();
+    _liveDataTimer = Timer.periodic(const Duration(seconds: 15), (_) => _pollLiveData());
+  }
+
+  Future<void> _pollLiveData() async {
+    if (!_attached) return;
+    await Future.wait([
+      _loadTechniciansFromCloud(),
+      _loadProductionLinesFromCloud(),
+      _loadIncidentsFromCloud(),
+      _loadBatchesFromCloud(),
+      _loadWorkOrdersFromCloud(),
+      _loadPermitsFromCloud(),
+    ]);
   }
 
   void detachAuth() {
@@ -95,6 +117,8 @@ class AppState extends ChangeNotifier {
     notifications.clear();
     _notificationsTimer?.cancel();
     _notificationsTimer = null;
+    _liveDataTimer?.cancel();
+    _liveDataTimer = null;
   }
 
   Future<void> reloadTechnicians() => _loadTechniciansFromCloud();
@@ -800,6 +824,98 @@ class AppState extends ChangeNotifier {
   Future<void> removePermitCloud(String id) async {
     await _api.delete('/safety-permits/$id');
     permits.removeWhere((p) => p.id == id);
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------
+  // السلامة — تقارير تحقيق إصابات العمل (QMS-SAF-007)، مربوطة بالسيرفر
+  // المحلي فعليًا عبر /injury-reports (راجع routes/injuryReports.js). القائمة
+  // هنا مختصرة (بدون تفاصيل المصابين/الإجراءات) — التفاصيل الكاملة تُجلب عند
+  // فتح تقرير معيّن (راجع fetchInjuryReportDetail) بنفس أسلوب أوامر العمل.
+  // ---------------------------------------------------------------------
+  final List<InjuryReport> injuryReports = [];
+  bool injuryReportsLoaded = false;
+  String? injuryReportsError;
+
+  Future<void> reloadInjuryReports() => _loadInjuryReportsFromCloud();
+
+  Future<void> _loadInjuryReportsFromCloud() async {
+    if (!_attached) return;
+    try {
+      final data = await _api.get('/injury-reports');
+      final list = (data['reports'] as List).cast<Map<String, dynamic>>();
+      injuryReports
+        ..clear()
+        ..addAll(list.map(InjuryReport.fromApi));
+      injuryReportsLoaded = true;
+      injuryReportsError = null;
+      notifyListeners();
+    } catch (e) {
+      injuryReportsError = 'تعذّر تحميل تقارير إصابات العمل من السيرفر: $e';
+      notifyListeners();
+    }
+  }
+
+  /// يجلب تفاصيل تقرير إصابة كاملة (المصابون + الإجراءات + فريق التحقيق) —
+  /// القائمة المحلية [injuryReports] لا تحمل هذه التفاصيل لتخفيف حجم الاستجابة.
+  Future<InjuryReport> fetchInjuryReportDetail(String id) async {
+    final data = await _api.get('/injury-reports/$id');
+    return InjuryReport.fromApi(data['report'] as Map<String, dynamic>);
+  }
+
+  /// ينشئ تقرير تحقيق إصابة كامل (كل الخطوات الخمس دفعة واحدة).
+  Future<InjuryReport> createInjuryReportCloud(InjuryReport draft) async {
+    final data = await _api.post('/injury-reports', draft.toJson());
+    final report = InjuryReport.fromApi(data['report'] as Map<String, dynamic>);
+    injuryReports.insert(0, report);
+    notifyListeners();
+    return report;
+  }
+
+  /// يعدّل تقريرًا قائمًا (طالما لا يزال مفتوحًا) — يستبدل كل بيانات الخطوات
+  /// الخمس دفعة واحدة، بنفس منطق الإنشاء.
+  Future<InjuryReport> updateInjuryReportCloud(String id, InjuryReport draft) async {
+    final data = await _api.patch('/injury-reports/$id', draft.toJson());
+    final updated = InjuryReport.fromApi(data['report'] as Map<String, dynamic>);
+    final i = injuryReports.indexWhere((r) => r.id == id);
+    if (i != -1) injuryReports[i] = updated;
+    notifyListeners();
+    return updated;
+  }
+
+  /// يحدّث حالة إجراء تصحيحي واحد (تم / بانتظار) دون إعادة إرسال التقرير كاملًا.
+  Future<void> setInjuryActionDone(String reportId, String actionId, bool done) async {
+    await _api.patch('/injury-reports/$reportId/actions/$actionId', {'done': done});
+  }
+
+  /// الخطوة الخامسة: اعتماد التقرير وإغلاقه نهائيًا (يصبح للقراءة فقط، وجاهزًا
+  /// للطباعة الرسمية).
+  Future<InjuryReport> closeInjuryReportCloud(String id, {required String approvedBy, String? approvedByTitle}) async {
+    final data = await _api.patch('/injury-reports/$id/close', {
+      'approvedBy': approvedBy,
+      if (approvedByTitle != null && approvedByTitle.isNotEmpty) 'approvedByTitle': approvedByTitle,
+    });
+    final updated = InjuryReport.fromApi(data['report'] as Map<String, dynamic>);
+    final i = injuryReports.indexWhere((r) => r.id == id);
+    if (i != -1) injuryReports[i] = updated;
+    notifyListeners();
+    return updated;
+  }
+
+  /// يعيد فتح تقرير مُغلَق للتعديل.
+  Future<InjuryReport> reopenInjuryReportCloud(String id) async {
+    final data = await _api.patch('/injury-reports/$id/reopen', {});
+    final updated = InjuryReport.fromApi(data['report'] as Map<String, dynamic>);
+    final i = injuryReports.indexWhere((r) => r.id == id);
+    if (i != -1) injuryReports[i] = updated;
+    notifyListeners();
+    return updated;
+  }
+
+  /// يحذف تقرير تحقيق إصابة نهائيًا (قسم السلامة أو مدير النظام فقط).
+  Future<void> removeInjuryReportCloud(String id) async {
+    await _api.delete('/injury-reports/$id');
+    injuryReports.removeWhere((r) => r.id == id);
     notifyListeners();
   }
 
