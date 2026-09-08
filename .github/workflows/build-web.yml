@@ -1,95 +1,99 @@
-<title>إيقاف Service Worker نهائيًا في الويب</title>
-<style>
-  :root{--bg:#F7F8FA;--surface:#FFFFFF;--border:#E3E6EA;--text:#1A2129;--muted:#5C6673;--faint:#8892A0;--accent:#2B3487;--accent2:#0F766E;--warn:#B45309;--warnBg:#FEF3E2;--danger:#B3261E;}
-  *{box-sizing:border-box;}
-  body{background:var(--bg);color:var(--text);font-family:'Segoe UI',Tahoma,Arial,sans-serif;direction:rtl;line-height:1.7;}
-  .wrap{max-width:900px;margin:0 auto;padding:28px 18px 60px;}
-  h1{font-size:22px;margin:0 0 6px;}
-  .sub{color:var(--muted);font-size:14px;margin:0 0 22px;}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:18px;}
-  .card h2{font-size:16.5px;margin:0 0 10px;display:flex;align-items:center;gap:8px;}
-  .badge{display:inline-block;font-size:11.5px;padding:2px 9px;border-radius:999px;background:var(--accent2);color:#fff;font-weight:600;}
-  ol,ul{padding-inline-start:20px;margin:8px 0;}
-  li{margin-bottom:6px;font-size:14px;}
-  code, .mono{font-family:Consolas,'Courier New',monospace;font-size:12.5px;direction:ltr;unicode-bidi:isolate;}
-  .note{background:var(--warnBg);border:1px solid #F5D9AE;color:var(--warn);border-radius:10px;padding:10px 14px;font-size:13px;margin:10px 0;}
-  .danger{background:#FDECEC;border:1px solid #F3C6C4;color:var(--danger);border-radius:10px;padding:10px 14px;font-size:13px;margin:10px 0;}
-  .filecard{border:1px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden;}
-  .filehead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;background:#F5F6F8;flex-wrap:wrap;}
-  .filehead .path{font-family:Consolas,'Courier New',monospace;font-size:12.5px;direction:ltr;text-align:left;unicode-bidi:isolate;font-weight:700;}
-  .filehead .desc{font-size:12px;color:var(--muted);flex:1 1 260px;}
-  .copybtn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;}
-  .copybtn.copied{background:var(--accent2);}
-  textarea{width:100%;height:220px;resize:vertical;border:none;border-top:1px solid var(--border);background:#FBFBFC;font-family:Consolas,'Courier New',monospace;font-size:11.5px;padding:10px 12px;direction:ltr;text-align:left;color:#333;}
-</style>
+name: بناء نسخة الويب (PWA) من تطبيق صيانتي
 
-<div class="wrap">
-  <h1>الحل الجذري: إيقاف Service Worker نهائيًا في نسخة الويب</h1>
-  <p class="sub">بعد كل المحاولات (تحديث ملف السيرفر، تفريغ Cloudflare، مسح بيانات الموقع يدويًا)، اتضح أن السبب الحقيقي أعمق: أي متصفح فتح الموقع من قبل ثبّت نسخة كاملة منه في تخزينه الخاص (Service Worker)، وهذا التخزين لا يُجبَر على التحديث الفوري مهما فعلنا من طرف السيرفر — يحتاج إغلاق كل التبويبات وإعادة الفحص، وأحيانًا حتى ٢٤ ساعة قبل أن يفكر المتصفح بالتحقق من جديد.</p>
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch: {}
 
-  <div class="card">
-    <h2>✅ الحل النهائي</h2>
-    <p style="font-size:13.5px;">بما أن "صيانتي" تطبيق داخلي يحتاج بيانات حيّة دائمًا (وليس تصفحًا بلا إنترنت)، لا فائدة فعلية من هذا التخزين المؤقت أصلًا — بل هو يتعارض مباشرة مع هدفك بالتحديث السريع بين الأجهزة. الحل: تعديل واحد في خطوة البناء على GitHub يوقف توليد وتسجيل الـ Service Worker نهائيًا. من هذه اللحظة فصاعدًا، كل نشر جديد للموقع سيظهر لكل الأجهزة فور تحميل الصفحة — بلا أي كاش من طرف المتصفح إطلاقًا.</p>
-  </div>
+permissions:
+  contents: write
 
-  <div class="danger">
-    <b>مهم — خطوة أخيرة لمرة واحدة:</b> هذا التعديل يمنع المشكلة من الحدوث في أي نشر <u>قادم</u>. لكن أي متصفح فتح الموقع من قبل (مثل متصفح Opera على جهاز السيرفر) لا يزال يحمل الـ Service Worker القديم المُثبَّت مسبقًا، ولازم يُمسح يدويًا مرة أخيرة (بنفس خطوات "Clear site data" السابقة). بعد هذه المرة الوحيدة، لن تحتاجها مطلقًا مع أي تحديث قادم.
-  </div>
+jobs:
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout الكود
+        uses: actions/checkout@v4
 
-  <div class="card">
-    <h2>📱 التطبيق (GitHub)</h2>
-    <div class="steps">
-      <p style="font-size:13.5px;">استبدل <b>ملفًا واحدًا فقط</b>: افتحه من مستودعكم على GitHub، اضغط أيقونة القلم ✏️، امسح المحتوى بالكامل، الصق الجديد بالأسفل، ثم Commit changes.</p>
-      <ul><li><code>.github/workflows/build-web.yml</code></li></ul>
-      <p style="font-size:13.5px;">هذا الملف خاص ببناء نسخة الويب فقط — لن يُشغَّل بناء تطبيق الأندرويد (APK) بسببه، فتجاهل تبويب "Actions" الخاص بالـ APK. بعد الـ Commit، افتح تبويب Actions وانتظر ظهور ✓ خضراء أمام "بناء نسخة الويب (PWA)"، ثم حمّل ملف <code>sayanati-web.zip</code> الجديد من الإصدار (Release) باسم <code>web-latest</code> واستخرجه في <code>public-app</code> كالمعتاد.</p>
-    </div>
-  </div>
+      - name: تثبيت Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
 
-  <div class="card">
-    <h2>🧹 المسح اليدوي الأخير (على متصفح Opera في جهاز السيرفر تحديدًا)</h2>
-    <ol style="font-size:13.5px;">
-      <li>افتح <code>https://app.almas2.com/app/</code> في نفس متصفح Opera.</li>
-      <li>اضغط <code>F12</code>، ثم اضغط داخل لوحة أدوات المطوّر مرة، ثم <code>Ctrl+Shift+P</code>.</li>
-      <li>اكتب: <code>Clear site data</code> واختر "Clear site data (including third-party cookies)".</li>
-      <li>أغلق الأدوات، ثم أغلق تبويب الموقع بالكامل وافتحه من جديد.</li>
-    </ol>
-  </div>
+      - name: توليد مجلد الويب الأصلي (بدون المساس بـ lib أو pubspec)
+        run: flutter create --platforms=web --org com.sayanati --project-name sayanati_app .
 
-  <div class="card">
-    <h2>📂 الملف (١)</h2>
-    <div id="fileList"></div>
-  </div>
-</div>
+      - name: تحميل الحزم
+        run: flutter pub get
 
-<script id="filedata" type="application/json">[{"path": ".github/workflows/build-web.yml", "content": "name: بناء نسخة الويب (PWA) من تطبيق صيانتي\n\non:\n  push:\n    branches: [ main, master ]\n  workflow_dispatch: {}\n\npermissions:\n  contents: write\n\njobs:\n  build-web:\n    runs-on: ubuntu-latest\n    steps:\n      - name: Checkout الكود\n        uses: actions/checkout@v4\n\n      - name: تثبيت Flutter\n        uses: subosito/flutter-action@v2\n        with:\n          channel: stable\n\n      - name: توليد مجلد الويب الأصلي (بدون المساس بـ lib أو pubspec)\n        run: flutter create --platforms=web --org com.sayanati --project-name sayanati_app .\n\n      - name: تحميل الحزم\n        run: flutter pub get\n\n      # نستبدل صفحة الويب الافتراضية (إنجليزية LTR بأيقونة فلتر العامة)\n      # بنسخة عربية RTL بعنوان واسم التطبيق الحقيقيين. تُكتب من جديد في كل\n      # بناء (نفس فلسفة مجلد android/ — لا تُعدَّل هذه الملفات يدويًا أبدًا).\n      - name: تخصيص صفحة الويب الرئيسية (عنوان عربي، RTL، أيقونة التطبيق)\n        run: |\n          cat > web/index.html <<'HTMLEOF'\n          <!DOCTYPE html>\n          <html lang=\"ar\" dir=\"rtl\">\n          <head>\n            <base href=\"/app/\">\n            <meta charset=\"UTF-8\">\n            <meta content=\"IE=Edge\" http-equiv=\"X-UA-Compatible\">\n            <meta name=\"description\" content=\"نظام صيانتي لإدارة الصيانة والإنتاج والسلامة - الماس للعطور\">\n            <meta name=\"apple-mobile-web-app-capable\" content=\"yes\">\n            <meta name=\"apple-mobile-web-app-status-bar-style\" content=\"black\">\n            <meta name=\"apple-mobile-web-app-title\" content=\"صيانتي\">\n            <link rel=\"apple-touch-icon\" href=\"icons/Icon-192.png\">\n            <link rel=\"icon\" type=\"image/png\" href=\"favicon.png\"/>\n            <title>صيانتي</title>\n            <link rel=\"manifest\" href=\"manifest.json\">\n          </head>\n          <body>\n            <script src=\"flutter_bootstrap.js\" async><\/script>\n          </body>\n          </html>\n          HTMLEOF\n\n      - name: تخصيص ملف Manifest (اسم التطبيق وألوانه)\n        run: |\n          cat > web/manifest.json <<'JSONEOF'\n          {\n              \"name\": \"صيانتي\",\n              \"short_name\": \"صيانتي\",\n              \"start_url\": \"/app/\",\n              \"display\": \"standalone\",\n              \"background_color\": \"#F7F8FA\",\n              \"theme_color\": \"#2B3487\",\n              \"description\": \"نظام صيانتي لإدارة الصيانة والإنتاج والسلامة - الماس للعطور\",\n              \"orientation\": \"portrait-primary\",\n              \"prefer_related_applications\": false,\n              \"icons\": [\n                  { \"src\": \"icons/Icon-192.png\", \"sizes\": \"192x192\", \"type\": \"image/png\" },\n                  { \"src\": \"icons/Icon-512.png\", \"sizes\": \"512x512\", \"type\": \"image/png\" },\n                  { \"src\": \"icons/Icon-maskable-192.png\", \"sizes\": \"192x192\", \"type\": \"image/png\", \"purpose\": \"maskable\" },\n                  { \"src\": \"icons/Icon-maskable-512.png\", \"sizes\": \"512x512\", \"type\": \"image/png\", \"purpose\": \"maskable\" }\n              ]\n          }\n          JSONEOF\n\n      # نولّد أيقونات الويب من نفس شعار التطبيق الفعلي (assets/images/app_icon.png)\n      # بدل ترك أيقونة فلتر الافتراضية — تمامًا كخطوة توليد أيقونة أندرويد.\n      - name: توليد أيقونات الويب من الشعار الفعلي\n        run: |\n          sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick\n          convert assets/images/app_icon.png -resize 192x192 web/icons/Icon-192.png\n          convert assets/images/app_icon.png -resize 512x512 web/icons/Icon-512.png\n          convert assets/images/app_icon.png -resize 192x192 web/icons/Icon-maskable-192.png\n          convert assets/images/app_icon.png -resize 512x512 web/icons/Icon-maskable-512.png\n          convert assets/images/app_icon.png -resize 32x32 web/favicon.png\n\n      # لا نستخدم خيار --base-href هنا لأننا كتبنا المسار \"/app/\" مباشرة\n      # وبشكل ثابت داخل <base href=\"/app/\"> في web/index.html أعلاه (خطوة\n      # \"تخصيص صفحة الويب الرئيسية\"). خيار --base-href في أمر البناء يعمل\n      # فقط عند وجود عنصر نائب $FLUTTER_BASE_HREF داخل الملف ليستبدله به —\n      # وبما أننا كتبنا القيمة النهائية يدويًا بدل العنصر النائب، تمرير\n      # الخيار يسبب فشل البناء بالخطأ:\n      # \"Couldn't find the placeholder for base href\". لو تغيّر المسار\n      # \"/app/\" مستقبلًا يجب تحديثه في مكانين: <base href> بالأعلى، وسطر\n      # app.serveStaticAt('/app', ...) في server.js.\n      # --pwa-strategy=none: يوقف توليد/تسجيل Service Worker نهائيًا. هذا هو\n      # السبب الجذري لمشكلة \"الموقع ما يتحدث\" التي واجهناها مرارًا: كل متصفح\n      # كان يُثبِّت نسخة من الموقع بالكامل في تخزينه الخاص (Service Worker)\n      # ويستمر بعرضها حتى بعد رفع تحديث صحيح على السيرفر وتفريغ كاش\n      # Cloudflare، ولا يزول إلا بمسح بيانات الموقع يدويًا من كل جهاز. بما أن\n      # هذا تطبيق داخلي يحتاج بيانات حيّة دائمًا (وليس تصفحًا بلا إنترنت)،\n      # إيقاف التخزين المؤقت هذا نهائيًا أفضل من محاولة إدارته — كل تحديث\n      # قادم سيظهر لكل الأجهزة فور تحميل الصفحة، بلا أي خطوة يدوية.\n      - name: بناء نسخة الويب\n        run: flutter build web --release --pwa-strategy=none\n\n      # نضغط ناتج البناء في ملف واحد سهل التحميل والفكّ يدويًا على سيرفر\n      # المستخدم (لا يوجد اتصال مباشر من GitHub Actions إلى سيرفر Windows\n      # الخاص به، فالخطوة التالية تجهّز رابط تحميل ثابت بدل نشر تلقائي).\n      - name: ضغط ناتج البناء في ملف واحد\n        run: |\n          cd build/web\n          zip -r ../../sayanati-web.zip .\n\n      # رابط تحميل مباشر وثابت لملف نسخة الويب المضغوط — يُحدَّث تلقائيًا مع\n      # كل بناء جديد، بنفس أسلوب رابط تحميل الـ APK لكن بعلامة (tag) مختلفة\n      # تمامًا (web-latest بدل apk-latest) حتى لا يتعارض مع نشر ملف الـ APK\n      # الذي يعمل من ملف build-apk.yml المستقل عن هذا الملف.\n      - name: نشر رابط تحميل ثابت لملف نسخة الويب\n        uses: softprops/action-gh-release@v2\n        with:\n          tag_name: web-latest\n          name: أحدث نسخة من نسخة الويب (PWA) لتطبيق صيانتي\n          body: يُحدَّث تلقائيًا مع كل رفع كود جديد. حمّل sayanati-web.zip وفكّه داخل مجلد public-app بجانب مجلد public على سيرفر صيانتي، ثم أعد تشغيل الخدمة.\n          make_latest: false\n          files: sayanati-web.zip\n", "group": "app", "desc": "إيقاف Service Worker نهائيًا عند بناء نسخة الويب — الحل الجذري لمشكلة تعليق المتصفح على نسخة قديمة من الموقع", "isNew": false}]</script>
-<script>
-  const files = JSON.parse(document.getElementById('filedata').textContent);
-  const listEl = document.getElementById('fileList');
-  function esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
-  function render(){
-    listEl.innerHTML = files.map((f) => `
-      <div class="filecard">
-        <div class="filehead">
-          <div>
-            <div class="path">${esc(f.path)} <span class="badge">تطبيق</span></div>
-            <div class="desc">${esc(f.desc)}</div>
-          </div>
-          <button class="copybtn" data-idx="${files.indexOf(f)}">نسخ المحتوى</button>
-        </div>
-        <textarea readonly>${esc(f.content)}</textarea>
-      </div>
-    `).join('');
-    listEl.querySelectorAll('.copybtn[data-idx]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const f = files[Number(btn.dataset.idx)];
-        navigator.clipboard.writeText(f.content).then(() => {
-          const orig = btn.textContent;
-          btn.textContent = 'تم النسخ ✓';
-          btn.classList.add('copied');
-          setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1600);
-        });
-      });
-    });
-  }
-  render();
-</script>
+      - name: تخصيص صفحة الويب الرئيسية (عنوان عربي، RTL، أيقونة التطبيق)
+        run: |
+          cat > web/index.html <<'HTMLEOF'
+          <!DOCTYPE html>
+          <html lang="ar" dir="rtl">
+          <head>
+            <base href="/app/">
+            <meta charset="UTF-8">
+            <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+            <meta name="description" content="نظام صيانتي لإدارة الصيانة والإنتاج والسلامة - الماس للعطور">
+            <meta name="apple-mobile-web-app-capable" content="yes">
+            <meta name="apple-mobile-web-app-status-bar-style" content="black">
+            <meta name="apple-mobile-web-app-title" content="صيانتي">
+            <link rel="apple-touch-icon" href="icons/Icon-192.png">
+            <link rel="icon" type="image/png" href="favicon.png"/>
+            <title>صيانتي</title>
+            <link rel="manifest" href="manifest.json">
+          </head>
+          <body>
+            <script src="flutter_bootstrap.js" async></script>
+          </body>
+          </html>
+          HTMLEOF
+
+      - name: تخصيص ملف Manifest (اسم التطبيق وألوانه)
+        run: |
+          cat > web/manifest.json <<'JSONEOF'
+          {
+              "name": "صيانتي",
+              "short_name": "صيانتي",
+              "start_url": "/app/",
+              "display": "standalone",
+              "background_color": "#F7F8FA",
+              "theme_color": "#2B3487",
+              "description": "نظام صيانتي لإدارة الصيانة والإنتاج والسلامة - الماس للعطور",
+              "orientation": "portrait-primary",
+              "prefer_related_applications": false,
+              "icons": [
+                  { "src": "icons/Icon-192.png", "sizes": "192x192", "type": "image/png" },
+                  { "src": "icons/Icon-512.png", "sizes": "512x512", "type": "image/png" },
+                  { "src": "icons/Icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+                  { "src": "icons/Icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+              ]
+          }
+          JSONEOF
+
+      - name: توليد أيقونات الويب من الشعار الفعلي
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
+          convert assets/images/app_icon.png -resize 192x192 web/icons/Icon-192.png
+          convert assets/images/app_icon.png -resize 512x512 web/icons/Icon-512.png
+          convert assets/images/app_icon.png -resize 192x192 web/icons/Icon-maskable-192.png
+          convert assets/images/app_icon.png -resize 512x512 web/icons/Icon-maskable-512.png
+          convert assets/images/app_icon.png -resize 32x32 web/favicon.png
+
+      - name: بناء نسخة الويب
+        run: flutter build web --release --pwa-strategy=none
+
+      - name: ضغط ناتج البناء في ملف واحد
+        run: |
+          cd build/web
+          zip -r ../../sayanati-web.zip .
+
+      - name: نشر رابط تحميل ثابت لملف نسخة الويب
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: web-latest
+          name: أحدث نسخة من نسخة الويب (PWA) لتطبيق صيانتي
+          body: يُحدَّث تلقائيًا مع كل رفع كود جديد. حمّل sayanati-web.zip وفكّه داخل مجلد public-app بجانب مجلد public على سيرفر صيانتي، ثم أعد تشغيل الخدمة.
+          make_latest: false
+          files: sayanati-web.zip
