@@ -84,16 +84,28 @@ jobs:
       - name: بناء نسخة الويب
         run: flutter build web --release --pwa-strategy=none
 
-      - name: ضغط ناتج البناء في ملف واحد
+      - name: ضغط ناتج البناء في ملف واحد (باسم يتضمن رقم الكوميت لتفادي أي كاش قديم)
         run: |
           cd build/web
-          zip -r ../../sayanati-web.zip .
+          zip -r "../../sayanati-web-${GITHUB_SHA::7}.zip" .
+
+      - name: حذف الملفات المرفقة القديمة من الإصدار
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view web-latest --json assets --jq '.assets[].name' 2>/dev/null | \
+            xargs -r -I{} gh release delete-asset web-latest {} -y --repo "${GITHUB_REPOSITORY}" || true
 
       - name: نشر رابط تحميل ثابت لملف نسخة الويب
         uses: softprops/action-gh-release@v2
         with:
           tag_name: web-latest
           name: أحدث نسخة من نسخة الويب (PWA) لتطبيق صيانتي
-          body: يُحدَّث تلقائيًا مع كل رفع كود جديد. حمّل sayanati-web.zip وفكّه داخل مجلد public-app بجانب مجلد public على سيرفر صيانتي، ثم أعد تشغيل الخدمة.
+          body: |
+            يُحدَّث تلقائيًا مع كل رفع كود جديد. اسم الملف المرفق يتغيّر في كل مرة
+            (رقم الكوميت في نهاية الاسم) عن قصد — لتفادي أي تخزين مؤقت قديم من
+            المتصفح أو الشبكة على نفس الرابط. حمّل الملف المرفق هنا (الوحيد
+            الموجود دائمًا)، وفكّه داخل مجلد public-app بجانب مجلد public على
+            سيرفر صيانتي، ثم أعد تشغيل الخدمة.
           make_latest: false
-          files: sayanati-web.zip
+          files: sayanati-web-*.zip
