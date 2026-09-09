@@ -54,18 +54,9 @@ class PushNotificationService {
         AndroidInitializationSettings('@mipmap/ic_launcher');
     const settings = InitializationSettings(android: androidSettings);
     await _localNotifications.initialize(settings);
-
-    const channel = AndroidNotificationChannel(
-      'sayanati_default',
-      'إشعارات صيانتي',
-      description: 'إشعارات النظام العامة (بلاغات، أوامر عمل، تصاريح سلامة)',
-      importance: Importance.high,
-      playSound: true,
-    );
-             await _localNotifications
-        .resolvePlatformSpecificImplementation
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(channel);
+    // ملاحظة: لا حاجة لإنشاء قناة الإشعارات يدويًا — المكتبة تُنشئها تلقائيًا
+    // من بيانات AndroidNotificationDetails في _showLocalNotification أدناه
+    // عند أول إشعار يُعرض.
   }
 
   static void _showLocalNotification(String? title, String? body) {
