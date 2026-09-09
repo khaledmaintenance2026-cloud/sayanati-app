@@ -15,10 +15,13 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {}
 class PushNotificationService {
   PushNotificationService._();
 
+  static FirebaseMessaging? _messaging;
+
   static Future<void> initialize() async {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
     final messaging = FirebaseMessaging.instance;
+    _messaging = messaging;
     await messaging.requestPermission(alert: true, badge: true, sound: true);
 
     if (!kIsWeb) {
@@ -34,6 +37,15 @@ class PushNotificationService {
       if (notification == null) return;
       _showLocalNotification(notification.title, notification.body);
     });
+  }
+
+  /// يُعاد استدعاؤها بعد كل تسجيل دخول ناجح (راجع AuthService) لضمان تسجيل
+  /// توكن الجهاز حتى لو فشلت المحاولة الأولى عند بدء التشغيل بسبب سباق
+  /// توقيت مع تحميل رمز الدخول المحفوظ (JWT) — دون هذه الإعادة قد لا يُسجَّل
+  /// التوكن أبدًا رغم عمل كل شيء آخر بشكل صحيح.
+  static Future<void> registerTokenNow() async {
+    final messaging = _messaging ?? FirebaseMessaging.instance;
+    await _registerToken(messaging);
   }
 
   static Future<void> _registerToken(FirebaseMessaging messaging) async {
@@ -54,9 +66,6 @@ class PushNotificationService {
         AndroidInitializationSettings('@mipmap/ic_launcher');
     const settings = InitializationSettings(android: androidSettings);
     await _localNotifications.initialize(settings);
-    // ملاحظة: لا حاجة لإنشاء قناة الإشعارات يدويًا — المكتبة تُنشئها تلقائيًا
-    // من بيانات AndroidNotificationDetails في _showLocalNotification أدناه
-    // عند أول إشعار يُعرض.
   }
 
   static void _showLocalNotification(String? title, String? body) {
