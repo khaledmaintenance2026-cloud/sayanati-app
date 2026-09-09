@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
 
+import 'firebase_options.dart';
 import 'services/app_state.dart';
 import 'services/auth_service.dart';
+import 'services/push_notification_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/complete_phone_screen.dart';
@@ -14,8 +17,18 @@ import 'screens/production/production_lines_screen.dart';
 import 'screens/safety/safety_home_screen.dart';
 import 'screens/admin/admin_home_screen.dart';
 
-void main() {
+Future<void> main() async {
   print('DIAG_TEST_9182');
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    await PushNotificationService.initialize();
+  } catch (e) {
+    // لا نمنع تشغيل التطبيق حتى لو فشل تفعيل الإشعارات لأي سبب.
+    print('Firebase init error: $e');
+  }
   runApp(const SayanatiApp());
 }
 
