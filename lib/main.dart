@@ -20,15 +20,19 @@ import 'screens/admin/admin_home_screen.dart';
 Future<void> main() async {
   print('DIAG_TEST_9182');
   WidgetsFlutterBinding.ensureInitialized();
-  try {
+    try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-    await PushNotificationService.initialize();
   } catch (e) {
-    // لا نمنع تشغيل التطبيق حتى لو فشل تفعيل الإشعارات لأي سبب.
     print('Firebase init error: $e');
   }
+  // لا ننتظر (await) تفعيل الإشعارات هنا — يعمل في الخلفية بعد فتح التطبيق
+  // مباشرة، حتى لا تتأخر الشاشة الأولى بسبب بطء الاتصال بخدمات Google.
+  // ignore: unawaited_futures
+  PushNotificationService.initialize().catchError((e) {
+    print('Push init error: $e');
+  });
   runApp(const SayanatiApp());
 }
 
