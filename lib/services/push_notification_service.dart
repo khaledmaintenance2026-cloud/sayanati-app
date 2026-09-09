@@ -62,7 +62,8 @@ class PushNotificationService {
       importance: Importance.high,
       playSound: true,
     );
-         .resolvePlatformSpecificImplementation
+             await _localNotifications
+        .resolvePlatformSpecificImplementation
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
   }
