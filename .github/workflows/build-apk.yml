@@ -59,6 +59,24 @@ jobs:
         run: |
           sed -i '/<manifest /a\    <uses-permission android:name="android.permission.CAMERA" />' android/app/src/main/AndroidManifest.xml
 
+      # حزمة flutter_local_notifications (إشعارات صوتية في شريط الجوال) تتطلب
+      # تفعيل "Core Library Desugaring" في إعدادات Gradle، وإلا يفشل البناء
+      # بالكامل. بما أن مجلد android/ يُولَّد من جديد في كل مرة (الخطوة أعلاه)،
+      # نضيف هذا التفعيل هنا تلقائيًا بعد كل توليد بدل تعديله يدويًا في الكود.
+      - name: تفعيل Core Library Desugaring (مطلوب لإشعارات الصوت في شريط الجوال)
+        run: |
+          if [ -f android/app/build.gradle.kts ]; then
+            GFILE=android/app/build.gradle.kts
+            sed -i '/compileOptions {/a\        isCoreLibraryDesugaringEnabled = true' "$GFILE"
+            printf '\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\n' >> "$GFILE"
+          else
+            GFILE=android/app/build.gradle
+            sed -i '/compileOptions {/a\        coreLibraryDesugaringEnabled true' "$GFILE"
+            printf '\ndependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"\n}\n' >> "$GFILE"
+          fi
+          echo "--- محتوى ملف Gradle بعد التعديل ---"
+          cat "$GFILE"
+
       - name: تحميل الحزم
         run: flutter pub get
 
