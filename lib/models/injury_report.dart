@@ -2,6 +2,8 @@
 /// بالحادث" الورقية بخطواتها الخمس بالضبط (راجع routes/injuryReports.js على
 /// السيرفر لنفس القوائم والمفاتيح — يجب أن تبقى مطابقة حرفيًا بين الطرفين).
 
+import 'dart:convert';
+
 /// رأس الاستمارة: طبيعة الحادث (اختيار متعدد).
 const Map<String, String> kNatureOfAccidentLabels = {
   'near_miss': 'خطر كامن وشيك الحدوث',
@@ -46,7 +48,8 @@ const Map<String, String> kInjuryPpeLabels = {
   'full_body_harness': 'حزام الجسم الكامل',
 };
 
-/// الخطوة الرابعة: هرم الضوابط (اختيار واحد).
+/// الخطوة الرابعة: هرم الضوابط (اختيار متعدد — كل ضابط مختار له خانة تفاصيل
+/// مستقلة به، راجع InjuryReport.controlDetails أدناه).
 const Map<String, String> kHierarchyOfControlLabels = {
   'elimination': 'إزالة الخطر',
   'substitution': 'الإحلال (الاستبدال)',
@@ -54,6 +57,82 @@ const Map<String, String> kHierarchyOfControlLabels = {
   'administrative_control': 'الضوابط الإدارية',
   'ppe': 'توفير معدات الحماية الشخصية',
 };
+
+/// الخطوة الثالثة: تحليل السبب الجذري بطريقة "عظم السمكة" (Fishbone) — نفس
+/// السِتّة والثلاثين سببًا المطبوعة في مخطط الاستمارة الورقية، مقسّمة على ٦
+/// فروع (ثلاثة تحت "تصرفات غير آمنة" وثلاثة تحت "ظروف غير آمنة"). المفاتيح
+/// يجب أن تبقى مطابقة حرفيًا لـ FISHBONE_CAUSE_TYPES في routes/injuryReports.js
+/// ولنفس الترتيب في lib/services/injury_report_html.dart.
+const Map<String, String> kFishboneIndividual1Labels = {
+  'ind1_inattention_harassment': 'سهو، مضايقة أو تشتيت',
+  'ind1_unsafe_speed': 'العمل بسرعة غير آمنة',
+  'ind1_not_using_tools': 'عدم استخدام الأدوات المتاحة',
+  'ind1_unsafe_act_other': 'تصرف غير آمن من قبل الغير',
+  'ind1_not_following_instructions': 'عدم اتباع تعليمات العمل',
+  'ind1_other': 'أسباب أخرى',
+};
+const Map<String, String> kFishboneIndividual2Labels = {
+  'ind2_working_without_stopping': 'العمل دون توقف',
+  'ind2_work_without_permit': 'العمل دون تصريح',
+  'ind2_not_trained': 'غير مدرب أو غير مناسب لمتطلبات العمل',
+  'ind2_no_loto': 'عدم اتباع مسار الطاقة الخاطئة (LOTO)',
+  'ind2_unsafe_lifting': 'الحمل بطريقة غير آمنة',
+  'ind2_unsafe_position': 'اتخاذ وضعية غير آمنة',
+};
+const Map<String, String> kFishboneIndividual3Labels = {
+  'ind3_wrong_way_use': 'استخدام معدات/أدوات بطريقة غير آمنة',
+  'ind3_damaged_equipment': 'استخدام معدات/أدوات تالفة',
+  'ind3_no_ppe': 'عدم استخدام أدوات الحماية الشخصية',
+  'ind3_work_under_pressure': 'العمل تحت ضغط (مرهق، مريض)',
+  'ind3_excessive_confidence': 'ثقة زائدة',
+  'ind3_lack_awareness': 'قلة الوعي',
+};
+const Map<String, String> kFishboneEnvironmentLabels = {
+  'env_housekeeping': 'المكان مزدحم وغير منظم أو غير نظيف',
+  'env_lighting': 'الإضاءة غير كافية',
+  'env_workstation_layout': 'تخطيط محطة العمل خطر',
+  'env_humidity_temp': 'حرارة أو رطوبة عالية',
+  'env_ventilation': 'التهوية غير كافية',
+  'env_instructions_insufficient': 'الإرشادات غير كافية',
+};
+const Map<String, String> kFishboneMethodLabels = {
+  'method_supervision': 'الإشراف غير كافي',
+  'method_overload': 'حجم العمل أكبر من اللازم',
+  'method_time': 'الوقت غير كافي',
+  'method_instruction_unclear': 'تعليمات العمل غير واضحة',
+  'method_instruction_unavailable': 'تعليمات العمل غير متوفرة',
+  'method_instruction_insufficient': 'تعليمات العمل غير كافية',
+};
+const Map<String, String> kFishboneEquipmentLabels = {
+  'equip_lack_tools': 'نقص المعدات والأدوات',
+  'equip_maintenance': 'الصيانة غير كافية',
+  'equip_inappropriate_damaged': 'معدات تالفة أو غير ملائمة',
+  'equip_danger_to_employees': 'تشكل خطرًا على الموظفين',
+  'equip_guards_poor': 'معدات الحراسة في حالة سيئة',
+  'equip_unclear_controls': 'ضوابط التشغيل غير واضحة',
+};
+
+/// كل أسباب Fishbone الستة والثلاثين في خريطة واحدة مسطّحة — لعرض ملخص
+/// (مثال multiLabel) دون الحاجة لمعرفة الفرع الذي ينتمي إليه كل سبب.
+const Map<String, String> kFishboneAllLabels = {
+  ...kFishboneIndividual1Labels,
+  ...kFishboneIndividual2Labels,
+  ...kFishboneIndividual3Labels,
+  ...kFishboneEnvironmentLabels,
+  ...kFishboneMethodLabels,
+  ...kFishboneEquipmentLabels,
+};
+
+/// كل فروع Fishbone مع عناوينها (بالإنجليزية والعربية) — تُستخدم لبناء واجهة
+/// الاختيار في شاشة النموذج (كل فرع يُعرض كمجموعة مستقلة من مربعات الاختيار).
+const List<(String, String, Map<String, String>)> kFishboneBranches = [
+  ('Individual', 'الفرد (تصرفات غير آمنة ١)', kFishboneIndividual1Labels),
+  ('Individual', 'الفرد (تصرفات غير آمنة ٢)', kFishboneIndividual2Labels),
+  ('Individual', 'الفرد (تصرفات غير آمنة ٣)', kFishboneIndividual3Labels),
+  ('Work environment', 'بيئة العمل', kFishboneEnvironmentLabels),
+  ('Method', 'أسلوب العمل', kFishboneMethodLabels),
+  ('Equipment & Tools', 'الأدوات والمعدات', kFishboneEquipmentLabels),
+];
 
 /// الخطوة الرابعة: التغييرات المطلوبة لمنع تكرار الحادث (اختيار متعدد).
 const Map<String, String> kPreventionChangeLabels = {
@@ -124,6 +203,20 @@ String _label(Map<String, String> map, String key) => map[key] ?? key;
 
 String multiLabel(Map<String, String> map, List<String> keys) =>
     keys.isEmpty ? '—' : keys.map((k) => _label(map, k)).join('، ');
+
+/// يحوّل عمود control_details القادم من السيرفر (نص JSON، مثال:
+/// '{"ppe":"..."} ') إلى خريطة Dart — يتسامح مع null أو نص فاسد بإرجاع خريطة
+/// فارغة بدل رمي استثناء (نفس أسلوب DateTime.tryParse في هذا الملف).
+Map<String, String> _parseControlDetails(dynamic raw) {
+  if (raw == null) return const {};
+  try {
+    final decoded = raw is String ? jsonDecode(raw) : raw;
+    if (decoded is Map) {
+      return decoded.map((k, v) => MapEntry(k.toString(), v.toString()));
+    }
+  } catch (_) {}
+  return const {};
+}
 
 enum InjuryReportStatus { open, closed }
 
@@ -287,8 +380,17 @@ class InjuryReport {
   final bool? reportedBefore;
   final bool? similarIncidentsBefore;
 
-  final String? hierarchyOfControl;
-  final String? controlDetails;
+  final List<String> hierarchyOfControls;
+
+  /// تفاصيل كل ضابط مختار — مفتاحها هو مفتاح الضابط (راجع
+  /// kHierarchyOfControlLabels)، وقيمتها نص الشرح الخاص بذلك الضابط تحديدًا
+  /// (كل ضابط مختار له مربع نص مستقل بدل مربع نص واحد مشترك للجميع).
+  final Map<String, String> controlDetails;
+
+  /// الخطوة الثالثة: الأسباب المختارة من مخطط عظم السمكة (راجع
+  /// kFishboneBranches) — قائمة مسطّحة من مفاتيح الأسباب عبر كل الفروع الستة.
+  final List<String> fishboneCauses;
+
   final List<String> preventionChanges;
   final String? preventionChangesOther;
   final String? preventionNotes;
@@ -328,8 +430,9 @@ class InjuryReport {
     this.hadRewardIncentive,
     this.reportedBefore,
     this.similarIncidentsBefore,
-    this.hierarchyOfControl,
-    this.controlDetails,
+    this.hierarchyOfControls = const [],
+    this.controlDetails = const {},
+    this.fishboneCauses = const [],
     this.preventionChanges = const [],
     this.preventionChangesOther,
     this.preventionNotes,
@@ -371,8 +474,9 @@ class InjuryReport {
         hadRewardIncentive: d['had_reward_incentive'] as bool?,
         reportedBefore: d['reported_before'] as bool?,
         similarIncidentsBefore: d['similar_incidents_before'] as bool?,
-        hierarchyOfControl: d['hierarchy_of_control'] as String?,
-        controlDetails: d['control_details'] as String?,
+        hierarchyOfControls: (d['hierarchy_of_controls'] as List?)?.cast<String>() ?? const [],
+        controlDetails: _parseControlDetails(d['control_details']),
+        fishboneCauses: (d['fishbone_causes'] as List?)?.cast<String>() ?? const [],
         preventionChanges: (d['prevention_changes'] as List?)?.cast<String>() ?? const [],
         preventionChangesOther: d['prevention_changes_other'] as String?,
         preventionNotes: d['prevention_notes'] as String?,
@@ -412,8 +516,9 @@ class InjuryReport {
         if (hadRewardIncentive != null) 'hadRewardIncentive': hadRewardIncentive,
         if (reportedBefore != null) 'reportedBefore': reportedBefore,
         if (similarIncidentsBefore != null) 'similarIncidentsBefore': similarIncidentsBefore,
-        if (hierarchyOfControl != null) 'hierarchyOfControl': hierarchyOfControl,
-        if (controlDetails != null) 'controlDetails': controlDetails,
+        'hierarchyOfControls': hierarchyOfControls,
+        'controlDetails': controlDetails,
+        'fishboneCauses': fishboneCauses,
         'preventionChanges': preventionChanges,
         if (preventionChangesOther != null) 'preventionChangesOther': preventionChangesOther,
         if (preventionNotes != null) 'preventionNotes': preventionNotes,
