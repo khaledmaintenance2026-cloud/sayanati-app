@@ -183,9 +183,19 @@ class _InjuryReportDetailScreenState extends State<InjuryReportDetailScreen> {
                         _sectionHeader('الخطوة ٣ — تحليل السبب الجذري'),
                         _kv('سبب الظروف غير الآمنة', report.unsafeConditionReason ?? '—'),
                         _kv('سبب التصرفات غير الآمنة', report.unsafeActReason ?? '—'),
+                        _kv('أسباب عظم السمكة', multiLabel(kFishboneAllLabels, report.fishboneCauses)),
                         const SizedBox(height: 14),
                         _sectionHeader('الخطوة ٤ — هرم الضوابط والإجراءات'),
-                        _kv('الضابط المختار', report.hierarchyOfControl != null ? (kHierarchyOfControlLabels[report.hierarchyOfControl] ?? report.hierarchyOfControl!) : '—'),
+                        _kv(
+                          'الضوابط المختارة',
+                          report.hierarchyOfControls.isEmpty
+                              ? '—'
+                              : report.hierarchyOfControls.map((k) {
+                                  final label = kHierarchyOfControlLabels[k] ?? k;
+                                  final details = report.controlDetails[k];
+                                  return details != null && details.isNotEmpty ? '$label: $details' : label;
+                                }).join('\n'),
+                        ),
                         _kv('التغييرات المطلوبة', multiLabel(kPreventionChangeLabels, report.preventionChanges)),
                         const SizedBox(height: 8),
                         const Text('جدول متابعة الإجراءات', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
