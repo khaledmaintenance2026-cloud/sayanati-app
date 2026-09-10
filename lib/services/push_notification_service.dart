@@ -22,11 +22,19 @@ class PushNotificationService {
 
     final messaging = FirebaseMessaging.instance;
     _messaging = messaging;
-    await messaging.requestPermission(alert: true, badge: true, sound: true);
 
     if (!kIsWeb) {
       await _initLocalNotifications();
     }
+
+    // === تشخيص مؤقت ===
+    try {
+      final settings = await messaging.requestPermission(alert: true, badge: true, sound: true);
+      _debugNotify('صلاحية الإشعارات', 'الحالة: ${settings.authorizationStatus}');
+    } catch (e) {
+      _debugNotify('خطأ في طلب الصلاحية', '$e');
+    }
+    // === نهاية التشخيص المؤقت ===
 
     await _registerToken(messaging);
     messaging.onTokenRefresh.listen((_) => _registerToken(messaging));
@@ -39,10 +47,6 @@ class PushNotificationService {
     });
   }
 
-  /// يُعاد استدعاؤها بعد كل تسجيل دخول ناجح (راجع AuthService) لضمان تسجيل
-  /// توكن الجهاز حتى لو فشلت المحاولة الأولى عند بدء التشغيل بسبب سباق
-  /// توقيت مع تحميل رمز الدخول المحفوظ (JWT) — دون هذه الإعادة قد لا يُسجَّل
-  /// التوكن أبدًا رغم عمل كل شيء آخر بشكل صحيح.
   static Future<void> registerTokenNow() async {
     final messaging = _messaging ?? FirebaseMessaging.instance;
     await _registerToken(messaging);
@@ -53,11 +57,40 @@ class PushNotificationService {
       final token = kIsWeb
           ? await messaging.getToken(vapidKey: _vapidKey)
           : await messaging.getToken();
-      if (token == null) return;
+      if (token == null) {
+        _debugNotify('تشخيص Push', 'getToken() أرجع null');
+        return;
+      }
+      _debugNotify('تشخيص Push', 'تم الحصول على توكن، جاري الإرسال للسيرفر...');
       await ApiClient.instance.post('/device-tokens', {
         'token': token,
         'platform': kIsWeb ? 'web' : 'android',
       });
+      _debugNotify('تشخيص Push', 'نجح التسجيل بالكامل ✅');
+    } catch (e) {
+      _debugNotify('تشخيص Push - فشل', '$e');
+    }
+  }
+
+  /// === دالة تشخيص مؤقتة — تعرض النتيجة كإشعار محلي فوري لنراها على
+  /// الهاتف مباشرة بدل أن تُبتلع بصمت. تُحذف بمجرد حل مشكلة تسجيل التوكن. ===
+  static void _debugNotify(String title, String body) {
+    if (kIsWeb) return;
+    try {
+      _localNotifications.show(
+        DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        title,
+        body,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'sayanati_debug',
+            'تشخيص مؤقت',
+            channelDescription: 'إشعارات تشخيص مؤقتة',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
+        ),
+      );
     } catch (_) {}
   }
 
