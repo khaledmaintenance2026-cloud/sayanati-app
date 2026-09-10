@@ -52,7 +52,12 @@ class PushNotificationService {
     await _registerToken(messaging);
   }
 
-  static Future<void> _registerToken(FirebaseMessaging messaging) async {
+  // أخطاء مثل SERVICE_NOT_AVAILABLE عادة مؤقتة (انقطاع لحظي في الاتصال بين
+  // الجهاز وخوادم Google) — إعادة المحاولة بعد فاصل قصير تحلّها غالبًا
+  // تلقائيًا دون أي تدخل من المستخدم. فترات الانتظار بين المحاولات (بالثواني):
+  static const List<int> _retryDelaysSeconds = [3, 8, 15];
+
+  static Future<void> _registerToken(FirebaseMessaging messaging, {int attempt = 1}) async {
     try {
       final token = kIsWeb
           ? await messaging.getToken(vapidKey: _vapidKey)
@@ -66,9 +71,23 @@ class PushNotificationService {
         'token': token,
         'platform': kIsWeb ? 'web' : 'android',
       });
-      _debugNotify('تشخيص Push', 'نجح التسجيل بالكامل ✅');
+      _debugNotify(
+        'تشخيص Push',
+        attempt == 1 ? 'نجح التسجيل بالكامل ✅' : 'نجح التسجيل بالكامل ✅ (بعد إعادة المحاولة رقم $attempt)',
+      );
     } catch (e) {
-      _debugNotify('تشخيص Push - فشل', '$e');
+      final canRetry = attempt <= _retryDelaysSeconds.length;
+      if (canRetry) {
+        final delay = _retryDelaysSeconds[attempt - 1];
+        _debugNotify(
+          'تشخيص Push',
+          'فشلت المحاولة رقم $attempt (سيُعاد المحاولة تلقائيًا بعد $delay ثوانٍ):\n$e',
+        );
+        await Future.delayed(Duration(seconds: delay));
+        await _registerToken(messaging, attempt: attempt + 1);
+        return;
+      }
+      _debugNotify('تشخيص Push - فشل نهائيًا بعد $attempt محاولات', '$e');
     }
   }
 
