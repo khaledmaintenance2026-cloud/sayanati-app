@@ -30,7 +30,6 @@ class _InjuryReportFormScreenState extends State<InjuryReportFormScreen> {
   final _incidentDescriptionCtrl = TextEditingController();
   final _unsafeConditionCtrl = TextEditingController();
   final _unsafeActCtrl = TextEditingController();
-  final _controlDetailsCtrl = TextEditingController();
   final _preventionChangesOtherCtrl = TextEditingController();
   final _preventionNotesCtrl = TextEditingController();
   final _writtenByCtrl = TextEditingController();
@@ -52,7 +51,13 @@ class _InjuryReportFormScreenState extends State<InjuryReportFormScreen> {
   bool? _reportedBefore;
   bool? _similarIncidentsBefore;
 
-  String? _hierarchyOfControl;
+  final Set<String> _hierarchyOfControls = {};
+
+  /// خانة تفاصيل مستقلة لكل ضابط مختار — تُنشأ عند الحاجة (راجع
+  /// _controlDetailsCtrlFor) بدل مربع نص واحد مشترك للجميع.
+  final Map<String, TextEditingController> _controlDetailsCtrls = {};
+
+  final Set<String> _fishboneCauses = {};
   final Set<String> _preventionChanges = {};
 
   final List<InjuryReportEmployee> _employees = [];
@@ -72,7 +77,6 @@ class _InjuryReportFormScreenState extends State<InjuryReportFormScreen> {
       _incidentDescriptionCtrl.text = existing.incidentDescription;
       _unsafeConditionCtrl.text = existing.unsafeConditionReason ?? '';
       _unsafeActCtrl.text = existing.unsafeActReason ?? '';
-      _controlDetailsCtrl.text = existing.controlDetails ?? '';
       _preventionChangesOtherCtrl.text = existing.preventionChangesOther ?? '';
       _preventionNotesCtrl.text = existing.preventionNotes ?? '';
       _writtenByCtrl.text = existing.writtenBy ?? '';
@@ -94,7 +98,9 @@ class _InjuryReportFormScreenState extends State<InjuryReportFormScreen> {
       _reportedBefore = existing.reportedBefore;
       _similarIncidentsBefore = existing.similarIncidentsBefore;
 
-      _hierarchyOfControl = existing.hierarchyOfControl;
+      _hierarchyOfControls.addAll(existing.hierarchyOfControls);
+      existing.controlDetails.forEach((key, value) => _controlDetailsCtrlFor(key).text = value);
+      _fishboneCauses.addAll(existing.fishboneCauses);
       _preventionChanges.addAll(existing.preventionChanges);
 
       _employees.addAll(existing.employees);
@@ -115,12 +121,20 @@ class _InjuryReportFormScreenState extends State<InjuryReportFormScreen> {
     _incidentDescriptionCtrl.dispose();
     _unsafeConditionCtrl.dispose();
     _unsafeActCtrl.dispose();
-    _controlDetailsCtrl.dispose();
+    for (final c in _controlDetailsCtrls.values) {
+      c.dispose();
+    }
     _preventionChangesOtherCtrl.dispose();
     _preventionNotesCtrl.dispose();
     _writtenByCtrl.dispose();
     _writtenByTitleCtrl.dispose();
     super.dispose();
+  }
+
+  /// يُرجع مربع نص تفاصيل الضابط الخاص بمفتاح hierarchyOfControl معيّن،
+  /// وينشئه أول مرة لو لم يكن موجودًا بعد (راجع _controlDetailsCtrls أعلاه).
+  TextEditingController _controlDetailsCtrlFor(String key) {
+    return _controlDetailsCtrls.putIfAbsent(key, () => TextEditingController());
   }
 
   void _toggle(Set<String> set, String key) {
@@ -252,8 +266,12 @@ class _InjuryReportFormScreenState extends State<InjuryReportFormScreen> {
       hadRewardIncentive: _hadRewardIncentive,
       reportedBefore: _reportedBefore,
       similarIncidentsBefore: _similarIncidentsBefore,
-      hierarchyOfControl: _hierarchyOfControl,
-      controlDetails: _controlDetailsCtrl.text.trim().isEmpty ? null : _controlDetailsCtrl.text.trim(),
+      hierarchyOfControls: _hierarchyOfControls.toList(),
+      controlDetails: {
+        for (final key in _hierarchyOfControls)
+          if ((_controlDetailsCtrls[key]?.text.trim() ?? '').isNotEmpty) key: _controlDetailsCtrls[key]!.text.trim(),
+      },
+      fishboneCauses: _fishboneCauses.toList(),
       preventionChanges: _preventionChanges.toList(),
       preventionChangesOther:
           _preventionChanges.contains('other') && _preventionChangesOtherCtrl.text.trim().isNotEmpty ? _preventionChangesOtherCtrl.text.trim() : null,
@@ -513,12 +531,27 @@ class _InjuryReportFormScreenState extends State<InjuryReportFormScreen> {
           value: _similarIncidentsBefore,
           onChanged: (v) => setState(() => _similarIncidentsBefore = v),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 20),
+        const Text('تحليل الأسباب بطريقة عظم السمكة (اختر كل الأسباب التي تنطبق)',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 4),
         const InfoNote(
-          text: 'يمكن الرجوع إلى مخطط "تحليل أسباب الحوادث" الورقي المرفق بإجراءات السلامة عند تعبئة هذه الأسباب.',
+          text: 'مقسّمة على فرعين: تصرفات غير آمنة (متعلقة بالفرد)، وظروف غير آمنة (بيئة العمل / أسلوب العمل / الأدوات والمعدات).',
           color: AppColors.safetyText,
           icon: Icons.fact_check_outlined,
         ),
+        const SizedBox(height: 12),
+        ...kFishboneBranches.map((branch) => Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(branch.$2, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                  const SizedBox(height: 8),
+                  _MultiChipGroup(options: branch.$3, selected: _fishboneCauses, onToggle: (k) => _toggle(_fishboneCauses, k)),
+                ],
+              ),
+            )),
       ],
     );
   }
@@ -527,20 +560,22 @@ class _InjuryReportFormScreenState extends State<InjuryReportFormScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _label('هرم الضوابط (اختر الضابط المناسب)'),
+        _label('هرم الضوابط (يمكن اختيار أكثر من ضابط)'),
         const SizedBox(height: 8),
-        ...kHierarchyOfControlLabels.entries.map((e) => RadioListTile<String>(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              title: Text(e.value, style: const TextStyle(fontSize: 13.5)),
-              value: e.key,
-              groupValue: _hierarchyOfControl,
-              activeColor: AppColors.safety,
-              onChanged: (v) => setState(() => _hierarchyOfControl = v),
-            )),
-        const SizedBox(height: 10),
-        _label('تفاصيل الضابط المختار'),
-        TextField(controller: _controlDetailsCtrl, minLines: 2, maxLines: 4, decoration: _decoration()),
+        _MultiChipGroup(options: kHierarchyOfControlLabels, selected: _hierarchyOfControls, onToggle: (k) => _toggle(_hierarchyOfControls, k)),
+        if (_hierarchyOfControls.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          ...kHierarchyOfControlLabels.entries.where((e) => _hierarchyOfControls.contains(e.key)).map((e) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _label('تفاصيل: ${e.value}'),
+                    TextField(controller: _controlDetailsCtrlFor(e.key), minLines: 2, maxLines: 3, decoration: _decoration()),
+                  ],
+                ),
+              )),
+        ],
         const SizedBox(height: 16),
         _label('ما التغييرات المطلوبة لمنع تكرار هذا الحادث؟'),
         const SizedBox(height: 8),
