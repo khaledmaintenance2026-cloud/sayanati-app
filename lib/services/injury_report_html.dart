@@ -359,11 +359,92 @@ String buildInjuryReportHtml(InjuryReport r) {
   ''';
   }
 
-  String pageFishbone() => '''
+  // ملاحظة: كانت هذه الصفحة صورة ثابتة (fishboneB64) لا ترتبط بأي بيانات —
+  // بناءً على طلب العميل، أصبحت الآن قائمة اختيار حقيقية بنفس الأسباب
+  // الستة والثلاثين المطبوعة في المخطط الأصلي (راجع kFishboneBranches في
+  // lib/models/injury_report.dart لنفس المفاتيح)، وتعرض علامة ✔ أمام كل سبب
+  // اختاره مستخدم التطبيق فعليًا في r.fishboneCauses.
+  String pageFishbone() {
+    const fishboneInd1 = <(String, String, String)>[
+      ('ind1_inattention_harassment', 'Inattention and harassment', 'سهو، مضايقة أو تشتيت'),
+      ('ind1_unsafe_speed', 'Operating at unsafe speed', 'العمل بسرعة غير آمنة'),
+      ('ind1_not_using_tools', 'Not using available tools', 'عدم استخدام الأدوات المتاحة'),
+      ('ind1_unsafe_act_other', 'Unsafe act by other', 'تصرف غير آمن من قبل الغير'),
+      ('ind1_not_following_instructions', 'Not following W. instructions', 'عدم اتباع تعليمات العمل'),
+      ('ind1_other', 'Other causes', 'أسباب أخرى'),
+    ];
+    const fishboneInd2 = <(String, String, String)>[
+      ('ind2_working_without_stopping', 'Working without stopping', 'العمل دون توقف'),
+      ('ind2_work_without_permit', 'Work without permit', 'العمل دون تصريح'),
+      ('ind2_not_trained', 'Not trained or not appropriate', 'غير مدرب أو غير مناسب لمتطلبات العمل'),
+      ('ind2_no_loto', 'Not using Lockout-tag out', 'عدم اتباع مسار الطاقة الخاطئة (LOTO)'),
+      ('ind2_unsafe_lifting', 'Unsafe lifting', 'الحمل بطريقة غير آمنة'),
+      ('ind2_unsafe_position', 'Taking unsafe position', 'اتخاذ وضعية غير آمنة'),
+    ];
+    const fishboneInd3 = <(String, String, String)>[
+      ('ind3_wrong_way_use', 'Using equipment/tools wrong way', 'استخدام معدات/أدوات بطريقة غير آمنة'),
+      ('ind3_damaged_equipment', 'Using damaged equipment/tools', 'استخدام معدات/أدوات تالفة'),
+      ('ind3_no_ppe', 'Not using PPEs', 'عدم استخدام أدوات الحماية الشخصية'),
+      ('ind3_work_under_pressure', 'Work under pressure (fatigued, sick)', 'العمل تحت ضغط (مرهق، مريض)'),
+      ('ind3_excessive_confidence', 'Excessive self-confident', 'ثقة زائدة'),
+      ('ind3_lack_awareness', 'Lack of awareness', 'قلة الوعي'),
+    ];
+    const fishboneEnv = <(String, String, String)>[
+      ('env_housekeeping', 'Housekeeping', 'المكان مزدحم وغير منظم أو غير نظيف'),
+      ('env_lighting', 'Lighting is not sufficient', 'الإضاءة غير كافية'),
+      ('env_workstation_layout', 'Workstation layout is risky', 'تخطيط محطة العمل خطر'),
+      ('env_humidity_temp', 'High humidity & temperature', 'حرارة أو رطوبة عالية'),
+      ('env_ventilation', 'Ventilation is not sufficient', 'التهوية غير كافية'),
+      ('env_instructions_insufficient', 'Instructions are not sufficient', 'الإرشادات غير كافية'),
+    ];
+    const fishboneMethod = <(String, String, String)>[
+      ('method_supervision', 'Supervision is not sufficient', 'الإشراف غير كافي'),
+      ('method_overload', 'Amount of work is overload', 'حجم العمل أكبر من اللازم'),
+      ('method_time', 'Time is not sufficient', 'الوقت غير كافي'),
+      ('method_instruction_unclear', 'W. instruction is not clear', 'تعليمات العمل غير واضحة'),
+      ('method_instruction_unavailable', 'Instruction is not available', 'تعليمات العمل غير متوفرة'),
+      ('method_instruction_insufficient', 'Instruction is not sufficient', 'تعليمات العمل غير كافية'),
+    ];
+    const fishboneEquip = <(String, String, String)>[
+      ('equip_lack_tools', 'Lack of tools & equipment', 'نقص المعدات والأدوات'),
+      ('equip_maintenance', 'Maintenance is not sufficient', 'الصيانة غير كافية'),
+      ('equip_inappropriate_damaged', 'Inappropriate or damaged', 'معدات تالفة أو غير ملائمة'),
+      ('equip_danger_to_employees', 'Pose danger to employees', 'تشكل خطرًا على الموظفين'),
+      ('equip_guards_poor', 'Guards in poor repair', 'معدات الحراسة في حالة سيئة'),
+      ('equip_unclear_controls', 'Unclear operating controls', 'ضوابط التشغيل غير واضحة'),
+    ];
+
+    String branchCell(String titleEn, String titleAr, List<(String, String, String)> options) {
+      final selected = r.fishboneCauses;
+      final enItems = options.map((o) => '${selected.contains(o.$1) ? chk : unchk}${esc(o.$2)}').join('<br/>');
+      final arItems = options.map((o) => '${selected.contains(o.$1) ? chk : unchk}${esc(o.$3)}').join('<br/>');
+      return '''
+        <td class="fb-cell">
+          <div class="fb-branch-title">$titleEn<br/><span class="ar">$titleAr</span></div>
+          <div class="fb-list">$enItems</div>
+          <div class="fb-list ar">$arItems</div>
+        </td>''';
+    }
+
+    return '''
     ${headerBlock()}
     <div class="step3-title"><span>Step 3: Why did the Incident happen?</span><span class="ar">الخطوة الثالثة: ما سبب حدوث الحادث؟</span></div>
-    <div class="fishbone"><img src="data:image/jpeg;base64,$fishboneB64" /></div>
+    <table class="form-table fb-table">
+      <tr><td class="lbl" colspan="3" style="text-align:center">Unsafe Act &nbsp;—&nbsp; <span class="ar">تصرفات غير آمنة</span></td></tr>
+      <tr>
+        ${branchCell('Individual', 'الفرد', fishboneInd1)}
+        ${branchCell('Individual', 'الفرد', fishboneInd2)}
+        ${branchCell('Individual', 'الفرد', fishboneInd3)}
+      </tr>
+      <tr><td class="lbl" colspan="3" style="text-align:center">Unsafe Conditions &nbsp;—&nbsp; <span class="ar">ظروف غير آمنة</span></td></tr>
+      <tr>
+        ${branchCell('Work environment', 'بيئة العمل', fishboneEnv)}
+        ${branchCell('Method', 'أسلوب العمل', fishboneMethod)}
+        ${branchCell('Equipment & Tools', 'الأدوات والمعدات', fishboneEquip)}
+      </tr>
+    </table>
   ''';
+  }
 
   String pageWhy() => '''
     ${headerBlock()}
@@ -389,12 +470,14 @@ String buildInjuryReportHtml(InjuryReport r) {
   ''';
 
   String pageHierarchy() {
-    final selectedKey = r.hierarchyOfControl;
+    final selected = r.hierarchyOfControls;
     final rows = hierarchyOptions.map((h) {
-      final details = h.$1 == selectedKey ? esc(r.controlDetails) : '';
+      final isSelected = selected.contains(h.$1);
+      final mark = isSelected ? chk : unchk;
+      final details = isSelected ? esc(r.controlDetails[h.$1] ?? '') : '';
       return '''
           <tr>
-            <td class="hoc-cell"><span class="hoc-label">${h.$2}</span><div class="triangle" style="border-top-color:${h.$3}"></div></td>
+            <td class="hoc-cell">$mark&nbsp;<span class="hoc-label">${h.$2}</span><div class="triangle" style="border-top-color:${h.$3}"></div></td>
             <td class="hoc-details ar">$details</td>
           </tr>''';
     }).join();
@@ -519,6 +602,12 @@ String buildInjuryReportHtml(InjuryReport r) {
 
     .fishbone { text-align:center; margin-top: 10px; }
     .fishbone img { width: 100%; }
+
+    .fb-table td { vertical-align: top; }
+    .fb-cell { width: 33.33%; padding: 5px 6px !important; }
+    .fb-branch-title { font-weight:700; font-size:10.5px; text-align:center; margin-bottom:4px; padding-bottom:3px; border-bottom:1px solid #999; }
+    .fb-list { font-size: 8.6px; line-height: 1.55; }
+    .fb-list.ar { margin-top: 5px; }
 
     .hoc-table td { height: 66px; }
     .hoc-cell { display:flex; align-items:center; gap:14px; padding-left: 16px !important; }
