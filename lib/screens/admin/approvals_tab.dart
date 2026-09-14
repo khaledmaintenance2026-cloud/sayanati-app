@@ -19,6 +19,22 @@ const List<String?> kSafetyFacilityChoices = [null, 'مصنع الرجال', 'م
 
 String safetyFacilityLabel(String? f) => f ?? 'بلا تقييد (كل الأقسام)';
 
+/// مواقع موظف "قسم عام" (مستودع أو مكتب إداري محدد) — عمود مستقل
+/// (general_facility) لا علاقة له بمصانع الإنتاج/السلامة أعلاه. null يعني لم
+/// يُحدَّد بعد (يجب اختيار موقع فعلي قبل أن يستفيد الموظف من الشاشة عمليًا).
+const List<String?> kGeneralFacilityChoices = [
+  null,
+  'مستودع الخام - نساء',
+  'مستودع التام - نساء',
+  'مستودع الزيوت',
+  'مستودع الخام - رجال',
+  'مستودع التام - رجال',
+  'المكاتب الإدارية - نساء',
+  'المكاتب الإدارية - رجال',
+];
+
+String generalFacilityLabel(String? f) => f ?? 'لم يُحدَّد بعد';
+
 class ApprovalsTab extends StatefulWidget {
   const ApprovalsTab({super.key});
 
@@ -61,6 +77,8 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
       await _api.patch('/users/$uid/production-facility', {'facility': facility});
     } else if (isSafetyRole(role)) {
       await _api.patch('/users/$uid/safety-facility', {'facility': facility});
+    } else if (isGeneralRole(role)) {
+      await _api.patch('/users/$uid/general-facility', {'facility': facility});
     }
     await _load();
   }
@@ -82,6 +100,11 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
 
   Future<void> _setSafetyFacility(String uid, String? facility) async {
     await _api.patch('/users/$uid/safety-facility', {'facility': facility});
+    await _load();
+  }
+
+  Future<void> _setGeneralFacility(String uid, String? facility) async {
+    await _api.patch('/users/$uid/general-facility', {'facility': facility});
     await _load();
   }
 
@@ -133,6 +156,7 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
                 onChangeRole: (role) => _setRole(u['id'].toString(), role),
                 onChangeFacility: (facility) => _setFacility(u['id'].toString(), facility),
                 onChangeSafetyFacility: (facility) => _setSafetyFacility(u['id'].toString(), facility),
+                onChangeGeneralFacility: (facility) => _setGeneralFacility(u['id'].toString(), facility),
                 onChangePhone: (phone) => _setPhone(u['id'].toString(), phone),
                 onRevoke: () => _revoke(u['id'].toString()),
               )),
@@ -144,7 +168,7 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
 
 class _PendingCard extends StatefulWidget {
   final Map<String, dynamic> user;
-  final void Function(AppRole role, String? productionFacility) onApprove;
+  final void Function(AppRole role, String? facility) onApprove;
   final VoidCallback onReject;
 
   const _PendingCard({required this.user, required this.onApprove, required this.onReject});
@@ -245,6 +269,30 @@ class _PendingCardState extends State<_PendingCard> {
                 ),
               ],
             ),
+          ] else if (isGeneralRole(_role)) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Text('الموقع:', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<String?>(
+                    value: _facility,
+                    isDense: true,
+                    decoration: const InputDecoration(
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      filled: true,
+                      fillColor: AppColors.background,
+                      border: OutlineInputBorder(),
+                    ),
+                    items: kGeneralFacilityChoices
+                        .map((f) => DropdownMenuItem(value: f, child: Text(generalFacilityLabel(f), style: const TextStyle(fontSize: 12.5))))
+                        .toList(),
+                    onChanged: (v) => setState(() => _facility = v),
+                  ),
+                ),
+              ],
+            ),
           ],
           const SizedBox(height: 10),
           Row(
@@ -259,7 +307,10 @@ class _PendingCardState extends State<_PendingCard> {
               const SizedBox(width: 10),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: () => widget.onApprove(_role, (isProductionRole(_role) || isSafetyRole(_role)) ? _facility : null),
+                  onPressed: () => widget.onApprove(
+                    _role,
+                    (isProductionRole(_role) || isSafetyRole(_role) || isGeneralRole(_role)) ? _facility : null,
+                  ),
                   style: ElevatedButton.styleFrom(backgroundColor: AppColors.successText, foregroundColor: Colors.white),
                   child: const Text('اعتماد'),
                 ),
@@ -278,6 +329,7 @@ class _ApprovedCard extends StatelessWidget {
   final void Function(AppRole role) onChangeRole;
   final void Function(String? facility) onChangeFacility;
   final void Function(String? facility) onChangeSafetyFacility;
+  final void Function(String? facility) onChangeGeneralFacility;
   final void Function(String? phone) onChangePhone;
   final VoidCallback onRevoke;
 
@@ -287,6 +339,7 @@ class _ApprovedCard extends StatelessWidget {
     required this.onChangeRole,
     required this.onChangeFacility,
     required this.onChangeSafetyFacility,
+    required this.onChangeGeneralFacility,
     required this.onChangePhone,
     required this.onRevoke,
   });
@@ -317,6 +370,7 @@ class _ApprovedCard extends StatelessWidget {
     final role = roleFromString(user['role'] as String?);
     final facility = user['production_facility'] as String?;
     final safetyFacility = user['safety_facility'] as String?;
+    final generalFacility = user['general_facility'] as String?;
     final phone = user['phone'] as String?;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -407,6 +461,26 @@ class _ApprovedCard extends StatelessWidget {
                         .map((f) => DropdownMenuItem(value: f, child: Text(safetyFacilityLabel(f), style: const TextStyle(fontSize: 12.5))))
                         .toList(),
                     onChanged: onChangeSafetyFacility,
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (!isSelf && isGeneralRole(role)) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Text('الموقع:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButton<String?>(
+                    value: kGeneralFacilityChoices.contains(generalFacility) ? generalFacility : null,
+                    isExpanded: true,
+                    underline: const SizedBox(),
+                    items: kGeneralFacilityChoices
+                        .map((f) => DropdownMenuItem(value: f, child: Text(generalFacilityLabel(f), style: const TextStyle(fontSize: 12.5))))
+                        .toList(),
+                    onChanged: onChangeGeneralFacility,
                   ),
                 ),
               ],
