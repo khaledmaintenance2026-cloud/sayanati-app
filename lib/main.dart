@@ -17,7 +17,7 @@ import 'screens/maintenance/maintenance_dashboard_screen.dart';
 import 'screens/production/production_lines_screen.dart';
 import 'screens/safety/safety_home_screen.dart';
 import 'screens/admin/admin_home_screen.dart';
-
+import 'screens/general/general_report_screen.dart';
 Future<void> main() async {
   print('DIAG_TEST_9182');
   WidgetsFlutterBinding.ensureInitialized();
@@ -116,6 +116,9 @@ class _AuthGateState extends State<AuthGate> {
       case AuthStatus.pendingApproval:
         return const PendingApprovalScreen();
       case AuthStatus.signedIn:
+        if (auth.currentUser?.role == AppRole.general) {
+          return const _BiometricLockGate(child: GeneralReportScreen());
+        }
         return const _BiometricLockGate(child: RootNav());
     }
   }
