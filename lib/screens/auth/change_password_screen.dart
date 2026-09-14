@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/auth_service.dart';
+import '../../services/biometric_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
@@ -20,6 +21,45 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   bool _obscureNew = true;
   bool _loading = false;
   String? _error;
+
+  // حالة "الدخول بالبصمة" — راجع lib/services/biometric_service.dart.
+  bool _biometricLoading = true;
+  bool _biometricSupported = false;
+  bool _biometricEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBiometricState();
+  }
+
+  Future<void> _loadBiometricState() async {
+    final supported = await BiometricService.instance.isDeviceSupported();
+    final enabled = supported && await BiometricService.instance.isEnabled();
+    if (!mounted) return;
+    setState(() {
+      _biometricSupported = supported;
+      _biometricEnabled = enabled;
+      _biometricLoading = false;
+    });
+  }
+
+  Future<void> _toggleBiometric(bool value) async {
+    if (value) {
+      // نطلب تأكيد البصمة أولًا قبل التفعيل — حتى لا يُفعِّل المستخدم خيارًا
+      // لا تعمل بصمته من أجله أصلًا (حساس معطّل، بصمة غير مسجَّلة بشكل صحيح).
+      final ok = await BiometricService.instance.authenticate(
+        reason: 'أكّد بصمتك لتفعيل الدخول بالبصمة',
+      );
+      if (!ok) return;
+    }
+    await BiometricService.instance.setEnabled(value);
+    if (!mounted) return;
+    setState(() => _biometricEnabled = value);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(value ? 'تم تفعيل الدخول بالبصمة' : 'تم إيقاف الدخول بالبصمة')),
+    );
+  }
 
   @override
   void dispose() {
@@ -55,12 +95,37 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     final mismatched = _confirmCtrl.text.isNotEmpty && _newCtrl.text != _confirmCtrl.text;
 
     return Scaffold(
-      appBar: const ScreenTopBar(title: 'تغيير كلمة المرور'),
+      appBar: const ScreenTopBar(title: 'الحساب والأمان'),
       body: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
         child: ListView(
           children: [
             const SizedBox(height: 6),
+            if (!_biometricLoading && _biometricSupported) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.fingerprint, color: AppColors.maintenance),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text('الدخول بالبصمة', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5)),
+                    ),
+                    Switch(
+                      value: _biometricEnabled,
+                      onChanged: _toggleBiometric,
+                      activeColor: AppColors.maintenance,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
             const _FieldLabel('كلمة المرور الحالية'),
             TextField(
               controller: _currentCtrl,
