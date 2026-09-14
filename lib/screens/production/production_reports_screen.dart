@@ -152,7 +152,7 @@ class _ProductionReportsScreenState extends State<ProductionReportsScreen> {
               const SizedBox(height: 10),
               _ReportRow(title: 'التقرير الشهري', subtitle: 'رابط تقرير — كل ٣٠ يومًا تقريبًا، الكمية والباتشات لكل خط في ${widget.facility}'),
               const SizedBox(height: 22),
-              Builder(
+            if (canManage) Builder(
                 builder: (context) {
                   final phone = context.watch<AuthService>().currentUser?.phone;
                   final hasPhone = phone != null && phone.isNotEmpty;
