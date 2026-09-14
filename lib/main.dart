@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'services/app_state.dart';
 import 'services/auth_service.dart';
+import 'services/biometric_service.dart';
 import 'services/push_notification_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/auth/login_screen.dart';
@@ -115,8 +116,97 @@ class _AuthGateState extends State<AuthGate> {
       case AuthStatus.pendingApproval:
         return const PendingApprovalScreen();
       case AuthStatus.signedIn:
-        return const RootNav();
+        return const _BiometricLockGate(child: RootNav());
     }
+  }
+}
+
+/// طبقة قفل إضافية فوق الواجهة الرئيسية، تظهر فقط لو فعّل المستخدم "الدخول
+/// بالبصمة" من شاشة الحساب — راجع lib/services/biometric_service.dart. لا
+/// علاقة لها بجلسة الدخول نفسها (AuthService)؛ هي مجرد قفل محلي إضافي فوق
+/// جلسة موجودة بالفعل، يُطلَب مرة واحدة عند كل فتح جديد للتطبيق (لا يتكرر
+/// أثناء التنقل العادي بين الشاشات ضمن نفس الجلسة لأن هذا الـ Widget لا
+/// يُعاد بناؤه إلا عند تبدّل حالة AuthStatus نفسها).
+class _BiometricLockGate extends StatefulWidget {
+  final Widget child;
+  const _BiometricLockGate({required this.child});
+
+  @override
+  State<_BiometricLockGate> createState() => _BiometricLockGateState();
+}
+
+class _BiometricLockGateState extends State<_BiometricLockGate> {
+  bool _checking = true;
+  bool _unlocked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+  }
+
+  Future<void> _check() async {
+    final enabled = await BiometricService.instance.isEnabled();
+    if (!mounted) return;
+    if (!enabled) {
+      setState(() {
+        _unlocked = true;
+        _checking = false;
+      });
+      return;
+    }
+    setState(() => _checking = false);
+    _tryUnlock();
+  }
+
+  Future<void> _tryUnlock() async {
+    final ok = await BiometricService.instance.authenticate();
+    if (!mounted) return;
+    setState(() => _unlocked = ok);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_checking) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (_unlocked) return widget.child;
+
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.fingerprint, size: 72, color: AppColors.maintenance),
+                const SizedBox(height: 16),
+                const Text('التطبيق مقفل بالبصمة', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                const Text('اضغط الزر لفتحه ببصمتك', style: TextStyle(color: AppColors.textSecondary)),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  onPressed: _tryUnlock,
+                  icon: const Icon(Icons.fingerprint),
+                  label: const Text('فتح ببصمتك'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.maintenance,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => context.read<AuthService>().signOut(),
+                  child: const Text('تسجيل الخروج بدل ذلك'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
