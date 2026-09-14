@@ -20,8 +20,7 @@ import 'push_notification_service.dart';
 /// "مسؤول إنتاج" (productionManager) دور مختلف عن ذلك: لا يرى شيئًا إضافيًا
 /// في قسم الإنتاج، لكنه الوحيد (مع مدير النظام) القادر على تعديل أو حذف
 /// باتش بعد تسجيله — راجع [canManageBatches] بدل مقارنة الدور مباشرة.
-enum AppRole { admin, maintenanceTechnician, maintenanceManager, production, productionManager, safety }
-
+enum AppRole { admin, maintenanceTechnician, maintenanceManager, production, productionManager, safety, general }
 bool isMaintenanceRole(AppRole r) => r == AppRole.maintenanceTechnician || r == AppRole.maintenanceManager;
 
 /// هل هذا مستخدم إنتاج (عادي أو مسؤول)؟ استخدمها بدل مقارنة
@@ -38,6 +37,11 @@ bool canManageBatches(AppRole r) => r == AppRole.admin || r == AppRole.productio
 /// وجود قيمة واحدة فقط للدور حاليًا — تُستخدم عند إظهار حقل "قسم السلامة"
 /// (تقييد بمصنع الرجال أو النساء) في لوحة اعتماد المستخدمين.
 bool isSafetyRole(AppRole r) => r == AppRole.safety;
+
+/// هل هذا مستخدم "قسم عام" (موظف مستودع أو مكتب إداري لا علاقة له بالإنتاج
+/// أو الصيانة أو السلامة مباشرة)؟ صلاحيته الوحيدة رفع بلاغ عطل للصيانة —
+/// راجع GeneralReportScreen وعمود general_facility في جدول users.
+bool isGeneralRole(AppRole r) => r == AppRole.general;
 
 AppRole roleFromString(String? s) {
   switch (s) {
@@ -57,6 +61,8 @@ AppRole roleFromString(String? s) {
       return AppRole.productionManager;
     case 'safety':
       return AppRole.safety;
+    case 'general':
+      return AppRole.general;
     default:
       return AppRole.production;
   }
@@ -89,6 +95,8 @@ String roleLabel(AppRole r) {
       return 'مسؤول إنتاج';
     case AppRole.safety:
       return 'السلامة';
+    case AppRole.general:
+      return 'قسم عام';
   }
 }
 
@@ -110,6 +118,10 @@ class AppUser {
   /// صراحة من لوحة الإدارة (راجع PATCH /users/:id/safety-facility).
   final String? safetyFacility;
 
+  /// الموقع المحدد لموظف "قسم عام" (مستودع أو مكتب إداري بعينه) — عمود مستقل
+  /// (general_facility) عن الحقلين أعلاه. null يعني لم يُحدَّد بعد من الإدارة.
+  final String? generalFacility;
+
   /// رقم الهاتف الشخصي للمستخدم — اختياري، يُدخله عند التسجيل أو يضيفه مدير
   /// النظام لاحقًا. يُستخدم لتوجيه إشعارات واتساب لهذا المستخدم تحديدًا (مثل
   /// نتيجة تصريح سلامة قدّمه) بدل جروب عام فقط.
@@ -123,12 +135,13 @@ class AppUser {
     required this.approved,
     this.productionFacility,
     this.safetyFacility,
+    this.generalFacility,
     this.phone,
   });
 
   /// يبني مستخدمًا من استجابة سيرفر صيانتي المحلي (حقل "user" في ردود
   /// /api/auth/* و /api/users) — الشكل: {id, name, email, role, status,
-  /// production_facility, safety_facility, phone}.
+  /// production_facility, safety_facility, general_facility, phone}.
   factory AppUser.fromApi(Map<String, dynamic> d) => AppUser(
         uid: d['id'].toString(),
         email: (d['email'] as String?) ?? '',
@@ -137,10 +150,10 @@ class AppUser {
         approved: d['status'] == 'approved',
         productionFacility: d['production_facility'] as String?,
         safetyFacility: d['safety_facility'] as String?,
+        generalFacility: d['general_facility'] as String?,
         phone: d['phone'] as String?,
       );
 }
-
 /// needsPhone: حساب سُجّل دخوله بنجاح (عادةً عبر جوجل) لكنه بلا رقم جوال —
 /// إلزامي الآن لكل حساب (راجع مسار التسجيل العادي) — يُطلب مباشرة قبل أي شيء
 /// آخر، بما في ذلك قبل شاشة "بانتظار الاعتماد" لو كان الحساب جديدًا كليًا.
