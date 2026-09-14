@@ -45,16 +45,30 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     });
   }
 
-  Future<void> _toggleBiometric(bool value) async {
+    Future<void> _toggleBiometric(bool value) async {
     if (value) {
-      // نطلب تأكيد البصمة أولًا قبل التفعيل — حتى لا يُفعِّل المستخدم خيارًا
-      // لا تعمل بصمته من أجله أصلًا (حساس معطّل، بصمة غير مسجَّلة بشكل صحيح).
-      final ok = await BiometricService.instance.authenticate(
-        reason: 'أكّد بصمتك لتفعيل الدخول بالبصمة',
-      );
+      bool ok;
+      if (kIsWeb) {
+        // على الويب: نسجّل بيانات اعتماد WebAuthn جديدة مباشرة (تطلب Face ID/
+        // Touch ID أو بصمة الجهاز كجزء من التسجيل نفسه، فلا حاجة لخطوة تأكيد
+        // منفصلة كما في أندرويد).
+        final user = context.read<AuthService>().currentUser;
+        ok = await BiometricService.instance.enableWeb(
+          userId: user?.uid ?? DateTime.now().millisecondsSinceEpoch.toString(),
+          userName: user?.name ?? user?.email ?? 'مستخدم صيانتي',
+        );
+      } else {
+        // نطلب تأكيد البصمة أولًا قبل التفعيل — حتى لا يُفعِّل المستخدم خيارًا
+        // لا تعمل بصمته من أجله أصلًا (حساس معطّل، بصمة غير مسجَّلة بشكل صحيح).
+        ok = await BiometricService.instance.authenticate(
+          reason: 'أكّد بصمتك لتفعيل الدخول بالبصمة',
+        );
+        if (ok) await BiometricService.instance.setEnabled(true);
+      }
       if (!ok) return;
+    } else {
+      await BiometricService.instance.setEnabled(false);
     }
-    await BiometricService.instance.setEnabled(value);
     if (!mounted) return;
     setState(() => _biometricEnabled = value);
     ScaffoldMessenger.of(context).showSnackBar(
