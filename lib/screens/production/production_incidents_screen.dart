@@ -443,3 +443,4 @@ InputDecoration _decoration({String? hint}) {
     enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(13), borderSide: const BorderSide(color: AppColors.border)),
   );
 }
+ 
