@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
+ 
 import '../../models/production.dart';
 import '../../services/app_state.dart';
 import '../../services/arabic_format.dart';
@@ -9,36 +9,37 @@ import '../../services/constants.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import 'production_batch_form_screen.dart';
+import 'production_equipment_screen.dart';
 import 'production_incidents_screen.dart';
 import 'production_reports_screen.dart';
-
+ 
 /// ترتيب تبويبات الإنتاج: القسمان المطلوبان أولًا (مصنع الرجال/النساء) ثم
 /// "المستودع العام" لخطوط قديمة بلا تصنيف. القيم نفسها المسموحة في
 /// kFacilityLocations (services/constants.dart) وبنفس القيد على السيرفر
 /// (عمود location في جدول production_lines، راجع schema.sql).
 const List<String> _kProductionTabs = ['مصنع الرجال', 'مصنع النساء', 'المستودع العام'];
-
+ 
 /// شاشة الإنتاج — مقسّمة إلى تبويبين إداريّين منفصلين تمامًا: "مصنع الرجال"
 /// و"مصنع النساء" (والتبويب الثالث "المستودع العام" لخطوط قديمة بلا تصنيف)،
 /// حسب موقع كل خط (نفس عمود location المخزَّن على السيرفر). كل تبويب له
 /// بلاغاته وتقاريره الخاصة به بشكل مستقل عن التبويب الآخر.
 class ProductionLinesScreen extends StatefulWidget {
   const ProductionLinesScreen({super.key});
-
+ 
   @override
   State<ProductionLinesScreen> createState() => _ProductionLinesScreenState();
 }
-
+ 
 class _ProductionLinesScreenState extends State<ProductionLinesScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-
+ 
   /// التبويبات الظاهرة فعليًا لهذا المستخدم — كل التبويبات لمدير النظام أو
   /// أي دور غير مقيَّد، أو تبويب واحد فقط لمستخدم إنتاج مُخصَّص له مصنع
   /// محدد من لوحة الإدارة (لا يمكنه حتى رؤية القسم الآخر، فضلًا عن الدخول
   /// إليه — نفس التقييد مطبَّق فعليًا على السيرفر أيضًا).
   late final List<String> _visibleTabs;
-
+ 
   @override
   void initState() {
     super.initState();
@@ -50,20 +51,20 @@ class _ProductionLinesScreenState extends State<ProductionLinesScreen>
     _visibleTabs = restrictedFacility != null ? [restrictedFacility] : _kProductionTabs;
     _tabController = TabController(length: _visibleTabs.length, vsync: this);
   }
-
+ 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
   }
-
+ 
   String get _currentFacility => _visibleTabs[_tabController.index];
-
+ 
   Future<void> _openForm(BuildContext context, {ProductionLine? existing}) async {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     String selectedFacility = existing?.location ?? _currentFacility;
     final appState = context.read<AppState>();
-
+ 
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -136,7 +137,7 @@ class _ProductionLinesScreenState extends State<ProductionLinesScreen>
       ),
     );
   }
-
+ 
   Future<void> _confirmDelete(BuildContext context, ProductionLine line) async {
     final appState = context.read<AppState>();
     final ok = await showDialog<bool>(
@@ -152,7 +153,7 @@ class _ProductionLinesScreenState extends State<ProductionLinesScreen>
     );
     if (ok == true) await appState.removeProductionLineCloud(line.id);
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -164,6 +165,13 @@ class _ProductionLinesScreenState extends State<ProductionLinesScreen>
             tooltip: 'بلاغ عطل',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => ProductionIncidentsScreen(facility: _currentFacility)),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.build_outlined),
+            tooltip: 'إدارة المعدات',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => ProductionEquipmentScreen(facility: _currentFacility)),
             ),
           ),
           IconButton(
@@ -200,23 +208,23 @@ class _ProductionLinesScreenState extends State<ProductionLinesScreen>
     );
   }
 }
-
+ 
 class _FacilityLinesView extends StatelessWidget {
   final String facility;
   final void Function(ProductionLine? existing) onOpenForm;
   final void Function(ProductionLine line) onDelete;
-
+ 
   const _FacilityLinesView({
     required this.facility,
     required this.onOpenForm,
     required this.onDelete,
   });
-
+ 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final lines = state.linesByFacility(facility);
-
+ 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 90),
       child: Column(
@@ -298,7 +306,7 @@ class _FacilityLinesView extends StatelessWidget {
     );
   }
 }
-
+ 
 InputDecoration _decoration({String? hint}) {
   return InputDecoration(
     hintText: hint,
