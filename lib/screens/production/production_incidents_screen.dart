@@ -1,30 +1,44 @@
+import 'dart:convert';
+import 'dart:typed_data';
+ 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
-
+ 
 import '../../models/production.dart';
 import '../../services/app_state.dart';
 import '../../services/arabic_format.dart';
+import '../../services/constants.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
-
+import 'production_equipment_screen.dart';
+ 
 /// بلاغات أعطال/توقف قسم الإنتاج — مربوطة بمسار /production/incidents
 /// الموجود فعليًا على سيرفر صيانتي المحلي. كل قسم (مصنع رجال/نساء) يرى
 /// فقط بلاغات خطوطه، فتبقى إدارة كل قسم مستقلة عن الآخر.
+///
+/// يدعم النموذج أيضًا اختيار معدة من قائمة معدات القسم (تُدار من شاشة
+/// ProductionEquipmentScreen) وإرفاق صورة اختيارية للعطل — كلاهما يظهر
+/// تلقائيًا في رسالة واتساب "بلاغ عطل مفاجئ" (راجع services/notifications.js
+/// على السيرفر).
 class ProductionIncidentsScreen extends StatefulWidget {
   final String facility;
   const ProductionIncidentsScreen({super.key, required this.facility});
-
+ 
   @override
   State<ProductionIncidentsScreen> createState() => _ProductionIncidentsScreenState();
 }
-
+ 
 class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => context.read<AppState>().reloadIncidents());
+    Future.microtask(() {
+      context.read<AppState>().reloadIncidents();
+      context.read<AppState>().reloadEquipment();
+    });
   }
-
+ 
   Future<void> _openForm(BuildContext context) async {
     final appState = context.read<AppState>();
     final lines = appState.linesByFacility(widget.facility);
@@ -32,109 +46,198 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
     String? selectedLineId = lines.isNotEmpty ? lines.first.id : null;
     // تصنيف حدة العطل — يظهر لاحقًا في رسالة واتساب "بلاغ عطل مفاجئ" (اختياري).
     String? selectedSeverity;
+    String? selectedEquipmentId;
+    Uint8List? photoBytes;
+    String? photoDataUrl;
     bool submitting = false;
     String? error;
-
+ 
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheetState) => Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-            decoration: const BoxDecoration(
-              color: AppColors.background,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('بلاغ عطل جديد — ${widget.facility}',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 16),
-                if (lines.isNotEmpty) ...[
-                  const Align(alignment: Alignment.centerRight, child: Text('الخط المتعلّق (اختياري)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String?>(
-                    value: selectedLineId,
-                    decoration: _decoration(),
-                    items: [
-                      const DropdownMenuItem<String?>(value: null, child: Text('بدون خط محدد')),
-                      ...lines.map((l) => DropdownMenuItem<String?>(value: l.id, child: Text(l.name))),
+        builder: (ctx, setSheetState) {
+          Future<void> pickPhoto(ImageSource source) async {
+            try {
+              final picked = await ImagePicker().pickImage(source: source, maxWidth: 2000, imageQuality: 90);
+              if (picked == null) return;
+              final bytes = await picked.readAsBytes();
+              final name = picked.name.toLowerCase();
+              final ext = name.endsWith('.png') ? 'png' : (name.endsWith('.webp') ? 'webp' : 'jpeg');
+              setSheetState(() {
+                photoBytes = bytes;
+                photoDataUrl = 'data:image/$ext;base64,${base64Encode(bytes)}';
+              });
+            } catch (e) {
+              setSheetState(() => error = 'تعذّر اختيار الصورة: $e');
+            }
+          }
+ 
+          void showPhotoSourceSheet() {
+            showModalBottomSheet(
+              context: ctx,
+              builder: (sheetCtx) => SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.photo_camera_outlined),
+                      title: const Text('التقاط صورة بالكاميرا'),
+                      onTap: () {
+                        Navigator.of(sheetCtx).pop();
+                        pickPhoto(ImageSource.camera);
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.photo_library_outlined),
+                      title: const Text('اختيار من المعرض'),
+                      onTap: () {
+                        Navigator.of(sheetCtx).pop();
+                        pickPhoto(ImageSource.gallery);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+ 
+          final facilityEquipment = appState.equipmentByFacility(widget.facility);
+ 
+          return Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+              decoration: const BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('بلاغ عطل جديد — ${widget.facility}',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 16),
+                    if (lines.isNotEmpty) ...[
+                      const Align(alignment: Alignment.centerRight, child: Text('الخط المتعلّق (اختياري)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<String?>(
+                        value: selectedLineId,
+                        decoration: _decoration(),
+                        items: [
+                          const DropdownMenuItem<String?>(value: null, child: Text('بدون خط محدد')),
+                          ...lines.map((l) => DropdownMenuItem<String?>(value: l.id, child: Text(l.name))),
+                        ],
+                        onChanged: (v) => setSheetState(() => selectedLineId = v),
+                      ),
+                      const SizedBox(height: 12),
                     ],
-                    onChanged: (v) => setSheetState(() => selectedLineId = v),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                const Align(alignment: Alignment.centerRight, child: Text('وصف العطل', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: descCtrl,
-                  maxLines: 3,
-                  decoration: _decoration(hint: 'مثال: توقف مفاجئ بسبب عطل ميكانيكي في السير'),
-                  onChanged: (_) => setSheetState(() {}),
+                    const Align(alignment: Alignment.centerRight, child: Text('المعدة (اختياري)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String?>(
+                      value: selectedEquipmentId,
+                      decoration: _decoration(hint: facilityEquipment.isEmpty ? 'لا توجد معدات مسجّلة بعد' : null),
+                      items: [
+                        const DropdownMenuItem<String?>(value: null, child: Text('بدون معدة محددة')),
+                        ...facilityEquipment.map((e) => DropdownMenuItem<String?>(
+                              value: e.id,
+                              child: Text(
+                                (e.code != null && e.code!.isNotEmpty) ? '${e.name} (${e.code})' : e.name,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            )),
+                      ],
+                      onChanged: (v) => setSheetState(() => selectedEquipmentId = v),
+                    ),
+                    const SizedBox(height: 4),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () => Navigator.of(ctx).push(
+                          MaterialPageRoute(builder: (_) => ProductionEquipmentScreen(facility: widget.facility)),
+                        ),
+                        icon: const Icon(Icons.settings_outlined, size: 16),
+                        label: const Text('إدارة قائمة المعدات', style: TextStyle(fontSize: 12.5)),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Align(alignment: Alignment.centerRight, child: Text('وصف العطل', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: descCtrl,
+                      maxLines: 3,
+                      decoration: _decoration(hint: 'مثال: توقف مفاجئ بسبب عطل ميكانيكي في السير'),
+                      onChanged: (_) => setSheetState(() {}),
+                    ),
+                    const SizedBox(height: 12),
+                    const Align(alignment: Alignment.centerRight, child: Text('نوع العطل (اختياري)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: const [
+                        MapEntry('simple', 'بسيط'),
+                        MapEntry('medium', 'متوسط'),
+                        MapEntry('critical', 'حرج'),
+                      ].map((entry) {
+                        final selected = selectedSeverity == entry.key;
+                        return ChoiceChip(
+                          label: Text(entry.value),
+                          selected: selected,
+                          selectedColor: AppColors.production.withOpacity(0.22),
+                          onSelected: (_) => setSheetState(() => selectedSeverity = selected ? null : entry.key),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 12),
+                    const Align(alignment: Alignment.centerRight, child: Text('صورة العطل (اختياري)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+                    const SizedBox(height: 8),
+                    _ReportPhotoPicker(bytes: photoBytes, onTap: showPhotoSourceSheet),
+                    if (error != null) ...[
+                      const SizedBox(height: 10),
+                      InfoNote(text: error!, color: const Color(0xFFB3261E), icon: Icons.error_outline),
+                    ],
+                    const SizedBox(height: 18),
+                    PrimaryButton(
+                      label: 'إرسال البلاغ',
+                      color: AppColors.production,
+                      onPressed: submitting || descCtrl.text.trim().isEmpty
+                          ? null
+                          : () async {
+                              setSheetState(() {
+                                submitting = true;
+                                error = null;
+                              });
+                              try {
+                                await appState.addIncidentCloud(
+                                  lineId: selectedLineId,
+                                  equipmentId: selectedEquipmentId,
+                                  description: descCtrl.text.trim(),
+                                  severity: selectedSeverity,
+                                  photo: photoDataUrl,
+                                );
+                                if (ctx.mounted) Navigator.of(ctx).pop();
+                              } catch (e) {
+                                setSheetState(() {
+                                  submitting = false;
+                                  error = 'تعذّر إرسال البلاغ: $e';
+                                });
+                              }
+                            },
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                const Align(alignment: Alignment.centerRight, child: Text('نوع العطل (اختياري)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: const [
-                    MapEntry('simple', 'بسيط'),
-                    MapEntry('medium', 'متوسط'),
-                    MapEntry('critical', 'حرج'),
-                  ].map((entry) {
-                    final selected = selectedSeverity == entry.key;
-                    return ChoiceChip(
-                      label: Text(entry.value),
-                      selected: selected,
-                      selectedColor: AppColors.production.withOpacity(0.22),
-                      onSelected: (_) => setSheetState(() => selectedSeverity = selected ? null : entry.key),
-                    );
-                  }).toList(),
-                ),
-                if (error != null) ...[
-                  const SizedBox(height: 10),
-                  InfoNote(text: error!, color: const Color(0xFFB3261E), icon: Icons.error_outline),
-                ],
-                const SizedBox(height: 18),
-                PrimaryButton(
-                  label: 'إرسال البلاغ',
-                  color: AppColors.production,
-                  onPressed: submitting || descCtrl.text.trim().isEmpty
-                      ? null
-                      : () async {
-                          setSheetState(() {
-                            submitting = true;
-                            error = null;
-                          });
-                          try {
-                            await appState.addIncidentCloud(
-                              lineId: selectedLineId,
-                              description: descCtrl.text.trim(),
-                              severity: selectedSeverity,
-                            );
-                            if (ctx.mounted) Navigator.of(ctx).pop();
-                          } catch (e) {
-                            setSheetState(() {
-                              submitting = false;
-                              error = 'تعذّر إرسال البلاغ: $e';
-                            });
-                          }
-                        },
-                ),
-              ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
-
+ 
   Future<void> _confirmDelete(BuildContext context, Incident incident) async {
     final appState = context.read<AppState>();
     final ok = await showDialog<bool>(
@@ -150,13 +253,13 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
     );
     if (ok == true) await appState.removeIncidentCloud(incident.id);
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final lineIds = state.linesByFacility(widget.facility).map((l) => l.id).toSet();
     final incidents = state.incidents.where((i) => i.lineId != null && lineIds.contains(i.lineId)).toList();
-
+ 
     return Scaffold(
       appBar: ScreenTopBar(title: 'بلاغات ${widget.facility}'),
       body: Stack(
@@ -217,11 +320,19 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
                                         ),
                                         const SizedBox(height: 6),
                                         Text(incident.description, style: const TextStyle(fontSize: 13.5)),
+                                        if (incident.equipmentName != null && incident.equipmentName!.isNotEmpty) ...[
+                                          const SizedBox(height: 4),
+                                          Text('المعدة: ${incident.equipmentName}', style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+                                        ],
                                         const SizedBox(height: 8),
                                         Text(
                                           'بلّغ: ${incident.reportedBy} — ${ArabicFormat.dateTime(incident.reportedAt)} — توقف: ${ArabicFormat.duration(Duration(minutes: incident.downtimeMinutes))}',
                                           style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted),
                                         ),
+                                        if (incident.photoPath != null) ...[
+                                          const SizedBox(height: 8),
+                                          PhotoThumbnailButton(url: '$kApiOrigin${incident.photoPath}'),
+                                        ],
                                         const SizedBox(height: 8),
                                         Row(
                                           children: [
@@ -263,7 +374,65 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
     );
   }
 }
-
+ 
+class _ReportPhotoPicker extends StatelessWidget {
+  final Uint8List? bytes;
+  final VoidCallback onTap;
+ 
+  const _ReportPhotoPicker({required this.bytes, required this.onTap});
+ 
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: Container(
+        height: 140,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          border: Border.all(color: bytes != null ? AppColors.production : AppColors.border, width: bytes != null ? 1.6 : 1),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: bytes != null
+            ? Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.memory(bytes!, fit: BoxFit.cover),
+                  Positioned(
+                    bottom: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(color: Colors.black.withOpacity(0.55), borderRadius: BorderRadius.circular(10)),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.refresh, size: 14, color: Colors.white),
+                          SizedBox(width: 6),
+                          Text('تغيير الصورة', style: TextStyle(fontSize: 11.5, color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.add_a_photo_outlined, size: 26, color: AppColors.textMuted),
+                    SizedBox(height: 8),
+                    Text('التقاط أو اختيار صورة', style: TextStyle(fontSize: 12.5, color: AppColors.textMuted)),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
+}
+ 
 InputDecoration _decoration({String? hint}) {
   return InputDecoration(
     hintText: hint,
