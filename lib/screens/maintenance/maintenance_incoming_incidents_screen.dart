@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/production.dart';
 import '../../services/app_state.dart';
 import '../../services/arabic_format.dart';
+import '../../services/constants.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
@@ -138,6 +139,10 @@ class _MaintenanceIncomingIncidentsScreenState extends State<MaintenanceIncoming
                                       'بلّغ: ${incident.reportedBy} — ${ArabicFormat.dateTime(incident.reportedAt)} — توقف: ${ArabicFormat.duration(Duration(minutes: incident.downtimeMinutes))}',
                                       style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted),
                                     ),
+                                    if (incident.photoPath != null) ...[
+                                      const SizedBox(height: 8),
+                                      PhotoThumbnailButton(url: '$kApiOrigin${incident.photoPath}'),
+                                    ],
                                     const SizedBox(height: 10),
                                     Align(
                                       alignment: Alignment.centerLeft,
