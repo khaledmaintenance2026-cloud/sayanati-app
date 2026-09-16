@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 
 /// شريط علوي موحّد بزر رجوع وعنوان، مطابق لتصميم الشاشات المعتمد.
@@ -138,6 +139,103 @@ class InfoNote extends StatelessWidget {
           Icon(icon, size: 16, color: color),
           const SizedBox(width: 10),
           Expanded(child: Text(text, style: TextStyle(fontSize: 12.5, color: color))),
+        ],
+      ),
+    );
+  }
+}
+
+/// عارض صورة بملء الشاشة (تكبير/تصغير باللمس عبر InteractiveViewer) مع زر
+/// "تنزيل الصورة" — يفتحها في المتصفح/تطبيق خارجي (على أندرويد يقدر المستخدم
+/// يضغط عليها مطوّلًا ليحفظها في معرض الصور، وعلى الويب تُفتح في تبويب جديد
+/// فيقدر يحفظها بكليك يمين ← حفظ الصورة). يُستخدم لعرض صور بلاغات الأعطال
+/// وأي صورة أخرى محفوظة كملف عادي على السيرفر.
+class FullScreenPhotoViewer extends StatelessWidget {
+  final String url;
+  const FullScreenPhotoViewer({super.key, required this.url});
+
+  Future<void> _download(BuildContext context) async {
+    final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذّر فتح الصورة لتنزيلها')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.download_outlined),
+            tooltip: 'تنزيل الصورة',
+            onPressed: () => _download(context),
+          ),
+        ],
+      ),
+      body: Center(
+        child: InteractiveViewer(
+          minScale: 0.5,
+          maxScale: 4,
+          child: Image.network(
+            url,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const Text('تعذّر تحميل الصورة', style: TextStyle(color: Colors.white70)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// مصغّر صورة قابل للضغط — يفتح [FullScreenPhotoViewer] لعرض الصورة كاملة
+/// وواضحة (بدون قصّ) مع خيار تنزيلها. استُخدم بدل Image.network مباشرة في أي
+/// مكان تُعرَض فيه صورة بلاغ محفوظة على السيرفر.
+class PhotoThumbnailButton extends StatelessWidget {
+  final String url;
+  final double height;
+  const PhotoThumbnailButton({super.key, required this.url, this.height = 130});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(fullscreenDialog: true, builder: (_) => FullScreenPhotoViewer(url: url)),
+      ),
+      child: Stack(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.network(
+              url,
+              height: height,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            ),
+          ),
+          Positioned(
+            bottom: 6,
+            left: 6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(color: Colors.black.withOpacity(0.55), borderRadius: BorderRadius.circular(8)),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.zoom_in, size: 13, color: Colors.white),
+                  SizedBox(width: 4),
+                  Text('عرض كاملة وتنزيل', style: TextStyle(fontSize: 10.5, color: Colors.white)),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
