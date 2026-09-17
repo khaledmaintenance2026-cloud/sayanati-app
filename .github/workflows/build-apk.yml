@@ -42,6 +42,34 @@ jobs:
           echo "بصمة SHA-1 الفعلية لمفتاح التوقيع المستخدم في هذا البناء:"
           keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android 2>/dev/null | grep "SHA1:"
 
+      # (أُضيفت بعد فحص أمني) الـ APK الموسوم "release" كان يُبنى ويُوقَّع فعليًا
+      # بمفتاح Android Debug القياسي (نفس مفتاح الاختبار أعلاه) — غير مقبول
+      # لتطبيق يُوزَّع فعليًا على المستخدمين. هذه الخطوة تستعيد مفتاح توقيع
+      # إصدار حقيقي منفصل من GitHub Secrets وتكتب key.properties له. لو لم
+      # يُضبط الـ Secret بعد فلن يُنشأ الملف، وتستمر خطوة التوقيع أدناه
+      # بالسلوك القديم (توقيع بمفتاح Debug) تلقائيًا دون كسر البناء — أضيفوا
+      # ANDROID_RELEASE_KEYSTORE_B64 و ANDROID_RELEASE_KEYSTORE_PASSWORD كـ
+      # Secrets لتفعيلها (راجع تقرير فحص الثغرات لخطوات التوليد الكاملة).
+      - name: استعادة مفتاح توقيع الإصدار الحقيقي (Release Keystore) — إن توفّر
+        env:
+          ANDROID_RELEASE_KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
+          ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$ANDROID_RELEASE_KEYSTORE_B64" ] && [ -n "$ANDROID_RELEASE_KEYSTORE_PASSWORD" ]; then
+            echo "$ANDROID_RELEASE_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/sayanati-release.jks"
+            cat > "$RUNNER_TEMP/key.properties" <<PROPS
+          storeFile=$RUNNER_TEMP/sayanati-release.jks
+          storePassword=$ANDROID_RELEASE_KEYSTORE_PASSWORD
+          keyAlias=sayanati_release
+          keyPassword=$ANDROID_RELEASE_KEYSTORE_PASSWORD
+          PROPS
+            echo "تم إعداد مفتاح توقيع الإصدار الحقيقي — سيُستخدم بدل مفتاح Debug."
+            echo "بصمة SHA-1 لمفتاح الإصدار الحقيقي (سجّلوها في Google Cloud Console):"
+            keytool -list -v -keystore "$RUNNER_TEMP/sayanati-release.jks" -alias sayanati_release -storepass "$ANDROID_RELEASE_KEYSTORE_PASSWORD" 2>/dev/null | grep "SHA1:"
+          else
+            echo "تنبيه: ANDROID_RELEASE_KEYSTORE_B64/ANDROID_RELEASE_KEYSTORE_PASSWORD غير مضبوطين — سيستمر توقيع نسخة release بمفتاح Debug مؤقتًا (غير آمن للإنتاج)."
+          fi
+
       - name: تثبيت Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -58,6 +86,15 @@ jobs:
       - name: إضافة إذن الكاميرا لصور تصاريح السلامة
         run: |
           sed -i '/<manifest /a\    <uses-permission android:name="android.permission.CAMERA" />' android/app/src/main/AndroidManifest.xml
+
+      # (أُضيفت بعد فحص أمني) تعطيل النسخ الاحتياطي التلقائي لأندرويد
+      # (adb backup / النسخ الاحتياطي السحابي لجوجل) — بدونه يمكن استخراج بيانات
+      # التطبيق (بما فيها رمز الدخول قبل نقله للتخزين المشفّر) من نسخة احتياطية
+      # على أجهزة قديمة أو عبر ADB بلا حاجة لصلاحية Root. راجع تقرير فحص الثغرات.
+      - name: تعطيل النسخ الاحتياطي التلقائي (allowBackup)
+        run: |
+          sed -i '0,/<application/{s#<application#<application\n        android:allowBackup="false"#}' android/app/src/main/AndroidManifest.xml
+          grep -A1 "<application" android/app/src/main/AndroidManifest.xml | head -3
 
       # حزمة local_auth (الدخول بالبصمة) تتطلب أن يكون MainActivity من نوع
       # FlutterFragmentActivity بدل FlutterActivity الافتراضي، وإذن
@@ -94,6 +131,30 @@ jobs:
           echo "--- محتوى ملف Gradle بعد التعديل ---"
           cat "$GFILE"
 
+      # (أُضيفت بعد فحص أمني) تربط نسخة release بمفتاح التوقيع الحقيقي أعلاه
+      # بدل مفتاح Debug — لا تفعل شيئًا لو لم يُضبط الـ Secret بعد (راجع خطوة
+      # "استعادة مفتاح توقيع الإصدار الحقيقي" أعلاه)، فيستمر البناء بسلوكه
+      # القديم تلقائيًا دون كسر شيء.
+      - name: ربط نسخة release بمفتاح التوقيع الحقيقي — إن توفّر
+        run: |
+          if [ -f "$RUNNER_TEMP/key.properties" ]; then
+            if [ -f android/app/build.gradle.kts ]; then
+              GFILE=android/app/build.gradle.kts
+              sed -i "1i import java.util.Properties\nimport java.io.FileInputStream\nval sayanatiKeyProps = Properties().apply { load(FileInputStream(\"$RUNNER_TEMP/key.properties\")) }" "$GFILE"
+              sed -i '/^android {/a\    signingConfigs {\n        create("release") {\n            storeFile = file(sayanatiKeyProps["storeFile"] as String)\n            storePassword = sayanatiKeyProps["storePassword"] as String\n            keyAlias = sayanatiKeyProps["keyAlias"] as String\n            keyPassword = sayanatiKeyProps["keyPassword"] as String\n        }\n    }' "$GFILE"
+              sed -i 's/signingConfig = signingConfigs.getByName("debug")/signingConfig = signingConfigs.getByName("release")/' "$GFILE"
+            else
+              GFILE=android/app/build.gradle
+              sed -i "1i def sayanatiKeyProps = new Properties()\nsayanatiKeyProps.load(new FileInputStream(file(\"$RUNNER_TEMP/key.properties\")))" "$GFILE"
+              sed -i '/^android {/a\    signingConfigs {\n        release {\n            storeFile file(sayanatiKeyProps["storeFile"])\n            storePassword sayanatiKeyProps["storePassword"]\n            keyAlias sayanatiKeyProps["keyAlias"]\n            keyPassword sayanatiKeyProps["keyPassword"]\n        }\n    }' "$GFILE"
+              sed -i 's/signingConfig signingConfigs.debug/signingConfig signingConfigs.release/' "$GFILE"
+            fi
+            echo "--- محتوى ملف Gradle بعد ربط مفتاح الإصدار ---"
+            cat "$GFILE"
+          else
+            echo "لا يوجد مفتاح إصدار حقيقي مُعد بعد — نسخة release ستبقى موقّعة بمفتاح Debug كالسابق."
+          fi
+
       - name: تحميل الحزم
         run: flutter pub get
 
@@ -106,7 +167,9 @@ jobs:
       - name: بناء APK (نسخة تجريبية قابلة للتثبيت فورًا)
         run: flutter build apk --debug
 
-      - name: بناء APK (نسخة release موقّعة بمفتاح تجريبي)
+      # موقّعة بمفتاح الإصدار الحقيقي لو أُضيف الـ Secret (راجع الخطوات أعلاه)،
+      # وإلا فبمفتاح Debug مؤقتًا كالسابق.
+      - name: بناء APK (نسخة release)
         continue-on-error: true
         run: flutter build apk --release
 

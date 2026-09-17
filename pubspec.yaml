@@ -60,6 +60,11 @@ dependencies:
   # فيقدر يحفظها بالطريقة العادية (كليك يمين ← حفظ الصورة).
   url_launcher: ^6.2.6
 
+  # تخزين رمز الدخول (JWT) بشكل مشفّر عبر Android Keystore / iOS Keychain
+  # بدل SharedPreferences العادي (نص صريح غير مشفّر) — الرمز صالح لمدة ٣٠
+  # يومًا فيستحق حماية أقوى من التخزين العادي (راجع lib/services/api_client.dart).
+  flutter_secure_storage: ^9.2.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

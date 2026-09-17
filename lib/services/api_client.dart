@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'constants.dart';
 
@@ -32,27 +32,33 @@ class ApiClient {
 
   static const _tokenPrefKey = 'sayanati_jwt_token';
 
+  // تخزين مشفّر (Android Keystore / iOS Keychain) بدل SharedPreferences —
+  // رمز الدخول صالح ٣٠ يومًا فلا يجوز بقاؤه كنص صريح على القرص (راجع تقرير
+  // فحص الثغرات: تسريب الرمز عبر adb backup أو نسخة احتياطية للجهاز كان
+  // ممكنًا طالما android:allowBackup لم يُعطَّل صراحة، فضلًا عن أي وصول مباشر
+  // لملفات التطبيق على جهاز مفتوح الروت).
+  static const _storage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
+
   String? _token;
 
   bool get hasToken => _token != null;
 
   /// يُستدعى مرة واحدة عند بدء التطبيق لاسترجاع رمز دخول محفوظ من جلسة سابقة.
   Future<String?> loadPersistedToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    _token = prefs.getString(_tokenPrefKey);
+    _token = await _storage.read(key: _tokenPrefKey);
     return _token;
   }
 
   Future<void> setToken(String token) async {
     _token = token;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenPrefKey, token);
+    await _storage.write(key: _tokenPrefKey, value: token);
   }
 
   Future<void> clearToken() async {
     _token = null;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenPrefKey);
+    await _storage.delete(key: _tokenPrefKey);
   }
 
   Uri _uri(String path, [Map<String, dynamic>? query]) {
