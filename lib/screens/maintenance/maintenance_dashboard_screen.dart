@@ -268,6 +268,23 @@ class MaintenanceReportCard extends StatelessWidget {
                     padding: EdgeInsets.only(left: 6),
                     child: Icon(Icons.picture_as_pdf_outlined, size: 18, color: AppColors.textMuted),
                   ),
+                // إضافة فني إضافي لبلاغ قيد التنفيذ (سبق تعيين فني له) — بلا
+                // فتح شاشة "إغلاق البلاغ" كاملة؛ نفس شاشة التعيين تُستخدم هنا
+                // أيضًا وتضيف فقط بلا مساس بالفني/الفنيين المُسندين حاليًا.
+                if (report.status == MaintenanceStatus.inProgress)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: InkWell(
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => MaintenanceAssignScreen(report: report)),
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      child: const Padding(
+                        padding: EdgeInsets.all(2),
+                        child: Icon(Icons.person_add_alt_1_outlined, size: 18, color: AppColors.maintenance),
+                      ),
+                    ),
+                  ),
                 StatusPill(label: statusInfo.label, color: statusInfo.color, background: statusInfo.bg),
                 if (onDelete != null)
                   Padding(
