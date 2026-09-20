@@ -7,6 +7,7 @@ import '../../services/app_state.dart';
 import '../../services/arabic_format.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import 'maintenance_assign_screen.dart';
 
 class MaintenanceTaskCloseScreen extends StatefulWidget {
   final MaintenanceReport report;
@@ -74,7 +75,22 @@ class _MaintenanceTaskCloseScreenState extends State<MaintenanceTaskCloseScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const ScreenTopBar(title: 'إغلاق البلاغ'),
+      appBar: ScreenTopBar(
+        title: 'إغلاق البلاغ',
+        actions: [
+          // يسمح بإضافة فني إضافي لهذا البلاغ نفسه أثناء العمل عليه (مثلًا
+          // لو احتاج الفني المُسنَد مساعدة زميل) — تفتح نفس شاشة "تعيين فني"
+          // المستخدمة أصلًا للتعيين الأول، وتُضيف فقط بلا أي مساس بالفني/
+          // الفنيين المُسندين حاليًا (راجع maintenance_assign_screen.dart).
+          IconButton(
+            icon: const Icon(Icons.person_add_alt_1_outlined),
+            tooltip: 'إضافة فني',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => MaintenanceAssignScreen(report: widget.report)),
+            ),
+          ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
         child: Column(
