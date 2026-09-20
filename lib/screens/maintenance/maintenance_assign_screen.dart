@@ -19,8 +19,18 @@ class _MaintenanceAssignScreenState extends State<MaintenanceAssignScreen> {
   // يدعم النظام الآن تعيين أكثر من فني لنفس البلاغ — راجع
   // work_order_technicians على السيرفر وservices/notifications.js حيث تصل
   // رسالة واتساب الإنجاز بأسماء كل الفنيين معًا.
+  //
+  // هذه الشاشة نفسها تُستخدم الآن لحالتين: التعيين الأولي (البلاغ بلا أي فني
+  // بعد) أو إضافة فني/فنيين إضافيين لبلاغ سبق تعيين فني له وهو قيد التنفيذ
+  // (راجع زر "إضافة فني" في maintenance_task_close_screen.dart وبطاقة البلاغ
+  // في maintenance_dashboard_screen.dart). التمييز بين الحالتين هنا آليًا عبر
+  // technicianDisplayNames: الفني/الفنيون المُسندون سابقًا يظهرون أصلًا
+  // "غير متاح" في القائمة أدناه (technician.available صار false منذ تعيينهم)
+  // فلا يقدر أحد إلغاء تعيينهم عرضًا من هذه الشاشة — الاختيار هنا يضيف فقط.
   final Set<String> _selectedIds = {};
   bool _submitting = false;
+
+  bool get _isAdding => widget.report.technicianDisplayNames != '—';
 
   Future<void> _assign() async {
     setState(() => _submitting = true);
@@ -46,7 +56,7 @@ class _MaintenanceAssignScreenState extends State<MaintenanceAssignScreen> {
         .join('، ');
 
     return Scaffold(
-      appBar: const ScreenTopBar(title: 'تعيين فني'),
+      appBar: ScreenTopBar(title: _isAdding ? 'إضافة فني' : 'تعيين فني'),
       body: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
         child: Column(
@@ -75,13 +85,19 @@ class _MaintenanceAssignScreenState extends State<MaintenanceAssignScreen> {
                   Text(widget.report.description, style: const TextStyle(fontSize: 13.5, height: 1.5, color: Color(0xFF3A4250))),
                   const SizedBox(height: 6),
                   Text('رُفع بواسطة ${widget.report.reportedBy}', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                  if (_isAdding) ...[
+                    const SizedBox(height: 6),
+                    Text('مُسنَد حاليًا إلى: ${widget.report.technicianDisplayNames}',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.maintenance)),
+                  ],
                 ],
               ),
             ),
             const SizedBox(height: 18),
-            const Align(
+            Align(
               alignment: Alignment.centerRight,
-              child: Text('اختر فنيًا واحدًا أو أكثر متاحًا', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              child: Text(_isAdding ? 'اختر فنيًا إضافيًا واحدًا أو أكثر متاحًا' : 'اختر فنيًا واحدًا أو أكثر متاحًا',
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             ),
             const SizedBox(height: 10),
             Expanded(
@@ -111,7 +127,9 @@ class _MaintenanceAssignScreenState extends State<MaintenanceAssignScreen> {
             _submitting
                 ? const Center(child: Padding(padding: EdgeInsets.all(10), child: CircularProgressIndicator(color: AppColors.maintenance)))
                 : PrimaryButton(
-                    label: selectedNames.isNotEmpty ? 'تعيين البلاغ لـ $selectedNames' : 'اختر فنيًا للمتابعة',
+                    label: selectedNames.isEmpty
+                        ? 'اختر فنيًا للمتابعة'
+                        : (_isAdding ? 'إضافة $selectedNames للبلاغ' : 'تعيين البلاغ لـ $selectedNames'),
                     color: AppColors.maintenance,
                     onPressed: _selectedIds.isEmpty ? null : _assign,
                   ),
