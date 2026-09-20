@@ -6,6 +6,7 @@ import '../../services/app_state.dart';
 import '../../services/arabic_format.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../safety/safety_permit_request_screen.dart';
 import 'maintenance_assign_screen.dart';
 import 'maintenance_completed_screen.dart';
 import 'maintenance_incoming_incidents_screen.dart';
@@ -80,6 +81,21 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
                   ),
                 ),
             ],
+          ),
+          // طلب تصريح عمل (لأعمال خطرة كاللحام/الأماكن المغلقة/الارتفاعات...)
+          // — نفس شاشة/عملية الطلب المستخدمة أصلًا من قسم السلامة تمامًا
+          // (SafetyPermitRequestScreen)، بلا أي تعديل عليها: المسار على
+          // السيرفر (POST /api/safety-permits) لم يكن مقيّدًا بقسم مُعيَّن
+          // أصلًا (أي مستخدم مسجَّل دخول يقدر يطلب)، وحتى خيار "ربط بعملية
+          // بلاغ قائمة" داخل الشاشة يعرض أوامر عمل الصيانة المفتوحة نفسها —
+          // كان ناقصًا فقط زر يفتحها من قسم الصيانة. الطلب يصل لقسم السلامة
+          // للمراجعة والاعتماد كالمعتاد، ولا علاقة لقسم الصيانة بالموافقة عليه.
+          IconButton(
+            icon: const Icon(Icons.verified_user_outlined),
+            tooltip: 'طلب تصريح عمل',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SafetyPermitRequestScreen()),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.task_alt_outlined),
