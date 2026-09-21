@@ -173,6 +173,17 @@ const Map<String, String> kBodyPartLabels = {
   'other': 'أخرى',
 };
 
+/// الخطوة الأولى: جهة الإصابة من الجسم — اختياري، يُستخدم فقط لدقّة تعليم
+/// مخطط الجسم في التقرير المطبوع (راجع bodyDiagramWithMarks في
+/// injury_report_html.dart). بدونه توضع دائرة على كل الاحتمالات الممكنة
+/// للجزء المصاب (مثال: "الكتف" يظهر على ٤ مواضع معًا — أمامي يمين/يسار
+/// وخلفي يمين/يسار) لأن جهة الإصابة لم تكن مسجَّلة أصلًا؛ بتحديدها هنا يُعرض
+/// فقط الموضع المطابق فيصير التأشير دقيقًا.
+const Map<String, String> kBodyInjurySideLabels = {
+  'front': 'الجهة الأمامية',
+  'back': 'الجهة الخلفية',
+};
+
 /// الخطوة الأولى: نوع عقد عمل الموظف المصاب (اختيار واحد).
 const Map<String, String> kEmploymentTypeLabels = {
   'full_time': 'منتظم بدوام كامل',
@@ -232,6 +243,7 @@ class InjuryReportEmployee {
   final String? jobTitle;
   final String? shift;
   final List<String> bodyPartsAffected;
+  final String? bodyInjurySide; // 'front' | 'back' | null (غير محدد)
   final int lostWorkDays;
   final String? employmentType;
   final int? monthsInJob;
@@ -250,6 +262,7 @@ class InjuryReportEmployee {
     this.jobTitle,
     this.shift,
     this.bodyPartsAffected = const [],
+    this.bodyInjurySide,
     this.lostWorkDays = 0,
     this.employmentType,
     this.monthsInJob,
@@ -269,6 +282,7 @@ class InjuryReportEmployee {
         jobTitle: d['job_title'] as String?,
         shift: d['shift'] as String?,
         bodyPartsAffected: (d['body_parts_affected'] as List?)?.cast<String>() ?? const [],
+        bodyInjurySide: d['body_injury_side'] as String?,
         lostWorkDays: (d['lost_work_days'] as num?)?.toInt() ?? 0,
         employmentType: d['employment_type'] as String?,
         monthsInJob: (d['months_in_job'] as num?)?.toInt(),
@@ -287,6 +301,7 @@ class InjuryReportEmployee {
         if (jobTitle != null) 'jobTitle': jobTitle,
         if (shift != null) 'shift': shift,
         'bodyPartsAffected': bodyPartsAffected,
+        if (bodyInjurySide != null) 'bodyInjurySide': bodyInjurySide,
         'lostWorkDays': lostWorkDays,
         if (employmentType != null) 'employmentType': employmentType,
         if (monthsInJob != null) 'monthsInJob': monthsInJob,
