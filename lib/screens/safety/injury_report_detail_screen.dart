@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/injury_report.dart';
 import '../../services/app_state.dart';
 import '../../services/arabic_format.dart';
+import '../../services/constants.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import 'injury_report_form_screen.dart';
@@ -289,6 +290,19 @@ class _InjuryReportDetailScreenState extends State<InjuryReportDetailScreen> {
                 'الجزء المتضرر: ${multiLabel(kBodyPartLabels, e.bodyPartsAffected)}'
                 '${e.bodyInjurySide != null ? ' (${kBodyInjurySideLabels[e.bodyInjurySide]})' : ''}',
                 style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+              ),
+            ),
+          if (e.bodyDiagramImage != null && e.bodyDiagramImage!.startsWith('/'))
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  '$kApiOrigin${e.bodyDiagramImage}',
+                  height: 150,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                ),
               ),
             ),
           if (e.injuryNature.isNotEmpty)
