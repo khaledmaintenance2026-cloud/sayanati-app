@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/maintenance_report.dart';
 import '../../services/app_state.dart';
 import '../../services/arabic_format.dart';
+import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../safety/safety_permit_request_screen.dart';
@@ -29,6 +30,12 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    // إنشاء "بلاغ وقائي جديد" (تبويب "أعمال وقائية") قرار صريح من الإدارة:
+    // مسؤول الصيانة أو المدير فقط، وليس الفني — راجع نفس القيد الملزم فعليًا
+    // على السيرفر في routes/workOrders.js (POST / يرفض kind: 'preventive' من
+    // أي دور غير هذين). بلاغ العطل الطارئ (تبويب "الأعطال الطارئة") يبقى
+    // متاحًا للفني كما كان دائمًا — لا علاقة له بهذا القيد.
+    final canManage = canManageMaintenance(context.watch<AuthService>().currentUser?.role ?? AppRole.maintenanceTechnician);
     // الأعمال المنجزة لا تظهر في لوحة العمل اليومية هذه حتى لا تتراكم فيها
     // للأبد — تبقى متاحة (وقابلة للحذف نهائيًا) من شاشة "الأعمال المنجزة"
     // التي يفتحها زر شريط الأدوات بالأسفل.
@@ -153,20 +160,24 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
               ],
             ),
           ),
-          Positioned(
-            bottom: 20,
-            left: 20,
-            child: FloatingActionButton(
-              backgroundColor: AppColors.maintenance,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => _showEmergency ? const MaintenanceNewReportScreen() : const MaintenanceWorkOrderScreen(),
+          // زر الإضافة (+) يظهر دائمًا لتبويب "الأعطال الطارئة"، لكن لا يظهر
+          // إطلاقًا لتبويب "أعمال وقائية" إلا لمسؤول الصيانة أو المدير —
+          // بدل إظهاره ثم رفض السيرفر الطلب برسالة خطأ بعد الضغط عليه.
+          if (_showEmergency || canManage)
+            Positioned(
+              bottom: 20,
+              left: 20,
+              child: FloatingActionButton(
+                backgroundColor: AppColors.maintenance,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => _showEmergency ? const MaintenanceNewReportScreen() : const MaintenanceWorkOrderScreen(),
+                  ),
                 ),
+                child: const Icon(Icons.add, color: Colors.white),
               ),
-              child: const Icon(Icons.add, color: Colors.white),
             ),
-          ),
         ],
       ),
     );
