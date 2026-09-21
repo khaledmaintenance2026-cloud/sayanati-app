@@ -6,6 +6,7 @@ import '../../services/app_state.dart';
 import '../../services/auth_service.dart';
 import '../../services/constants.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/body_diagram_drawer.dart';
 import '../../widgets/common.dart';
 
 /// هرم الضوابط (Hierarchy of Controls) بألوانه وأيقوناته — نفس ترتيب ومفاتيح
@@ -989,6 +990,11 @@ class _EmployeeFormScreenState extends State<_EmployeeFormScreen> {
   bool _isFatality = false;
   final Set<String> _bodyParts = {};
   String? _bodyInjurySide;
+  String? _bodyDiagramImage;
+  // رابط المعاينة الكامل لرسمة محفوظة مسبقًا من الخادم (مسار نسبي + أصل
+  // الخادم) — يُحسَب مرة واحدة عند فتح الشاشة فقط، ولا يتغيّر مع كل رسمة
+  // جديدة (تلك تبقى محليًا في BodyDiagramDrawer كصورة data:image/... مباشرة).
+  String? _initialBodyDiagramUrl;
   final Set<String> _injuryNature = {};
 
   @override
@@ -1011,6 +1017,10 @@ class _EmployeeFormScreenState extends State<_EmployeeFormScreen> {
       _isFatality = e.isFatality;
       _bodyParts.addAll(e.bodyPartsAffected);
       _bodyInjurySide = e.bodyInjurySide;
+      _bodyDiagramImage = e.bodyDiagramImage;
+      if (e.bodyDiagramImage != null && e.bodyDiagramImage!.startsWith('/')) {
+        _initialBodyDiagramUrl = '$kApiOrigin${e.bodyDiagramImage}';
+      }
       _injuryNature.addAll(e.injuryNature);
     }
   }
@@ -1046,6 +1056,7 @@ class _EmployeeFormScreenState extends State<_EmployeeFormScreen> {
       shift: _shiftCtrl.text.trim().isEmpty ? null : _shiftCtrl.text.trim(),
       bodyPartsAffected: _bodyParts.toList(),
       bodyInjurySide: _bodyInjurySide,
+      bodyDiagramImage: _bodyDiagramImage,
       lostWorkDays: int.tryParse(_lostDaysCtrl.text.trim()) ?? 0,
       employmentType: _employmentType,
       monthsInJob: int.tryParse(_monthsJobCtrl.text.trim()),
@@ -1105,6 +1116,15 @@ class _EmployeeFormScreenState extends State<_EmployeeFormScreen> {
                   // الجسم في التقرير المطبوع دقيقًا (دائرة واحدة بدل دائرة على كل
                   // الاحتمالات معًا لعدم معرفة الجهة). راجع kBodyInjurySideLabels.
                   _BodySideRow(value: _bodyInjurySide, onChanged: (v) => setState(() => _bodyInjurySide = v)),
+                  const SizedBox(height: 12),
+                  const Text('حدِّد مكان الإصابة بالضبط (ارسم على المخطط)',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                  const SizedBox(height: 8),
+                  BodyDiagramDrawer(
+                    bodyInjurySide: _bodyInjurySide,
+                    initialImageUrl: _initialBodyDiagramUrl,
+                    onChanged: (v) => _bodyDiagramImage = v,
+                  ),
                   const SizedBox(height: 14),
                   const Text('طبيعة الإصابة (الأكثر شدة)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
                   const SizedBox(height: 8),
