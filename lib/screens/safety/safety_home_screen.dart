@@ -7,6 +7,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import 'injury_reports_list_screen.dart';
 import 'safety_approval_screen.dart';
+import 'safety_maintenance_report_screen.dart';
 import 'safety_permit_print_screen.dart';
 import 'safety_permit_request_screen.dart';
 import 'safety_reports_screen.dart';
@@ -24,6 +25,13 @@ class SafetyHomeScreen extends StatelessWidget {
         appBar: AppBar(
           title: const Text('السلامة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.build_outlined),
+              tooltip: 'رفع بلاغ صيانة',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SafetyMaintenanceReportScreen()),
+              ),
+            ),
             IconButton(
               icon: const Icon(Icons.description_outlined),
               tooltip: 'التقارير',
