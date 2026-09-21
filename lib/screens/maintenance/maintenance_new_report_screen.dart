@@ -16,14 +16,25 @@ class MaintenanceNewReportScreen extends StatefulWidget {
 
 class _MaintenanceNewReportScreenState extends State<MaintenanceNewReportScreen> {
   String _line = kFacilityLocations.first;
+  final _locationDetailCtrl = TextEditingController();
   final _equipmentCtrl = TextEditingController(text: 'ماكينة الخلط');
   final _descriptionCtrl = TextEditingController();
   bool _submitting = false;
 
   final _lines = kFacilityLocations;
 
+  /// يجمع القسم المختار من القائمة مع تفاصيل موقع حرة اختيارية — يسمح لفريق
+  /// الصيانة برفع بلاغ لأي مكان فعلي في المصنع (مثل "الإدارة" أو "بوابة
+  /// الاستقبال" أو أي موقع لا يقع أصلًا ضمن الأقسام الثلاثة الرئيسية) بدل
+  /// حصر البلاغ بأحد هذه الأقسام فقط كما كان سابقًا. بنفس نمط _fullLocation
+  /// في safety_permit_request_screen.dart تمامًا (ونفس صيغة "$facility —
+  /// $detail" المعروضة أصلًا في قائمة بلاغات الصيانة، راجع MaintenanceReport.line).
+  String get _fullLocation =>
+      _locationDetailCtrl.text.trim().isEmpty ? _line : '$_line — ${_locationDetailCtrl.text.trim()}';
+
   @override
   void dispose() {
+    _locationDetailCtrl.dispose();
     _equipmentCtrl.dispose();
     _descriptionCtrl.dispose();
     super.dispose();
@@ -41,7 +52,7 @@ class _MaintenanceNewReportScreenState extends State<MaintenanceNewReportScreen>
     try {
       await context.read<AppState>().createReport(
             equipment: _equipmentCtrl.text.trim(),
-            facility: _line,
+            facility: _fullLocation,
             description: _descriptionCtrl.text.trim(),
           );
       if (!mounted) return;
@@ -107,6 +118,12 @@ class _MaintenanceNewReportScreenState extends State<MaintenanceNewReportScreen>
                     decoration: _fieldDecoration(),
                     items: _lines.map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
                     onChanged: (v) => setState(() => _line = v ?? _line),
+                  ),
+                  const SizedBox(height: 14),
+                  const _FieldLabel('تفاصيل الموقع (اختياري)'),
+                  TextField(
+                    controller: _locationDetailCtrl,
+                    decoration: _fieldDecoration(hint: 'مثال: الإدارة، بوابة الاستقبال...'),
                   ),
                   const SizedBox(height: 14),
                   const _FieldLabel('المعدة'),
