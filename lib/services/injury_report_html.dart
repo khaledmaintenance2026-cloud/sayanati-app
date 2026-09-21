@@ -12,7 +12,9 @@ import '../models/injury_report.dart';
 /// ملاحظات مهمة عن بعض الاختلافات عن النسخة الورقية (بحسب توجيه العميل):
 /// 1) مكان الإصابة على مخطط الجسم يُعلَّم تلقائيًا بدائرة حمراء (بدل التظليل
 ///    اليدوي) فوق كل جزء مُدخَل في التطبيق — راجع خريطة bodyMarks أدناه؛ يبقى
-///    السطر النصي أسفل الرسم أيضًا كملخص واضح لنفس المعلومة.
+///    السطر النصي أسفل الرسم أيضًا كملخص واضح لنفس المعلومة. لو حُدِّدت جهة
+///    الإصابة (أمامي/خلفي — حقل bodyInjurySide الاختياري) يُعرض موضع واحد
+///    دقيق بدل وضع دائرة على كل الاحتمالات معًا (راجع bodyDiagramWithMarks).
 /// 2) خانة "Sign" في جدول CAR/PAR وخانة "Signature" النهائية تُتركان فارغتين
 ///    عمدًا (بدون أي علامة أو اسم) ليوقّعهما المسؤول يدويًا على الورق بعد
 ///    طباعة التقرير، بناءً على طلب العميل صراحة.
@@ -139,10 +141,15 @@ String buildInjuryReportHtml(InjuryReport r) {
   ];
 
   // إحداثيات تقريبية (نسبة % من عرض/ارتفاع صورة مخطط الجسم الأصلية 360×422)
-  // لوضع دائرة حمراء تلقائيًا على مكان كل إصابة مُدخَلة بدل التظليل اليدوي —
-  // بما أن جهة الإصابة (يمين/يسار) غير مسجَّلة في النظام، توضع دائرة على
-  // الجانبين معًا (وعلى الرسمين الأمامي والخلفي لو الجزء ظاهر فيهما) لتغطية
-  // الاحتمالين. "other" بلا موضع محدد فيبقى في السطر النصي أسفل الرسم فقط.
+  // لوضع دائرة حمراء تلقائيًا على مكان كل إصابة مُدخَلة بدل التظليل اليدوي.
+  // الصورة تحوي الرسمين جنبًا إلى جنب (نصف أيسر = المنظر الأمامي بإحداثي x
+  // أقل من ٥٠٪، نصف أيمن = المنظر الخلفي بإحداثي x أكبر من أو يساوي ٥٠٪).
+  // جهة الإصابة (يمين/يسار الجسم) غير مسجَّلة في النظام أصلًا، لذا لكل جزء
+  // ثنائي (يظهر على الجانبين معًا، كالكتف والذراع) نقطتان على الأقل لكل
+  // منظر — لكن بما أن جهة "أمامي/خلفي" أصبحت قابلة للتسجيل الآن (حقل
+  // bodyInjurySide الاختياري)، bodyDiagramWithMarks أدناه يصفّي النقاط حسب
+  // نصف الصورة المطابق عند تحديدها، فتُعرض دائرة واحدة دقيقة بدل دائرتين أو
+  // أربع معًا. "other" بلا موضع محدد فيبقى في السطر النصي أسفل الرسم فقط.
   const bodyMarks = <String, List<(double, double)>>{
     'head': [(26.4, 8.3), (80.6, 8.3)],
     'face': [(26.4, 13.0)],
@@ -164,10 +171,23 @@ String buildInjuryReportHtml(InjuryReport r) {
     'foot_toes': [(20.8, 93.6), (31.9, 93.6), (75.0, 93.6), (86.1, 93.6)],
   };
 
-  String bodyDiagramWithMarks(List<String> bodyLabels) {
+  // side: 'front' | 'back' | null (bodyInjurySide الموظف المصاب) — لو null
+  // (لم تُحدَّد جهة الإصابة) نعرض كل النقاط كما كان دائمًا (سلوك متوافق مع
+  // تقارير قديمة لا تحمل هذا الحقل). لو حُدِّدت، نستبعد نقاط النصف الآخر من
+  // الصورة لأي جزء له أكثر من نقطة — أجزاء أحادية المنظر أصلًا (كالصدر أو
+  // الظهر، نقطة واحدة فقط) تُعرض دائمًا بلا تصفية لأنه لا لبس فيها. لو أدّت
+  // التصفية لحذف كل نقاط جزء مُختار (تناقض بيانات نادر، مثال: تحديد "الصدر"
+  // مع جهة "خلفي") نعرض النقاط الأصلية كلها بدل إخفاء العلامة تمامًا.
+  String bodyDiagramWithMarks(List<String> bodyLabels, String? side) {
     final marksHtml = StringBuffer();
     for (final k in bodyLabels) {
-      for (final pt in bodyMarks[k] ?? const <(double, double)>[]) {
+      final pts = bodyMarks[k] ?? const <(double, double)>[];
+      var toRender = pts;
+      if (side != null && pts.length > 1) {
+        final filtered = pts.where((p) => side == 'front' ? p.$1 < 50 : p.$1 >= 50).toList();
+        if (filtered.isNotEmpty) toRender = filtered;
+      }
+      for (final pt in toRender) {
         marksHtml.write('<div class="body-mark" style="left:${pt.$1}%; top:${pt.$2}%;"></div>');
       }
     }
@@ -254,6 +274,8 @@ String buildInjuryReportHtml(InjuryReport r) {
 
   String employeeBlock(InjuryReportEmployee emp, int total, int fatalities) {
     final bodyText = emp.bodyPartsAffected.map((k) => bodyPartLabels[k] ?? k).join('، ');
+    const bodySideLabels = <String, String>{'front': 'الجهة الأمامية', 'back': 'الجهة الخلفية'};
+    final bodySideText = emp.bodyInjurySide != null ? ' (${bodySideLabels[emp.bodyInjurySide]})' : '';
     final lwdText = emp.lostWorkDays <= 0 ? 'N/A' : '${emp.lostWorkDays}';
     final empType = emp.employmentType != null ? [emp.employmentType!] : <String>[];
     return '''
@@ -280,8 +302,8 @@ String buildInjuryReportHtml(InjuryReport r) {
       <tr>
         <td class="lbl" colspan="4" rowspan="5" style="vertical-align:top">
           <div style="text-align:center;font-weight:700">Part of body affected (shade all that apply)<br/><span class="ar">الجزء المتضرر في الجسم (ظلل الأماكن المتضررة)</span></div>
-          ${bodyDiagramWithMarks(emp.bodyPartsAffected)}
-          <div class="body-affected-list ar"><b>الأجزاء المتأثرة المُدخَلة:</b> ${esc(bodyText.isEmpty ? '—' : bodyText)}</div>
+          ${bodyDiagramWithMarks(emp.bodyPartsAffected, emp.bodyInjurySide)}
+          <div class="body-affected-list ar"><b>الأجزاء المتأثرة المُدخَلة:</b> ${esc(bodyText.isEmpty ? '—' : bodyText)}${esc(bodySideText)}</div>
         </td>
         <td class="lbl" colspan="2">${lbl('No. of Lost Work Days', 'عدد أيام الغياب')}</td>
         <td colspan="2">$lwdText</td>
