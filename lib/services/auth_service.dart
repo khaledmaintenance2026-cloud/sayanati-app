@@ -23,6 +23,15 @@ import 'push_notification_service.dart';
 enum AppRole { admin, maintenanceTechnician, maintenanceManager, production, productionManager, safety, general }
 bool isMaintenanceRole(AppRole r) => r == AppRole.maintenanceTechnician || r == AppRole.maintenanceManager;
 
+/// هل يملك هذا الدور صلاحية إنشاء "بلاغ وقائي جديد"، طلب "تقرير صيانة بمدة
+/// مخصّصة"، أو حذف أمر عمل منجز نهائيًا؟ (مدير النظام أو مسؤول الصيانة فقط —
+/// لا الفني — قرار صريح من الإدارة). راجع نفس القيد على السيرفر تحديدًا في
+/// routes/workOrders.js: التحقق من kind === 'preventive' داخل POST /،
+/// وrequireRole('maintenance_manager') على كل من DELETE /:id وPOST
+/// /reports/request — هذه الدالة تُخفي الأزرار المقابلة في الواجهة فقط
+/// (تجربة استخدام أنظف)، والتحقق الفعلي/الملزم يبقى دائمًا على السيرفر.
+bool canManageMaintenance(AppRole r) => r == AppRole.admin || r == AppRole.maintenanceManager;
+
 /// هل هذا مستخدم إنتاج (عادي أو مسؤول)؟ استخدمها بدل مقارنة
 /// `role == AppRole.production` مباشرة في أي مكان يتعلق بقسم الإنتاج عمومًا
 /// (رؤية القسم، تقييد المصنع) — لا في التحقق من صلاحية تعديل/حذف الباتش
