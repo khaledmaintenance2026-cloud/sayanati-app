@@ -8,6 +8,20 @@ import '../../services/constants.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
+/// هرم الضوابط (Hierarchy of Controls) بألوانه وأيقوناته — نفس ترتيب ومفاتيح
+/// kHierarchyOfControlLabels في lib/models/injury_report.dart بالضبط، ونفس
+/// الألوان الخمسة المستخدمة في التقرير المطبوع (راجع hierarchyOptions في
+/// lib/services/injury_report_html.dart) حتى يبقى شكل الاستمارة والتقرير
+/// المطبوع متطابقين بصريًا. مُعرَّف هنا (لا في injury_report.dart) لأنه يحمل
+/// ألوان/أيقونات Flutter، خلافًا لبقية الثوابت هناك المستقلة عن أي إطار عمل.
+const List<(String key, String label, Color color, IconData icon)> kHierarchyOfControls = [
+  ('elimination', 'إزالة الخطر', Color(0xFFB03A2E), Icons.block),
+  ('substitution', 'الإحلال (الاستبدال)', Color(0xFF3498A5), Icons.swap_horiz),
+  ('engineering_control', 'الضوابط الهندسية', Color(0xFF7D5AA6), Icons.engineering),
+  ('administrative_control', 'الضوابط الإدارية', Color(0xFF2EA86B), Icons.rule),
+  ('ppe', 'توفير معدات الحماية الشخصية', Color(0xFF2470B8), Icons.health_and_safety),
+];
+
 /// شاشة إنشاء/تعديل تقرير تحقيق إصابة عمل (QMS-SAF-007) — استمارة من ٥ خطوات
 /// تطابق الاستمارة الورقية بالضبط (راجع lib/models/injury_report.dart لكل
 /// القوائم والمفاتيح المستخدمة). تُمرَّر existing عند التعديل (طالما التقرير
@@ -561,17 +575,26 @@ class _InjuryReportFormScreenState extends State<InjuryReportFormScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _label('هرم الضوابط (يمكن اختيار أكثر من ضابط)'),
-        const SizedBox(height: 8),
-        _MultiChipGroup(options: kHierarchyOfControlLabels, selected: _hierarchyOfControls, onToggle: (k) => _toggle(_hierarchyOfControls, k)),
+        const SizedBox(height: 4),
+        const Text('من الأعلى للأسفل: من الأكثر فعالية (إزالة الخطر) إلى الأقل فعالية (معدات الحماية الشخصية)',
+            style: TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+        const SizedBox(height: 10),
+        _HierarchyPyramid(selected: _hierarchyOfControls, onToggle: (k) => _toggle(_hierarchyOfControls, k)),
         if (_hierarchyOfControls.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          ...kHierarchyOfControlLabels.entries.where((e) => _hierarchyOfControls.contains(e.key)).map((e) => Padding(
+          const SizedBox(height: 14),
+          ...kHierarchyOfControls.where((h) => _hierarchyOfControls.contains(h.$1)).map((h) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _label('تفاصيل: ${e.value}'),
-                    TextField(controller: _controlDetailsCtrlFor(e.key), minLines: 2, maxLines: 3, decoration: _decoration()),
+                    Row(
+                      children: [
+                        Container(width: 10, height: 10, margin: const EdgeInsets.only(left: 6), decoration: BoxDecoration(color: h.$3, shape: BoxShape.circle)),
+                        _label('تفاصيل: ${h.$2}'),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(controller: _controlDetailsCtrlFor(h.$1), minLines: 2, maxLines: 3, decoration: _decoration()),
                   ],
                 ),
               )),
@@ -706,6 +729,76 @@ class _MultiChipGroup extends StatelessWidget {
   }
 }
 
+/// عرض "هرم الضوابط" بشكل هرمي فعليًا (كل مستوى أعرض من الذي فوقه) بدل قائمة
+/// شرائح مسطّحة بلا تمييز — يطابق شكل الهرم الملوّن بالاستمارة الورقية
+/// الأصلية والتقرير المطبوع (راجع kHierarchyOfControls أعلاه لنفس الألوان).
+/// اختيار متعدد (Set) — كل مستوى مضيء بلونه عند اختياره، ومحدَّد بلونه فقط
+/// مع تعبئة خفيفة قبل الاختيار حتى يبقى الهرم واضحًا للعين من أول وهلة.
+class _HierarchyPyramid extends StatelessWidget {
+  final Set<String> selected;
+  final void Function(String key) onToggle;
+  const _HierarchyPyramid({required this.selected, required this.onToggle});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (var i = 0; i < kHierarchyOfControls.length; i++) ...[
+          if (i > 0) const SizedBox(height: 4),
+          _band(i),
+        ],
+      ],
+    );
+  }
+
+  Widget _band(int i) {
+    final (key, label, color, icon) = kHierarchyOfControls[i];
+    final sel = selected.contains(key);
+    // كل مستوى أعرض بـ١٥٪ من الذي فوقه — يبدأ بـ٤٠٪ (إزالة الخطر، أعلى الهرم
+    // وأضيقه) وينتهي بـ١٠٠٪ (معدات الحماية الشخصية، قاعدة الهرم وأعرضها).
+    final widthFactor = 0.40 + i * 0.15;
+    return Center(
+      child: FractionallySizedBox(
+        widthFactor: widthFactor,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () => onToggle(key),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+              decoration: BoxDecoration(
+                color: sel ? color : color.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: color, width: sel ? 0 : 1.2),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 17, color: sel ? Colors.white : color),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: sel ? Colors.white : color),
+                    ),
+                  ),
+                  if (sel) ...[
+                    const SizedBox(width: 6),
+                    const Icon(Icons.check_circle, size: 16, color: Colors.white),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _YesNoRow extends StatelessWidget {
   final String label;
   final bool? value;
@@ -726,6 +819,40 @@ class _YesNoRow extends StatelessWidget {
             children: [
               ChoiceChip(label: const Text('نعم'), selected: value == true, onSelected: (_) => onChanged(true)),
               ChoiceChip(label: const Text('لا'), selected: value == false, onSelected: (_) => onChanged(false)),
+              ChoiceChip(label: const Text('غير محدد'), selected: value == null, onSelected: (_) => onChanged(null)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// جهة الإصابة من الجسم (أمامي/خلفي) — اختياري، بنفس نمط _YesNoRow تمامًا.
+/// راجع kBodyInjurySideLabels لسبب وجود هذا الحقل.
+class _BodySideRow extends StatelessWidget {
+  final String? value;
+  final void Function(String?) onChanged;
+  const _BodySideRow({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('جهة الإصابة (اختياري — لدقّة التأشير على مخطط الجسم بالتقرير)',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: [
+              ...kBodyInjurySideLabels.entries.map((e) => ChoiceChip(
+                    label: Text(e.value),
+                    selected: value == e.key,
+                    onSelected: (_) => onChanged(value == e.key ? null : e.key),
+                  )),
               ChoiceChip(label: const Text('غير محدد'), selected: value == null, onSelected: (_) => onChanged(null)),
             ],
           ),
@@ -861,6 +988,7 @@ class _EmployeeFormScreenState extends State<_EmployeeFormScreen> {
   String? _employmentType;
   bool _isFatality = false;
   final Set<String> _bodyParts = {};
+  String? _bodyInjurySide;
   final Set<String> _injuryNature = {};
 
   @override
@@ -882,6 +1010,7 @@ class _EmployeeFormScreenState extends State<_EmployeeFormScreen> {
       _employmentType = e.employmentType;
       _isFatality = e.isFatality;
       _bodyParts.addAll(e.bodyPartsAffected);
+      _bodyInjurySide = e.bodyInjurySide;
       _injuryNature.addAll(e.injuryNature);
     }
   }
@@ -916,6 +1045,7 @@ class _EmployeeFormScreenState extends State<_EmployeeFormScreen> {
       jobTitle: _jobTitleCtrl.text.trim().isEmpty ? null : _jobTitleCtrl.text.trim(),
       shift: _shiftCtrl.text.trim().isEmpty ? null : _shiftCtrl.text.trim(),
       bodyPartsAffected: _bodyParts.toList(),
+      bodyInjurySide: _bodyInjurySide,
       lostWorkDays: int.tryParse(_lostDaysCtrl.text.trim()) ?? 0,
       employmentType: _employmentType,
       monthsInJob: int.tryParse(_monthsJobCtrl.text.trim()),
@@ -971,6 +1101,10 @@ class _EmployeeFormScreenState extends State<_EmployeeFormScreen> {
                           _bodyParts.add(k);
                         }
                       })),
+                  // جهة الإصابة (أمامي/خلفي) — اختياري، لكن تحديدها يجعل تعليم مخطط
+                  // الجسم في التقرير المطبوع دقيقًا (دائرة واحدة بدل دائرة على كل
+                  // الاحتمالات معًا لعدم معرفة الجهة). راجع kBodyInjurySideLabels.
+                  _BodySideRow(value: _bodyInjurySide, onChanged: (v) => setState(() => _bodyInjurySide = v)),
                   const SizedBox(height: 14),
                   const Text('طبيعة الإصابة (الأكثر شدة)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
                   const SizedBox(height: 8),
