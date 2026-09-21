@@ -7,7 +7,9 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import 'injury_reports_list_screen.dart';
 import 'safety_approval_screen.dart';
+import 'safety_permit_print_screen.dart';
 import 'safety_permit_request_screen.dart';
+import 'safety_reports_screen.dart';
 
 /// شاشة السلامة — تبويبان: تصاريح العمل، وإصابات العمل (QMS-SAF-007)، بنفس
 /// أسلوب AdminHomeScreen (DefaultTabController + TabBar واحد أعلى الشاشة).
@@ -21,6 +23,15 @@ class SafetyHomeScreen extends StatelessWidget {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('السلامة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.description_outlined),
+              tooltip: 'التقارير',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SafetyReportsScreen()),
+              ),
+            ),
+          ],
           bottom: const TabBar(
             labelColor: AppColors.safetyText,
             unselectedLabelColor: AppColors.textMuted,
@@ -160,9 +171,12 @@ class _PermitCard extends StatelessWidget {
 
     return InkWell(
       borderRadius: BorderRadius.circular(16),
+      // بانتظار الموافقة: يفتح شاشة المراجعة (قبول/رفض). مقبول أو مرفوض:
+      // يفتح تقرير التصريح الكامل (من بداية الطلب وحتى القرار النهائي) —
+      // كان لا يفعل شيئًا إطلاقًا سابقًا لأي تصريح تمت مراجعته بالفعل.
       onTap: permit.status == PermitStatus.pending
           ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SafetyApprovalScreen(permit: permit)))
-          : null,
+          : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SafetyPermitPrintScreen(permit: permit))),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(color: AppColors.surface, border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(16)),
@@ -172,6 +186,11 @@ class _PermitCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(child: Text(permit.location, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold))),
+                if (permit.status != PermitStatus.pending)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 6),
+                    child: Icon(Icons.picture_as_pdf_outlined, size: 18, color: AppColors.textMuted),
+                  ),
                 StatusPill(label: statusInfo.label, color: statusInfo.color, background: statusInfo.bg),
                 IconButton(
                   icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.textMuted),
