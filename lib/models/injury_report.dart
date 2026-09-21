@@ -244,6 +244,14 @@ class InjuryReportEmployee {
   final String? shift;
   final List<String> bodyPartsAffected;
   final String? bodyInjurySide; // 'front' | 'back' | null (غير محدد)
+  // رسمة تفاعلية رسمها المستخدم بإصبعه فوق مخطط الجسم لتحديد مكان الإصابة
+  // بدقة (راجع BodyDiagramDrawer في lib/widgets/body_diagram_drawer.dart) —
+  // تُقرأ من الخادم كمسار نسبي (مثال: /uploads/injury-reports/xxx.png)، وتُرسَل
+  // عند الحفظ إما بنفس المسار (لم تتغيّر) أو كصورة data:image/png;base64,...
+  // جديدة (رسمة جديدة/معدَّلة) — يحلّل الخادم الحالتين معًا (راجع
+  // saveBodyDiagramImage في routes/injuryReports.js). null يعني عدم وجود
+  // رسمة محفوظة، فيُعرض مخطط الجسم التلقائي القديم (بالأشكال) كبديل احتياطي.
+  final String? bodyDiagramImage;
   final int lostWorkDays;
   final String? employmentType;
   final int? monthsInJob;
@@ -263,6 +271,7 @@ class InjuryReportEmployee {
     this.shift,
     this.bodyPartsAffected = const [],
     this.bodyInjurySide,
+    this.bodyDiagramImage,
     this.lostWorkDays = 0,
     this.employmentType,
     this.monthsInJob,
@@ -283,6 +292,7 @@ class InjuryReportEmployee {
         shift: d['shift'] as String?,
         bodyPartsAffected: (d['body_parts_affected'] as List?)?.cast<String>() ?? const [],
         bodyInjurySide: d['body_injury_side'] as String?,
+        bodyDiagramImage: d['body_diagram_image'] as String?,
         lostWorkDays: (d['lost_work_days'] as num?)?.toInt() ?? 0,
         employmentType: d['employment_type'] as String?,
         monthsInJob: (d['months_in_job'] as num?)?.toInt(),
@@ -302,6 +312,7 @@ class InjuryReportEmployee {
         if (shift != null) 'shift': shift,
         'bodyPartsAffected': bodyPartsAffected,
         if (bodyInjurySide != null) 'bodyInjurySide': bodyInjurySide,
+        if (bodyDiagramImage != null) 'bodyDiagramImage': bodyDiagramImage,
         'lostWorkDays': lostWorkDays,
         if (employmentType != null) 'employmentType': employmentType,
         if (monthsInJob != null) 'monthsInJob': monthsInJob,
