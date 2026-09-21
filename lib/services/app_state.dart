@@ -1,7 +1,7 @@
 import 'dart:async';
- 
+
 import 'package:flutter/foundation.dart';
- 
+
 import '../models/app_notification.dart';
 import '../models/batch_edit.dart';
 import '../models/injury_report.dart';
@@ -10,7 +10,7 @@ import '../models/production.dart';
 import '../models/safety_permit.dart';
 import '../models/technician.dart';
 import 'api_client.dart';
- 
+
 /// نتيجة طلب تقرير إنتاج بمدة مخصصة — الرابط دائمًا متاح لو نجح الإنشاء
 /// (حتى لو فشل إرسال واتساب لسبب ما)، و[warning] يحمل سبب فشل الإرسال إن وُجد.
 class ReportRequestResult {
@@ -19,7 +19,7 @@ class ReportRequestResult {
   final String? warning;
   const ReportRequestResult({required this.reportUrl, required this.whatsappSent, this.warning});
 }
- 
+
 /// طبقة الحالة/البيانات لكل التطبيق.
 ///
 /// ⚠️ حالة كل قسم مختلفة الآن بعد الانتقال لسيرفر صيانتي المحلي:
@@ -34,7 +34,7 @@ class ReportRequestResult {
 ///   مسارات REST كانت جاهزة على السيرفر منذ فترة.
 class AppState extends ChangeNotifier {
   final ApiClient _api = ApiClient.instance;
- 
+
   // ---------------------------------------------------------------------
   // سجل نشاط مبسّط يحاكي الإشعارات الفورية + رسائل واتساب الجماعية،
   // لإظهار أن منطق سير العمل يعمل فعليًا (وليس مجرد تصميم ثابت). ملاحظة:
@@ -43,23 +43,23 @@ class AppState extends ChangeNotifier {
   // بدل هذا السجل الوهمي — راجع قسم التوصيات في تقرير المراجعة.
   // ---------------------------------------------------------------------
   final List<String> activityLog = [];
- 
+
   void _log(String message) {
     activityLog.insert(0, message);
     if (activityLog.length > 50) activityLog.removeLast();
   }
- 
+
   // ---------------------------------------------------------------------
   // الصيانة — الفنيون (مربوطون بالسيرفر المحلي فعليًا)
   // ---------------------------------------------------------------------
   final List<Technician> technicians = [];
- 
+
   bool _attached = false;
   Timer? _notificationsTimer;
   Timer? _liveDataTimer;
   bool techniciansLoaded = false;
   String? techniciansError;
- 
+
   /// تُستدعى مرة واحدة فور تسجيل الدخول بنجاح (راجع main.dart) — لا تحتاج
   /// أي رمز دخول يُمرَّر لها الآن؛ ApiClient يحمل رمز الجلسة الحالي داخليًا
   /// فور أن يستدعي AuthService.signIn/signUp عليه setToken.
@@ -86,7 +86,7 @@ class AppState extends ChangeNotifier {
     _liveDataTimer?.cancel();
     _liveDataTimer = Timer.periodic(const Duration(seconds: 15), (_) => _pollLiveData());
   }
- 
+
   Future<void> _pollLiveData() async {
     if (!_attached) return;
     await Future.wait([
@@ -99,7 +99,7 @@ class AppState extends ChangeNotifier {
       _loadPermitsFromCloud(),
     ]);
   }
- 
+
   void detachAuth() {
     _attached = false;
     techniciansLoaded = false;
@@ -123,9 +123,9 @@ class AppState extends ChangeNotifier {
     _liveDataTimer?.cancel();
     _liveDataTimer = null;
   }
- 
+
   Future<void> reloadTechnicians() => _loadTechniciansFromCloud();
- 
+
   Future<void> _loadTechniciansFromCloud() async {
     if (!_attached) return;
     try {
@@ -144,7 +144,7 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
   }
- 
+
   Future<void> addTechnicianCloud({
     required String name,
     required String specialty,
@@ -158,7 +158,7 @@ class AppState extends ChangeNotifier {
     technicians.add(Technician.fromApi(data['technician'] as Map<String, dynamic>));
     notifyListeners();
   }
- 
+
   Future<void> updateTechnicianCloud(
     String id, {
     String? name,
@@ -172,20 +172,20 @@ class AppState extends ChangeNotifier {
     if (phone != null) body['phone'] = phone;
     if (available != null) body['status'] = available ? 'available' : 'busy';
     if (body.isEmpty) return;
- 
+
     final data = await _api.patch('/technicians/$id', body);
     final updated = Technician.fromApi(data['technician'] as Map<String, dynamic>);
     final i = technicians.indexWhere((t) => t.id == id);
     if (i != -1) technicians[i] = updated;
     notifyListeners();
   }
- 
+
   Future<void> removeTechnicianCloud(String id) async {
     await _api.delete('/technicians/$id');
     technicians.removeWhere((t) => t.id == id);
     notifyListeners();
   }
- 
+
   // ---------------------------------------------------------------------
   // الصيانة — البلاغات وأوامر العمل (مربوطة بالسيرفر المحلي فعليًا الآن عبر
   // /work-orders، بنفس نمط الفنيين/الإنتاج أعلاه). كانت بيانات وهمية محلية
@@ -195,9 +195,9 @@ class AppState extends ChangeNotifier {
   final List<MaintenanceReport> maintenanceReports = [];
   bool workOrdersLoaded = false;
   String? workOrdersError;
- 
+
   Future<void> reloadWorkOrders() => _loadWorkOrdersFromCloud();
- 
+
   Future<void> _loadWorkOrdersFromCloud() async {
     if (!_attached) return;
     try {
@@ -214,16 +214,16 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
   }
- 
+
   List<MaintenanceReport> get openEmergencyReports => maintenanceReports
       .where((r) => r.isEmergency && r.status != MaintenanceStatus.completed)
       .toList();
- 
+
   /// الأعمال المنجزة فقط — منفصلة عن لوحة العمل اليومية حتى لا تتراكم فيها
   /// للأبد (راجع [deleteMaintenanceReport] لحذفها نهائيًا بعد أرشفتها/طباعتها).
   List<MaintenanceReport> get completedMaintenanceReports =>
       maintenanceReports.where((r) => r.status == MaintenanceStatus.completed).toList();
- 
+
   /// يحذف بلاغًا/أمر عمل منجزًا نهائيًا — حذف حقيقي من قاعدة البيانات على
   /// السيرفر (وليس من هذا الجهاز فقط كما كان سابقًا)، فيختفي من كل الأجهزة.
   Future<void> deleteMaintenanceReport(String reportId) async {
@@ -231,7 +231,7 @@ class AppState extends ChangeNotifier {
     maintenanceReports.removeWhere((r) => r.id == reportId);
     notifyListeners();
   }
- 
+
   /// بلاغ عطل طارئ جديد يرفعه الإنتاج — يُنشئ أمر عمل حقيقي على السيرفر
   /// (kind: emergency)، والسيرفر نفسه يرسل إشعار واتساب فوري لجروب الصيانة
   /// (راجع routes/workOrders.js و services/notifications.js).
@@ -252,7 +252,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     return report;
   }
- 
+
   /// أمر عمل وقائي جديد يبادر به مشرف الصيانة، مع تعيين فني واحد له مباشرة —
   /// عمليتان متتاليتان على السيرفر (إنشاء ثم تعيين) لأن أمر العمل يُنشأ
   /// دائمًا بلا فني مُسنَد أولًا (راجع POST /work-orders)، لكن التطبيق يُظهر
@@ -274,18 +274,18 @@ class AppState extends ChangeNotifier {
     final workOrderId = (createData['workOrder'] as Map<String, dynamic>)['id'].toString();
     final assignData = await _api.patch('/work-orders/$workOrderId/assign', {'technicianIds': technicianIds});
     final order = MaintenanceReport.fromApi(assignData['workOrder'] as Map<String, dynamic>);
- 
+
     for (final id in technicianIds) {
       final techIdx = technicians.indexWhere((t) => t.id == id);
       if (techIdx != -1) technicians[techIdx].available = false;
     }
- 
+
     maintenanceReports.insert(0, order);
     _log('تم إنشاء أمر عمل وقائي جديد — $facility');
     notifyListeners();
     return order;
   }
- 
+
   /// تعيين فني واحد أو أكثر لنفس البلاغ — يدعم النظام الآن أكثر من فني لنفس
   /// أمر العمل (راجع work_order_technicians على السيرفر).
   Future<void> assignTechnicians(String reportId, List<String> technicianIds) async {
@@ -303,7 +303,7 @@ class AppState extends ChangeNotifier {
     _log('تم إسناد بلاغ "${updated.equipment}" لـ ${updated.technicianDisplayNames}');
     notifyListeners();
   }
- 
+
   Future<void> closeReport(
     String reportId, {
     required String closeDescription,
@@ -321,20 +321,20 @@ class AppState extends ChangeNotifier {
     // راجع [fetchWorkOrderDetail] للحصول عليها بدقة من السيرفر لاحقًا (بعد
     // إعادة تشغيل التطبيق مثلًا).
     updated.partsUsed = partsUsed.trim().isEmpty ? null : partsUsed.trim();
- 
+
     final i = maintenanceReports.indexWhere((r) => r.id == reportId);
     if (i != -1) maintenanceReports[i] = updated;
- 
+
     // السيرفر يُعيد كل الفنيين (وليس فنيًا واحدًا فقط) المُسنَد إليهم هذا
     // البلاغ إلى حالة "متاح" ضمن نفس عملية الإغلاق — نطلب قائمة الفنيين من
     // جديد بدل تحديث محلي متفائل جزئي قد لا يشمل كل فني عمل على البلاغ.
     unawaited(reloadTechnicians());
- 
+
     _log('تم إنجاز بلاغ "${updated.equipment}" '
         '(المدة: ${updated.duration != null ? updated.duration!.inMinutes : 0} دقيقة)');
     notifyListeners();
   }
- 
+
   /// تفاصيل كاملة لأمر عمل واحد (بما فيها القطع المستخدمة الفعلية من جدول
   /// spare_parts_used) — تُستخدم عند فتح تقرير PDF لعمل مُنجز، لضمان دقة
   /// القطع المعروضة حتى بعد إعادة تشغيل التطبيق (بخلاف الاعتماد على القيمة
@@ -348,7 +348,7 @@ class AppState extends ChangeNotifier {
     }
     return report;
   }
- 
+
   /// طلب تقرير صيانة بمدة مخصّصة — يُنشئ السيرفر ملف تقرير HTML احترافي
   /// لكل بلاغات وأوامر عمل الصيانة خلال المدة المحددة، ويحاول إرسال رابطه
   /// مباشرة عبر واتساب لرقم طالب التقرير نفسه فقط (راجع routes/workOrders.js
@@ -367,18 +367,18 @@ class AppState extends ChangeNotifier {
       warning: data['warning'] as String?,
     );
   }
- 
+
   // ---------------------------------------------------------------------
   // الإنتاج — خطوط الإنتاج والباتشات (مربوطان بالسيرفر المحلي فعليًا، بنفس
   // نمط الفنيين أعلاه).
   // ---------------------------------------------------------------------
   final List<ProductionLine> productionLines = [];
- 
+
   bool productionLinesLoaded = false;
   String? productionLinesError;
- 
+
   Future<void> reloadProductionLines() => _loadProductionLinesFromCloud();
- 
+
   Future<void> _loadProductionLinesFromCloud() async {
     if (!_attached) return;
     try {
@@ -395,7 +395,7 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
   }
- 
+
   Future<void> addProductionLineCloud({required String name, String? location}) async {
     final data = await _api.post('/production/lines', {
       'name': name,
@@ -404,7 +404,7 @@ class AppState extends ChangeNotifier {
     productionLines.add(ProductionLine.fromApi(data['line'] as Map<String, dynamic>));
     notifyListeners();
   }
- 
+
   Future<void> updateProductionLineCloud(
     String id, {
     String? name,
@@ -416,27 +416,27 @@ class AppState extends ChangeNotifier {
     if (location != null) body['location'] = location;
     if (active != null) body['active'] = active;
     if (body.isEmpty) return;
- 
+
     final data = await _api.patch('/production/lines/$id', body);
     final updated = ProductionLine.fromApi(data['line'] as Map<String, dynamic>);
     final i = productionLines.indexWhere((l) => l.id == id);
     if (i != -1) productionLines[i] = updated;
     notifyListeners();
   }
- 
+
   Future<void> removeProductionLineCloud(String id) async {
     await _api.delete('/production/lines/$id');
     productionLines.removeWhere((l) => l.id == id);
     notifyListeners();
   }
- 
+
   /// خطوط الإنتاج التابعة لقسم/مصنع معيّن (مثال: 'مصنع الرجال') — أساس فصل
   /// "مصنع الرجال" عن "مصنع النساء" إداريًا في الواجهة، حسب عمود location
   /// الموجود فعليًا على كل خط (ومقيَّد بنفس القيم على السيرفر، راجع
   /// kFacilityLocations في services/constants.dart).
   List<ProductionLine> linesByFacility(String facility) =>
       productionLines.where((l) => l.location == facility).toList();
- 
+
   // ---------------------------------------------------------------------
   // معدات الإنتاج (equipment) — قائمة يديرها الإنتاج/الصيانة بأنفسهم
   // (إضافة/تعديل/حذف) من شاشة ProductionEquipmentScreen، وتُستخدم عند رفع
@@ -444,12 +444,12 @@ class AppState extends ChangeNotifier {
   // يدويًا). نفس نمط خطوط الإنتاج أعلاه تمامًا.
   // ---------------------------------------------------------------------
   final List<Equipment> equipment = [];
- 
+
   bool equipmentLoaded = false;
   String? equipmentError;
- 
+
   Future<void> reloadEquipment() => _loadEquipmentFromCloud();
- 
+
   Future<void> _loadEquipmentFromCloud() async {
     if (!_attached) return;
     try {
@@ -466,7 +466,7 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
   }
- 
+
   Future<void> addEquipmentCloud({required String name, String? lineId, String? code}) async {
     final data = await _api.post('/production/equipment', {
       'name': name,
@@ -476,7 +476,7 @@ class AppState extends ChangeNotifier {
     equipment.add(Equipment.fromApi(data['equipment'] as Map<String, dynamic>));
     notifyListeners();
   }
- 
+
   // lineId/code يُرسَلان دائمًا (حتى لو null) بدل COALESCE — يطابق سلوك
   // PATCH /production/equipment/:id على السيرفر تمامًا (راجع التعليق هناك).
   Future<void> updateEquipmentCloud(String id, {String? name, String? lineId, String? code}) async {
@@ -490,29 +490,29 @@ class AppState extends ChangeNotifier {
     if (i != -1) equipment[i] = updated;
     notifyListeners();
   }
- 
+
   Future<void> removeEquipmentCloud(String id) async {
     await _api.delete('/production/equipment/$id');
     equipment.removeWhere((e) => e.id == id);
     notifyListeners();
   }
- 
+
   /// معدات خطوط قسم/مصنع معيّن + المعدات غير المرتبطة بخط محدد (عامة) —
   /// نفس أسلوب linesByFacility أعلاه.
   List<Equipment> equipmentByFacility(String facility) {
     final lineIds = linesByFacility(facility).map((l) => l.id).toSet();
     return equipment.where((e) => e.lineId == null || lineIds.contains(e.lineId)).toList();
   }
- 
+
   /// الباتشات — كانت محلية على جهاز المشرف فقط (تختفي عند إعادة تشغيل
   /// التطبيق)، أصبحت الآن محفوظة على السيرفر فعليًا (راجع routes/production.js
   /// و/production/batches) بنفس نمط خطوط الإنتاج والبلاغات أعلاه.
   final List<Batch> batches = [];
   bool batchesLoaded = false;
   String? batchesError;
- 
+
   Future<void> reloadBatches() => _loadBatchesFromCloud();
- 
+
   Future<void> _loadBatchesFromCloud() async {
     if (!_attached) return;
     try {
@@ -529,7 +529,7 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
   }
- 
+
   Future<Batch> recordBatchCloud({
     required String lineId,
     required String batchNumber,
@@ -568,13 +568,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     return batch;
   }
- 
+
   Future<void> removeBatchCloud(String id) async {
     await _api.delete('/production/batches/$id');
     batches.removeWhere((b) => b.id == id);
     notifyListeners();
   }
- 
+
   /// تعديل باتش قديم — صلاحية "مسؤول إنتاج" أو مدير النظام فقط على السيرفر
   /// (راجع canManageBatches في auth_service.dart للتحقق في الواجهة قبل حتى
   /// إظهار زر التعديل). يُرسَل فقط الحقول التي فعلاً تغيّرت لتقليل حجم سجل
@@ -622,7 +622,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     return batch;
   }
- 
+
   /// سجل تعديلات باتش معيّن (الأحدث أولًا) — يُحمَّل عند الطلب فقط (مثلاً عند
   /// فتح تفاصيل الباتش)، وليس ضمن التحميل العام كبقية القوائم.
   Future<List<BatchEdit>> loadBatchEdits(String batchId) async {
@@ -630,7 +630,7 @@ class AppState extends ChangeNotifier {
     final list = (data['edits'] as List).cast<Map<String, dynamic>>();
     return list.map(BatchEdit.fromApi).toList();
   }
- 
+
   /// طلب تقرير إنتاج بمدة مخصّصة — يُنشئ السيرفر ملف تقرير HTML لباتشات
   /// وبلاغات هذا المصنع خلال المدة المحددة، ويحاول إرسال رابطه مباشرة عبر
   /// واتساب (TextMeBot) لرقم طالب التقرير نفسه — راجع routes/production.js
@@ -654,14 +654,14 @@ class AppState extends ChangeNotifier {
       warning: data['warning'] as String?,
     );
   }
- 
+
   ProductionLine lineById(String id) => productionLines.firstWhere((l) => l.id == id);
- 
+
   bool _isToday(DateTime d) {
     final now = DateTime.now();
     return d.year == now.year && d.month == now.month && d.day == now.day;
   }
- 
+
   /// كل الباتشات المسجّلة اليوم على خطوط قسم/مصنع معيّن — الباتشات صارت
   /// تُحفظ على السيرفر وتتراكم عبر الأيام، لذا لازم فلترة "اليوم" هنا صراحة
   /// (لم تكن لازمة سابقًا عندما كانت الباتشات محلية تُمسَح كل إعادة تشغيل).
@@ -669,7 +669,7 @@ class AppState extends ChangeNotifier {
     final lineIds = linesByFacility(facility).map((l) => l.id).toSet();
     return batches.where((b) => lineIds.contains(b.lineId) && _isToday(b.date)).toList();
   }
- 
+
   /// كل الباتشات (بلا قيد "اليوم") على خطوط قسم/مصنع معيّن ضمن مدة زمنية
   /// اختيارية — [b.date] هو occurred_at، فيظهر باتش سُجِّل اليوم بتاريخ أمس
   /// ضمن نطاق أمس لا اليوم. تُستخدم لعرض/تعديل الباتشات القديمة (خلافًا عن
@@ -685,7 +685,7 @@ class AppState extends ChangeNotifier {
     list.sort((a, b) => b.date.compareTo(a.date));
     return list;
   }
- 
+
   // ---------------------------------------------------------------------
   // الإنتاج — بلاغات أعطال فورية (مربوطة بالسيرفر المحلي فعليًا عبر
   // /production/incidents، بنفس نمط خطوط الإنتاج أعلاه).
@@ -693,9 +693,9 @@ class AppState extends ChangeNotifier {
   final List<Incident> incidents = [];
   bool incidentsLoaded = false;
   String? incidentsError;
- 
+
   Future<void> reloadIncidents() => _loadIncidentsFromCloud();
- 
+
   Future<void> _loadIncidentsFromCloud() async {
     if (!_attached) return;
     try {
@@ -712,7 +712,7 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
   }
- 
+
   Future<void> addIncidentCloud({
     String? lineId,
     String? equipmentId,
@@ -731,7 +731,7 @@ class AppState extends ChangeNotifier {
     _log('🔔 بلاغ عطل جديد في الإنتاج: $description');
     notifyListeners();
   }
- 
+
   Future<void> endIncidentDowntimeCloud(String id) async {
     final data = await _api.patch('/production/incidents/$id/end-downtime', {});
     final updated = Incident.fromApi(data['incident'] as Map<String, dynamic>);
@@ -739,7 +739,7 @@ class AppState extends ChangeNotifier {
     if (i != -1) incidents[i] = updated;
     notifyListeners();
   }
- 
+
   /// يحوّل بلاغ إنتاج مفتوح إلى أمر عمل صيانة حقيقي (طارئ، بانتظار تعيين
   /// فني) — يُستخدم من شاشة "بلاغات إنتاج بانتظار التحويل" في قسم الصيانة.
   /// السيرفر نفسه يربط أمر العمل بالبلاغ الأصلي (incidentReportId) ويحوّل
@@ -757,7 +757,7 @@ class AppState extends ChangeNotifier {
     });
     final report = MaintenanceReport.fromApi(data['workOrder'] as Map<String, dynamic>);
     maintenanceReports.insert(0, report);
- 
+
     final i = incidents.indexWhere((e) => e.id == incident.id);
     if (i != -1) {
       // تحديث محلي متفائل لحالة البلاغ إلى "مرتبط" دون انتظار إعادة تحميل
@@ -783,22 +783,22 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     return report;
   }
- 
+
   Future<void> removeIncidentCloud(String id) async {
     await _api.delete('/production/incidents/$id');
     incidents.removeWhere((e) => e.id == id);
     notifyListeners();
   }
- 
+
   int lineTotalToday(String lineId) => batches
       .where((b) => b.lineId == lineId && _isToday(b.date))
       .fold(0, (sum, b) => sum + b.quantity);
- 
+
   /// عدد باتشات اليوم فقط على خط معيّن — راجع ملاحظة فلترة "اليوم" أعلى
   /// [batchesByFacility].
   int batchCountTodayForLine(String lineId) =>
       batches.where((b) => b.lineId == lineId && _isToday(b.date)).length;
- 
+
   // ---------------------------------------------------------------------
   // السلامة — تصاريح العمل (مربوطة بالسيرفر المحلي فعليًا عبر
   // /safety-permits، بنفس نمط الفنيين/الإنتاج/الصيانة أعلاه).
@@ -806,9 +806,9 @@ class AppState extends ChangeNotifier {
   final List<SafetyPermit> permits = [];
   bool permitsLoaded = false;
   String? permitsError;
- 
+
   Future<void> reloadPermits() => _loadPermitsFromCloud();
- 
+
   Future<void> _loadPermitsFromCloud() async {
     if (!_attached) return;
     try {
@@ -825,7 +825,7 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
   }
- 
+
   /// طلب تصريح عمل جديد — equipmentPhotoBase64 بصيغة data URL كاملة
   /// (data:image/jpeg;base64,...) كما يتوقعها POST /safety-permits تمامًا؛
   /// اسم/دور مقدّم الطلب يُحدَّدان تلقائيًا على السيرفر من رمز الدخول، فلا
@@ -861,7 +861,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     return permit;
   }
- 
+
   /// اعتماد أو رفض تصريح عمل — عند الموافقة (approve: true) يجب تمرير قوائم
   /// "خلو الموقع من التالي" و"المخاطر المحتملة" و"معدات الوقاية الشخصية"
   /// بالإضافة إلى الإجراءات الإلزامية (precautions)؛ وعند الرفض يجب تمرير
@@ -890,7 +890,7 @@ class AppState extends ChangeNotifier {
     if (i != -1) permits[i] = updated;
     notifyListeners();
   }
- 
+
   /// يحذف طلب تصريح نهائيًا من قاعدة البيانات (قسم السلامة أو مدير النظام
   /// فقط — راجع DELETE /safety-permits/:id).
   Future<void> removePermitCloud(String id) async {
@@ -898,7 +898,27 @@ class AppState extends ChangeNotifier {
     permits.removeWhere((p) => p.id == id);
     notifyListeners();
   }
- 
+
+  /// طلب تقرير سلامة بمدة مخصّصة — يُنشئ السيرفر ملف تقرير HTML احترافي لكل
+  /// طلبات تصاريح العمل خلال المدة المحددة (بتفاصيل كل طلب من التقديم وحتى
+  /// القرار)، ويحاول إرسال رابطه مباشرة عبر واتساب لرقم طالب التقرير نفسه
+  /// فقط (راجع routes/safetyPermits.js وservices/safetyReport.js) — بنفس
+  /// نمط [requestMaintenanceReport] تمامًا.
+  Future<ReportRequestResult> requestSafetyReport({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final data = await _api.post('/safety-permits/reports/request', {
+      'from': from.toIso8601String(),
+      'to': to.toIso8601String(),
+    });
+    return ReportRequestResult(
+      reportUrl: data['reportUrl'] as String,
+      whatsappSent: data['whatsappSent'] as bool? ?? false,
+      warning: data['warning'] as String?,
+    );
+  }
+
   // ---------------------------------------------------------------------
   // السلامة — تقارير تحقيق إصابات العمل (QMS-SAF-007)، مربوطة بالسيرفر
   // المحلي فعليًا عبر /injury-reports (راجع routes/injuryReports.js). القائمة
@@ -908,9 +928,9 @@ class AppState extends ChangeNotifier {
   final List<InjuryReport> injuryReports = [];
   bool injuryReportsLoaded = false;
   String? injuryReportsError;
- 
+
   Future<void> reloadInjuryReports() => _loadInjuryReportsFromCloud();
- 
+
   Future<void> _loadInjuryReportsFromCloud() async {
     if (!_attached) return;
     try {
@@ -927,14 +947,14 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
   }
- 
+
   /// يجلب تفاصيل تقرير إصابة كاملة (المصابون + الإجراءات + فريق التحقيق) —
   /// القائمة المحلية [injuryReports] لا تحمل هذه التفاصيل لتخفيف حجم الاستجابة.
   Future<InjuryReport> fetchInjuryReportDetail(String id) async {
     final data = await _api.get('/injury-reports/$id');
     return InjuryReport.fromApi(data['report'] as Map<String, dynamic>);
   }
- 
+
   /// ينشئ تقرير تحقيق إصابة كامل (كل الخطوات الخمس دفعة واحدة).
   Future<InjuryReport> createInjuryReportCloud(InjuryReport draft) async {
     final data = await _api.post('/injury-reports', draft.toJson());
@@ -943,7 +963,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     return report;
   }
- 
+
   /// يعدّل تقريرًا قائمًا (طالما لا يزال مفتوحًا) — يستبدل كل بيانات الخطوات
   /// الخمس دفعة واحدة، بنفس منطق الإنشاء.
   Future<InjuryReport> updateInjuryReportCloud(String id, InjuryReport draft) async {
@@ -954,12 +974,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     return updated;
   }
- 
+
   /// يحدّث حالة إجراء تصحيحي واحد (تم / بانتظار) دون إعادة إرسال التقرير كاملًا.
   Future<void> setInjuryActionDone(String reportId, String actionId, bool done) async {
     await _api.patch('/injury-reports/$reportId/actions/$actionId', {'done': done});
   }
- 
+
   /// الخطوة الخامسة: اعتماد التقرير وإغلاقه نهائيًا (يصبح للقراءة فقط، وجاهزًا
   /// للطباعة الرسمية).
   Future<InjuryReport> closeInjuryReportCloud(String id, {required String approvedBy, String? approvedByTitle}) async {
@@ -973,7 +993,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     return updated;
   }
- 
+
   /// يعيد فتح تقرير مُغلَق للتعديل.
   Future<InjuryReport> reopenInjuryReportCloud(String id) async {
     final data = await _api.patch('/injury-reports/$id/reopen', {});
@@ -983,14 +1003,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     return updated;
   }
- 
+
   /// يحذف تقرير تحقيق إصابة نهائيًا (قسم السلامة أو مدير النظام فقط).
   Future<void> removeInjuryReportCloud(String id) async {
     await _api.delete('/injury-reports/$id');
     injuryReports.removeWhere((r) => r.id == id);
     notifyListeners();
   }
- 
+
   // ---------------------------------------------------------------------
   // إشعارات داخل التطبيق — مربوطة بالسيرفر فعليًا عبر /api/notifications
   // (راجع routes/notifications.js وservices/notifications.js). كل مستخدم
@@ -1001,11 +1021,11 @@ class AppState extends ChangeNotifier {
   final List<AppNotification> notifications = [];
   bool notificationsLoaded = false;
   String? notificationsError;
- 
+
   int get unreadNotificationsCount => notifications.where((n) => !n.isRead).length;
- 
+
   Future<void> reloadNotifications() => _loadNotificationsFromCloud();
- 
+
   Future<void> _loadNotificationsFromCloud() async {
     if (!_attached) return;
     try {
@@ -1024,7 +1044,7 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
   }
- 
+
   Future<void> markNotificationRead(String id) async {
     final i = notifications.indexWhere((n) => n.id == id);
     if (i == -1 || notifications[i].isRead) return;
@@ -1037,7 +1057,7 @@ class AppState extends ChangeNotifier {
       // تلقائيًا عند الاستطلاع الدوري التالي.
     }
   }
- 
+
   Future<void> markAllNotificationsRead() async {
     if (unreadNotificationsCount == 0) return;
     for (final n in notifications) {
@@ -1048,7 +1068,7 @@ class AppState extends ChangeNotifier {
       await _api.patch('/notifications/read-all');
     } catch (_) {}
   }
- 
+
   @override
   void dispose() {
     _notificationsTimer?.cancel();
@@ -1056,4 +1076,3 @@ class AppState extends ChangeNotifier {
     super.dispose();
   }
 }
- 
