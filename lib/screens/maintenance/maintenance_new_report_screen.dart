@@ -29,13 +29,14 @@ class _MaintenanceNewReportScreenState extends State<MaintenanceNewReportScreen>
     super.dispose();
   }
 
+  /// وصف العطل إلزامي (نفس تحقق _submit أدناه بالضبط) — يُستخدم أيضًا لتعطيل
+  /// زر الإرسال بصريًا قبل المحاولة، بنفس نمط باقي شاشات "بلاغ/إغلاق" في
+  /// التطبيق (راجع general_report_screen.dart وmaintenance_task_close_screen.dart)
+  /// بدل تركه مفعّلًا دائمًا وعرض رسالة خطأ بعد الضغط عليه فقط.
+  bool get _canSubmit => !_submitting && _descriptionCtrl.text.trim().isNotEmpty;
+
   Future<void> _submit() async {
-    if (_descriptionCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('وصف العطل إلزامي')),
-      );
-      return;
-    }
+    if (!_canSubmit) return;
     setState(() => _submitting = true);
     try {
       await context.read<AppState>().createReport(
@@ -122,6 +123,7 @@ class _MaintenanceNewReportScreenState extends State<MaintenanceNewReportScreen>
                     controller: _descriptionCtrl,
                     minLines: 3,
                     maxLines: 5,
+                    onChanged: (_) => setState(() {}),
                     decoration: _fieldDecoration(hint: 'مثال: توقف مفاجئ — صوت غير طبيعي بالمحرك'),
                   ),
                   const SizedBox(height: 16),
@@ -135,7 +137,12 @@ class _MaintenanceNewReportScreenState extends State<MaintenanceNewReportScreen>
             const SizedBox(height: 14),
             _submitting
                 ? const Center(child: Padding(padding: EdgeInsets.all(10), child: CircularProgressIndicator(color: AppColors.maintenance)))
-                : PrimaryButton(label: 'إرسال البلاغ', color: AppColors.maintenance, icon: Icons.send, onPressed: _submit),
+                : PrimaryButton(
+                    label: 'إرسال البلاغ',
+                    color: _canSubmit ? AppColors.maintenance : AppColors.textFaint,
+                    icon: Icons.send,
+                    onPressed: _canSubmit ? _submit : null,
+                  ),
           ],
         ),
       ),
