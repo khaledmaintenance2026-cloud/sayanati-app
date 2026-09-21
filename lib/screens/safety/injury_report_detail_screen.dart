@@ -285,7 +285,11 @@ class _InjuryReportDetailScreenState extends State<InjuryReportDetailScreen> {
           if (e.bodyPartsAffected.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text('الجزء المتضرر: ${multiLabel(kBodyPartLabels, e.bodyPartsAffected)}', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+              child: Text(
+                'الجزء المتضرر: ${multiLabel(kBodyPartLabels, e.bodyPartsAffected)}'
+                '${e.bodyInjurySide != null ? ' (${kBodyInjurySideLabels[e.bodyInjurySide]})' : ''}',
+                style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+              ),
             ),
           if (e.injuryNature.isNotEmpty)
             Padding(
