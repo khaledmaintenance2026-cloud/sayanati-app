@@ -17,6 +17,7 @@ class MaintenanceWorkOrderScreen extends StatefulWidget {
 
 class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen> {
   String _line = kFacilityLocations.first;
+  final _locationDetailCtrl = TextEditingController();
   final _equipmentCodeCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final _reminderCtrl = TextEditingController(text: '30');
@@ -26,8 +27,16 @@ class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen>
 
   final _lines = kFacilityLocations;
 
+  /// يجمع القسم المختار من القائمة مع تفاصيل موقع حرة اختيارية — يسمح لفريق
+  /// الصيانة بإنشاء أمر عمل وقائي لأي مكان فعلي في المصنع بدل حصره بأحد
+  /// الأقسام الثلاثة الرئيسية فقط. نفس نمط _fullLocation في
+  /// maintenance_new_report_screen.dart وsafety_permit_request_screen.dart.
+  String get _fullLocation =>
+      _locationDetailCtrl.text.trim().isEmpty ? _line : '$_line — ${_locationDetailCtrl.text.trim()}';
+
   @override
   void dispose() {
+    _locationDetailCtrl.dispose();
     _equipmentCodeCtrl.dispose();
     _descCtrl.dispose();
     _reminderCtrl.dispose();
@@ -38,7 +47,7 @@ class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen>
     setState(() => _submitting = true);
     try {
       await context.read<AppState>().createWorkOrder(
-            facility: _line,
+            facility: _fullLocation,
             description: _descCtrl.text.trim(),
             technicianIds: _selectedTechIds.toList(),
             reminderIntervalDays: int.tryParse(_reminderCtrl.text.trim()),
@@ -80,6 +89,13 @@ class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen>
                     decoration: _decoration(),
                     items: _lines.map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
                     onChanged: (v) => setState(() => _line = v ?? _line),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text('تفاصيل الموقع (اختياري)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: _locationDetailCtrl,
+                    decoration: _decoration(hint: 'مثال: الإدارة، بوابة الاستقبال...'),
                   ),
                   const SizedBox(height: 14),
                   const Text('كود المكينة (اختياري)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
