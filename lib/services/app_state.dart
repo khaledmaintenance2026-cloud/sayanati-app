@@ -467,23 +467,30 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> addEquipmentCloud({required String name, String? lineId, String? code}) async {
+  // facility إلزامي هنا (وليس اختياريًا) لأن الشاشة الوحيدة التي تضيف معدات
+  // (ProductionEquipmentScreen) تعرف قسمها دائمًا من widget.facility، وتمريره
+  // هو ما يمنع ظهور معدة "بدون خط محدد" في قسم غير قسمها (راجع equipmentByFacility).
+  Future<void> addEquipmentCloud({required String name, String? lineId, String? code, required String facility}) async {
     final data = await _api.post('/production/equipment', {
       'name': name,
       if (lineId != null) 'lineId': lineId,
       if (code != null && code.isNotEmpty) 'code': code,
+      'facility': facility,
     });
     equipment.add(Equipment.fromApi(data['equipment'] as Map<String, dynamic>));
     notifyListeners();
   }
 
-  // lineId/code يُرسَلان دائمًا (حتى لو null) بدل COALESCE — يطابق سلوك
+  // lineId/code/facility تُرسَل دائمًا (حتى لو null) بدل COALESCE — يطابق سلوك
   // PATCH /production/equipment/:id على السيرفر تمامًا (راجع التعليق هناك).
-  Future<void> updateEquipmentCloud(String id, {String? name, String? lineId, String? code}) async {
+  // إرسال facility في كل تعديل يُصحّح تلقائيًا أي معدة قديمة أُضيفت قبل وجود
+  // هذا الحقل بمجرد تعديلها وحفظها من داخل القسم الصحيح.
+  Future<void> updateEquipmentCloud(String id, {String? name, String? lineId, String? code, String? facility}) async {
     final data = await _api.patch('/production/equipment/$id', {
       if (name != null) 'name': name,
       'lineId': lineId,
       'code': code,
+      'facility': facility,
     });
     final updated = Equipment.fromApi(data['equipment'] as Map<String, dynamic>);
     final i = equipment.indexWhere((e) => e.id == id);
@@ -497,11 +504,17 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// معدات خطوط قسم/مصنع معيّن + المعدات غير المرتبطة بخط محدد (عامة) —
-  /// نفس أسلوب linesByFacility أعلاه.
+  /// معدات خطوط قسم/مصنع معيّن + المعدات العامة (بدون خط محدد) الخاصة بنفس
+  /// القسم فقط. معدة بلا خط تُنسب لقسمها عبر [Equipment.facility]؛ معدة قديمة
+  /// (أُضيفت قبل وجود هذا الحقل) بلا facility مسجّل تبقى تظهر في كل الأقسام
+  /// كسابق سلوكها — إلى أن تُحفظ من جديد من داخل قسمها الصحيح فيُثبَّت لها
+  /// facility صحيح (راجع updateEquipmentCloud) فتختفي عندها من الأقسام الأخرى.
   List<Equipment> equipmentByFacility(String facility) {
     final lineIds = linesByFacility(facility).map((l) => l.id).toSet();
-    return equipment.where((e) => e.lineId == null || lineIds.contains(e.lineId)).toList();
+    return equipment.where((e) {
+      if (e.lineId != null) return lineIds.contains(e.lineId);
+      return e.facility == null || e.facility == facility;
+    }).toList();
   }
 
   /// الباتشات — كانت محلية على جهاز المشرف فقط (تختفي عند إعادة تشغيل
