@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
- 
+
 import '../../models/production.dart';
 import '../../services/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
- 
+
 /// إدارة معدات قسم إنتاج معيّن (إضافة/تعديل/حذف) — مرتبطة بمسارات
 /// /production/equipment الموجودة فعليًا على سيرفر صيانتي المحلي (جدول
 /// equipment). تُستخدم المعدة المُضافة هنا لاحقًا عند رفع بلاغ عطل (راجع
@@ -14,18 +14,18 @@ import '../../widgets/common.dart';
 class ProductionEquipmentScreen extends StatefulWidget {
   final String facility;
   const ProductionEquipmentScreen({super.key, required this.facility});
- 
+
   @override
   State<ProductionEquipmentScreen> createState() => _ProductionEquipmentScreenState();
 }
- 
+
 class _ProductionEquipmentScreenState extends State<ProductionEquipmentScreen> {
   @override
   void initState() {
     super.initState();
     Future.microtask(() => context.read<AppState>().reloadEquipment());
   }
- 
+
   Future<void> _openForm(BuildContext context, {Equipment? existing}) async {
     final appState = context.read<AppState>();
     final lines = appState.linesByFacility(widget.facility);
@@ -34,7 +34,7 @@ class _ProductionEquipmentScreenState extends State<ProductionEquipmentScreen> {
     String? selectedLineId = existing?.lineId ?? (lines.isNotEmpty ? lines.first.id : null);
     bool submitting = false;
     String? error;
- 
+
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -100,9 +100,9 @@ class _ProductionEquipmentScreenState extends State<ProductionEquipmentScreen> {
                                 try {
                                   final code = codeCtrl.text.trim().isNotEmpty ? codeCtrl.text.trim() : null;
                                   if (existing == null) {
-                                    await appState.addEquipmentCloud(name: name, lineId: selectedLineId, code: code);
+                                    await appState.addEquipmentCloud(name: name, lineId: selectedLineId, code: code, facility: widget.facility);
                                   } else {
-                                    await appState.updateEquipmentCloud(existing.id, name: name, lineId: selectedLineId, code: code);
+                                    await appState.updateEquipmentCloud(existing.id, name: name, lineId: selectedLineId, code: code, facility: widget.facility);
                                   }
                                   if (ctx.mounted) Navigator.of(ctx).pop();
                                 } catch (e) {
@@ -120,7 +120,7 @@ class _ProductionEquipmentScreenState extends State<ProductionEquipmentScreen> {
       ),
     );
   }
- 
+
   Future<void> _confirmDelete(BuildContext context, Equipment eq) async {
     final appState = context.read<AppState>();
     final ok = await showDialog<bool>(
@@ -136,12 +136,12 @@ class _ProductionEquipmentScreenState extends State<ProductionEquipmentScreen> {
     );
     if (ok == true) await appState.removeEquipmentCloud(eq.id);
   }
- 
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final items = state.equipmentByFacility(widget.facility);
- 
+
     return Scaffold(
       appBar: ScreenTopBar(title: 'معدات ${widget.facility}'),
       body: Stack(
@@ -234,7 +234,7 @@ class _ProductionEquipmentScreenState extends State<ProductionEquipmentScreen> {
     );
   }
 }
- 
+
 InputDecoration _decoration({String? hint}) {
   return InputDecoration(
     hintText: hint,
