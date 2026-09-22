@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:vector_math/vector_math_64.dart' show Matrix4;
 
 /// أداة رسم تفاعلية لتحديد مكان الإصابة على مخطط الجسم.
 ///
@@ -35,11 +36,33 @@ class BodyDiagramDrawer extends StatefulWidget {
   State<BodyDiagramDrawer> createState() => _BodyDiagramDrawerState();
 }
 
+// خط واحد مرسوم (من ضغطة الإصبع وحتى رفعه) — يحمل سُمكه الخاص حتى تحتفظ كل
+// علامة سابقة بسُمكها الأصلي حتى لو غيّر المستخدم اختيار سُمك القلم لاحقًا.
+class _Stroke {
+  final List<Offset> points = [];
+  final double width;
+  _Stroke(this.width);
+}
+
 class _BodyDiagramDrawerState extends State<BodyDiagramDrawer> {
+  // أسماك القلم المتاحة — بطلب المستخدم صراحة: رفيع/سميك (مع خيار متوسط
+  // إضافي بينهما كقيمة افتراضية معقولة).
+  static const double _penThin = 4;
+  static const double _penMedium = 9;
+  static const double _penThick = 16;
+
   final GlobalKey _repaintKey = GlobalKey();
-  final List<List<Offset>> _strokes = [];
-  List<Offset>? _current;
+  final TransformationController _zoomController = TransformationController();
+  final List<_Stroke> _strokes = [];
+  _Stroke? _current;
   late bool _redrawMode;
+  double _penWidth = _penMedium;
+  double _zoom = 1.0;
+  // false = وضع الرسم (الافتراضي): إصبع واحد يرسم، وأزرار التكبير تعمل.
+  // true = وضع التكبير/التحريك: إصبعان (Pinch/Pan) يتحكمان بالعرض، والرسم
+  // مُعطَّل مؤقتًا — فصل صريح بين الوضعين بدل الاعتماد على تمييز آلي لعدد
+  // الأصابع (أكثر ثباتًا، لا يوجد تنافس بين أدوات التعرف على اللمس).
+  bool _zoomMode = false;
 
   @override
   void initState() {
@@ -47,6 +70,12 @@ class _BodyDiagramDrawerState extends State<BodyDiagramDrawer> {
     // لو توجد رسمة محفوظة مسبقًا (تعديل تقرير سابق) نعرضها كمعاينة أولًا
     // بدل فتح لوحة رسم فارغة مباشرة، مع زر لإعادة الرسم من جديد عند الحاجة.
     _redrawMode = widget.initialImageUrl == null;
+  }
+
+  @override
+  void dispose() {
+    _zoomController.dispose();
+    super.dispose();
   }
 
   @override
@@ -58,6 +87,7 @@ class _BodyDiagramDrawerState extends State<BodyDiagramDrawer> {
       setState(() {
         _strokes.clear();
         _current = null;
+        _resetZoom();
       });
       widget.onChanged(null);
     }
@@ -65,13 +95,13 @@ class _BodyDiagramDrawerState extends State<BodyDiagramDrawer> {
 
   void _onPanStart(DragStartDetails d) {
     setState(() {
-      _current = [d.localPosition];
+      _current = _Stroke(_penWidth)..points.add(d.localPosition);
       _strokes.add(_current!);
     });
   }
 
   void _onPanUpdate(DragUpdateDetails d) {
-    setState(() => _current?.add(d.localPosition));
+    setState(() => _current?.points.add(d.localPosition));
   }
 
   Future<void> _onPanEnd(DragEndDetails d) async {
@@ -91,6 +121,20 @@ class _BodyDiagramDrawerState extends State<BodyDiagramDrawer> {
       _current = null;
     });
     widget.onChanged(null);
+  }
+
+  void _resetZoom() {
+    _zoom = 1.0;
+    _zoomController.value = Matrix4.identity();
+  }
+
+  void _zoomBy(double delta) {
+    setState(() {
+      _zoom = (_zoom + delta).clamp(1.0, 4.0);
+      // تكبير/تصغير بسيط من الزاوية العلوية — يمكن للمستخدم بعدها تحريك
+      // العرض بإصبعين (Pinch/Pan) للوصول للمكان الدقيق المطلوب الرسم فيه.
+      _zoomController.value = Matrix4.identity()..scale(_zoom);
+    });
   }
 
   Future<void> _capture() async {
@@ -159,46 +203,125 @@ class _BodyDiagramDrawerState extends State<BodyDiagramDrawer> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Container(
+          height: 300,
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: Colors.white,
             border: Border.all(color: const Color(0xFFDDDDDD)),
             borderRadius: BorderRadius.circular(10),
           ),
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-          child: RepaintBoundary(
-            key: _repaintKey,
-            child: Container(
-              color: Colors.white,
-              child: GestureDetector(
-                onPanStart: _onPanStart,
-                onPanUpdate: _onPanUpdate,
-                onPanEnd: _onPanEnd,
-                child: Stack(
-                  alignment: Alignment.topCenter,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
+          // InteractiveViewer (للتكبير/التموضع) وGestureDetector (للرسم)
+          // يتنافسان لو فُعِّلا معًا في آنٍ واحد (كلاهما يتعامل مع سحب
+          // الإصبع)، فالفصل بينهما هنا بوضعين صريحين (_zoomMode) بدل تفعيل
+          // الاثنين معًا: في وضع الرسم تُعطَّل بادرات InteractiveViewer
+          // تمامًا (panEnabled/scaleEnabled = false) فيستقبل GestureDetector
+          // كل السحب، وفي وضع التكبير يُعطَّل GestureDetector (ردود أفعال
+          // فارغة null) فتستقبل InteractiveViewer القرص/التحريك بلا منازع.
+          // زرّا +/- يضبطان transformationController مباشرة، ويعملان في كلا
+          // الوضعين لأنهما لا يمرّان عبر نظام البادرات أصلًا. RepaintBoundary
+          // تبقى ثابتة الحجم الطبيعي دومًا بصرف النظر عن التكبير الحالي،
+          // فتُلتقط الصورة النهائية كاملة دائمًا مهما كان مستوى التكبير وقت اللمس.
+          child: InteractiveViewer(
+            transformationController: _zoomController,
+            panEnabled: _zoomMode,
+            scaleEnabled: _zoomMode,
+            minScale: 1.0,
+            maxScale: 4.0,
+            boundaryMargin: const EdgeInsets.all(80),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+              child: RepaintBoundary(
+                key: _repaintKey,
+                child: Container(
+                  color: Colors.white,
+                  child: GestureDetector(
+                    onPanStart: _zoomMode ? null : _onPanStart,
+                    onPanUpdate: _zoomMode ? null : _onPanUpdate,
+                    onPanEnd: _zoomMode ? null : _onPanEnd,
+                    child: Stack(
+                      alignment: Alignment.topCenter,
                       children: [
-                        if (showFront) _bodyPanel(_frontBodyImageBytes, 'أمامي'),
-                        if (showFront && showBack) const SizedBox(width: 18),
-                        if (showBack) _bodyPanel(_backBodyImageBytes, 'خلفي'),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (showFront) _bodyPanel(_frontBodyImageBytes, 'أمامي'),
+                            if (showFront && showBack) const SizedBox(width: 18),
+                            if (showBack) _bodyPanel(_backBodyImageBytes, 'خلفي'),
+                          ],
+                        ),
+                        Positioned.fill(child: CustomPaint(painter: _StrokesPainter(_strokes))),
                       ],
                     ),
-                    Positioned.fill(child: CustomPaint(painter: _StrokesPainter(_strokes))),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
+        // Row قابلة للتمرير أفقيًا احتياطًا من تجاوز عرض الشاشة على الهواتف
+        // الصغيرة (عدة أزرار ورقائق اختيار معًا في صف واحد).
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              const Text('الوضع:', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+              const SizedBox(width: 6),
+              ChoiceChip(
+                label: const Text('✏️ رسم', style: TextStyle(fontSize: 11.5)),
+                selected: !_zoomMode,
+                onSelected: (_) => setState(() => _zoomMode = false),
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              const SizedBox(width: 4),
+              ChoiceChip(
+                label: const Text('🔍 تكبير/تحريك', style: TextStyle(fontSize: 11.5)),
+                selected: _zoomMode,
+                onSelected: (_) => setState(() => _zoomMode = true),
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              const SizedBox(width: 14),
+              IconButton(
+                onPressed: _zoom <= 1.0 ? null : () => _zoomBy(-0.5),
+                icon: const Icon(Icons.zoom_out, size: 20),
+                tooltip: 'تصغير',
+                visualDensity: VisualDensity.compact,
+              ),
+              Text('${(_zoom * 100).round()}%', style: const TextStyle(fontSize: 11.5, color: Color(0xFF6B7280))),
+              IconButton(
+                onPressed: _zoom >= 4.0 ? null : () => _zoomBy(0.5),
+                icon: const Icon(Icons.zoom_in, size: 20),
+                tooltip: 'تكبير للرسم بدقة أعلى',
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              const Text('سُمك القلم:', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+              const SizedBox(width: 6),
+              _penSizeChip('رفيع', _penThin),
+              const SizedBox(width: 4),
+              _penSizeChip('متوسط', _penMedium),
+              const SizedBox(width: 4),
+              _penSizeChip('سميك', _penThick),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
         Row(
           children: [
             const Expanded(
               child: Text(
-                'ارسم بإصبعك فوق مكان الإصابة مباشرة على الصورة',
+                'اختر "تكبير/تحريك" لتقريب المكان بدقة، ثم ارجع لوضع "رسم" وحدِّد مكان الإصابة',
                 style: TextStyle(fontSize: 11.5, color: Color(0xFF6B7280)),
               ),
             ),
@@ -218,6 +341,18 @@ class _BodyDiagramDrawerState extends State<BodyDiagramDrawer> {
     );
   }
 
+  Widget _penSizeChip(String label, double width) {
+    final selected = _penWidth == width;
+    return ChoiceChip(
+      label: Text(label, style: const TextStyle(fontSize: 11.5)),
+      selected: selected,
+      onSelected: (_) => setState(() => _penWidth = width),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+    );
+  }
+
   Widget _bodyPanel(Uint8List bytes, String label) {
     return Column(
       children: [
@@ -232,28 +367,28 @@ class _BodyDiagramDrawerState extends State<BodyDiagramDrawer> {
 /// يرسم خطوط المستخدم (كل خط = مسار نقاط بين ضغطة وحتى رفع الإصبع) بلون
 /// أسود مصمت فوق صورة الجسم — نفس لون العلامة النهائي المعتمد في التقرير.
 class _StrokesPainter extends CustomPainter {
-  final List<List<Offset>> strokes;
+  final List<_Stroke> strokes;
   _StrokesPainter(this.strokes);
 
   @override
   void paint(Canvas canvas, Size size) {
     const color = Color(0xFF111111);
-    final linePaint = Paint()
-      ..color = color
-      ..strokeWidth = 9
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
     final dotPaint = Paint()..color = color;
     for (final stroke in strokes) {
-      if (stroke.isEmpty) continue;
-      if (stroke.length == 1) {
+      if (stroke.points.isEmpty) continue;
+      if (stroke.points.length == 1) {
         // نقرة واحدة بلا سحب (لم تتحرك الإصبع) — نقطة صغيرة بدل خط بلا طول.
-        canvas.drawCircle(stroke.first, linePaint.strokeWidth / 2, dotPaint);
+        canvas.drawCircle(stroke.points.first, stroke.width / 2, dotPaint);
         continue;
       }
-      final path = Path()..moveTo(stroke.first.dx, stroke.first.dy);
-      for (final p in stroke.skip(1)) {
+      final linePaint = Paint()
+        ..color = color
+        ..strokeWidth = stroke.width
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..style = PaintingStyle.stroke;
+      final path = Path()..moveTo(stroke.points.first.dx, stroke.points.first.dy);
+      for (final p in stroke.points.skip(1)) {
         path.lineTo(p.dx, p.dy);
       }
       canvas.drawPath(path, linePaint);
@@ -264,8 +399,13 @@ class _StrokesPainter extends CustomPainter {
   bool shouldRepaint(covariant _StrokesPainter oldDelegate) => true;
 }
 
-Uint8List get _frontBodyImageBytes => base64Decode(_frontBodyImageB64);
-Uint8List get _backBodyImageBytes => base64Decode(_backBodyImageB64);
+// تُفَك تشفيرها مرة واحدة فقط عند تحميل الملف (لا getter يُعاد حسابه في كل
+// إعادة رسم) — قيمة Uint8List الثابتة نفسها تُمرَّر لكل Image.memory، فيتعرف
+// عليها Flutter كصورة واحدة مخبَّأة (نفس المرجع) بدل إعادة فك تشفير JPEG في
+// كل مرة يتحرك فيها الإصبع؛ كان هذا سبب اختفاء/وميض مخطط الجسم أثناء الرسم
+// (كل onPanUpdate كان يعيد بناء صورة جديدة بالكامل عبر getter قديم).
+final Uint8List _frontBodyImageBytes = base64Decode(_frontBodyImageB64);
+final Uint8List _backBodyImageBytes = base64Decode(_backBodyImageB64);
 
 // نفس صورتَي مخطط الجسم (أمامي/خلفي) المعتمدتين أصلًا في استمارة QMS-SAF-007
 // الرسمية — نفس الصورة المقصوصة المستخدمة سابقًا في التقرير، مُعاد استخدامها
