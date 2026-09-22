@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'dart:typed_data';
- 
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
- 
+
 import '../../models/production.dart';
 import '../../services/app_state.dart';
 import '../../services/arabic_format.dart';
@@ -12,7 +12,7 @@ import '../../services/constants.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import 'production_equipment_screen.dart';
- 
+
 /// بلاغات أعطال/توقف قسم الإنتاج — مربوطة بمسار /production/incidents
 /// الموجود فعليًا على سيرفر صيانتي المحلي. كل قسم (مصنع رجال/نساء) يرى
 /// فقط بلاغات خطوطه، فتبقى إدارة كل قسم مستقلة عن الآخر.
@@ -24,11 +24,11 @@ import 'production_equipment_screen.dart';
 class ProductionIncidentsScreen extends StatefulWidget {
   final String facility;
   const ProductionIncidentsScreen({super.key, required this.facility});
- 
+
   @override
   State<ProductionIncidentsScreen> createState() => _ProductionIncidentsScreenState();
 }
- 
+
 class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
   @override
   void initState() {
@@ -38,7 +38,7 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
       context.read<AppState>().reloadEquipment();
     });
   }
- 
+
   Future<void> _openForm(BuildContext context) async {
     final appState = context.read<AppState>();
     final lines = appState.linesByFacility(widget.facility);
@@ -51,7 +51,7 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
     String? photoDataUrl;
     bool submitting = false;
     String? error;
- 
+
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -73,7 +73,7 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
               setSheetState(() => error = 'تعذّر اختيار الصورة: $e');
             }
           }
- 
+
           void showPhotoSourceSheet() {
             showModalBottomSheet(
               context: ctx,
@@ -102,9 +102,14 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
               ),
             );
           }
- 
+
           final facilityEquipment = appState.equipmentByFacility(widget.facility);
- 
+          // فلترة المعدات حسب الخط المُحدد: عند اختيار خط معيّن (مثلاً خط 7)
+          // تظهر فقط معداته، وعند اختيار "بدون خط محدد" تظهر فقط المعدات
+          // العامة غير المرتبطة بأي خط (lineId == null) — وليس كل معدات القسم.
+          final filteredEquipment =
+              facilityEquipment.where((e) => e.lineId == selectedLineId).toList();
+
           return Padding(
             padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
             child: Container(
@@ -131,7 +136,12 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
                           const DropdownMenuItem<String?>(value: null, child: Text('بدون خط محدد')),
                           ...lines.map((l) => DropdownMenuItem<String?>(value: l.id, child: Text(l.name))),
                         ],
-                        onChanged: (v) => setSheetState(() => selectedLineId = v),
+                        onChanged: (v) => setSheetState(() {
+                          selectedLineId = v;
+                          // إعادة ضبط المعدة المختارة لأنها قد لا تكون ضمن
+                          // قائمة معدات الخط الجديد بعد الفلترة.
+                          selectedEquipmentId = null;
+                        }),
                       ),
                       const SizedBox(height: 12),
                     ],
@@ -139,10 +149,14 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
                     const SizedBox(height: 6),
                     DropdownButtonFormField<String?>(
                       value: selectedEquipmentId,
-                      decoration: _decoration(hint: facilityEquipment.isEmpty ? 'لا توجد معدات مسجّلة بعد' : null),
+                      decoration: _decoration(
+                        hint: facilityEquipment.isEmpty
+                            ? 'لا توجد معدات مسجّلة بعد'
+                            : (filteredEquipment.isEmpty ? 'لا توجد معدات على هذا الخط' : null),
+                      ),
                       items: [
                         const DropdownMenuItem<String?>(value: null, child: Text('بدون معدة محددة')),
-                        ...facilityEquipment.map((e) => DropdownMenuItem<String?>(
+                        ...filteredEquipment.map((e) => DropdownMenuItem<String?>(
                               value: e.id,
                               child: Text(
                                 (e.code != null && e.code!.isNotEmpty) ? '${e.name} (${e.code})' : e.name,
@@ -237,7 +251,7 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
       ),
     );
   }
- 
+
   Future<void> _confirmDelete(BuildContext context, Incident incident) async {
     final appState = context.read<AppState>();
     final ok = await showDialog<bool>(
@@ -253,13 +267,13 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
     );
     if (ok == true) await appState.removeIncidentCloud(incident.id);
   }
- 
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final lineIds = state.linesByFacility(widget.facility).map((l) => l.id).toSet();
     final incidents = state.incidents.where((i) => i.lineId != null && lineIds.contains(i.lineId)).toList();
- 
+
     return Scaffold(
       appBar: ScreenTopBar(title: 'بلاغات ${widget.facility}'),
       body: Stack(
@@ -374,13 +388,13 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
     );
   }
 }
- 
+
 class _ReportPhotoPicker extends StatelessWidget {
   final Uint8List? bytes;
   final VoidCallback onTap;
- 
+
   const _ReportPhotoPicker({required this.bytes, required this.onTap});
- 
+
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -432,7 +446,7 @@ class _ReportPhotoPicker extends StatelessWidget {
     );
   }
 }
- 
+
 InputDecoration _decoration({String? hint}) {
   return InputDecoration(
     hintText: hint,
@@ -443,4 +457,3 @@ InputDecoration _decoration({String? hint}) {
     enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(13), borderSide: const BorderSide(color: AppColors.border)),
   );
 }
- 
