@@ -31,7 +31,12 @@ class _ProductionEquipmentScreenState extends State<ProductionEquipmentScreen> {
     final lines = appState.linesByFacility(widget.facility);
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     final codeCtrl = TextEditingController(text: existing?.code ?? '');
-    String? selectedLineId = existing?.lineId ?? (lines.isNotEmpty ? lines.first.id : null);
+    // خطأ سابق: existing?.lineId ?? (lines.isNotEmpty ? lines.first.id : null)
+    // كان يتعامل مع "معدة موجودة فعلاً بدون خط" بنفس معاملة "معدة جديدة" —
+    // فيختار أول خط تلقائيًا ويُسنِد المعدة له بمجرد الضغط على "حفظ" حتى لو
+    // كانت أصلاً "بدون خط محدد" عمدًا. الآن: نحترم حالة المعدة الحالية دائمًا
+    // عند التعديل، والافتراضي (أول خط) يُستخدم فقط عند الإضافة الجديدة.
+    String? selectedLineId = existing != null ? existing.lineId : (lines.isNotEmpty ? lines.first.id : null);
     bool submitting = false;
     String? error;
 
