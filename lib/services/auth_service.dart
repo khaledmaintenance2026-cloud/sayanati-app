@@ -20,8 +20,30 @@ import 'push_notification_service.dart';
 /// "مسؤول إنتاج" (productionManager) دور مختلف عن ذلك: لا يرى شيئًا إضافيًا
 /// في قسم الإنتاج، لكنه الوحيد (مع مدير النظام) القادر على تعديل أو حذف
 /// باتش بعد تسجيله — راجع [canManageBatches] بدل مقارنة الدور مباشرة.
-enum AppRole { admin, maintenanceTechnician, maintenanceManager, production, productionManager, safety, general }
+///
+/// "مسؤول المخزون" (inventoryManager) و"مصمم" (designer): دوران جديدان لقسم
+/// "المخزون والقطع" الجديد داخل تبويب الصيانة (راجع inventory_screen.dart
+/// وInventoryItem/PartRequest في models/inventory.dart) — لا يريان بقية
+/// تبويبات الصيانة (الأعطال الطارئة/الأعمال الوقائية) إطلاقًا، فقط تبويب
+/// المخزون — راجع [canManageInventory]/[isDesigner] بدل مقارنة الدور مباشرة.
+enum AppRole { admin, maintenanceTechnician, maintenanceManager, production, productionManager, safety, general, inventoryManager, designer }
 bool isMaintenanceRole(AppRole r) => r == AppRole.maintenanceTechnician || r == AppRole.maintenanceManager;
+
+/// هل يملك هذا الدور صلاحية إدارة كتالوج المخزون (إضافة/تعديل/حذف أصناف)
+/// وتأكيد صرف/إرجاع طلبات القطع؟ (مدير النظام، مسؤول الصيانة، أو مسؤول
+/// المخزون تحديدًا — قرار صريح من الإدارة، وليس الفني أو المصمم). راجع نفس
+/// القيد الملزم فعليًا على السيرفر: INVENTORY_MANAGE_ROLES في
+/// middleware/auth.js — هذه الدالة تُخفي أزرار الإدارة في الواجهة فقط.
+bool canManageInventory(AppRole r) => r == AppRole.admin || r == AppRole.maintenanceManager || r == AppRole.inventoryManager;
+
+/// هل هذا مستخدم "مصمم"؟ يرى تحديدًا طلبات القطع بحالة "بانتظار تصميم" ويرفع
+/// نتيجة التصميم لها — راجع PartRequestStatus.pendingDesign.
+bool isDesigner(AppRole r) => r == AppRole.designer;
+
+/// هل يرى هذا الدور تبويب "المخزون" فقط داخل قسم الصيانة (بلا الأعطال
+/// الطارئة/الأعمال الوقائية إطلاقًا)؟ مسؤول المخزون والمصمم كلاهما هنا فقط
+/// لعمل واحد محدد ولا علاقة لهما بتوزيع/تنفيذ بلاغات الأعطال.
+bool isInventoryOnlyRole(AppRole r) => r == AppRole.inventoryManager || r == AppRole.designer;
 
 /// هل يملك هذا الدور صلاحية إنشاء "بلاغ وقائي جديد"، طلب "تقرير صيانة بمدة
 /// مخصّصة"، أو حذف أمر عمل منجز نهائيًا؟ (مدير النظام أو مسؤول الصيانة فقط —
@@ -72,6 +94,10 @@ AppRole roleFromString(String? s) {
       return AppRole.safety;
     case 'general':
       return AppRole.general;
+    case 'inventory_manager':
+      return AppRole.inventoryManager;
+    case 'designer':
+      return AppRole.designer;
     default:
       return AppRole.production;
   }
@@ -85,6 +111,8 @@ String roleToString(AppRole r) {
       return 'maintenance_manager';
     case AppRole.productionManager:
       return 'production_manager';
+    case AppRole.inventoryManager:
+      return 'inventory_manager';
     default:
       return r.name;
   }
@@ -106,6 +134,10 @@ String roleLabel(AppRole r) {
       return 'السلامة';
     case AppRole.general:
       return 'قسم عام';
+    case AppRole.inventoryManager:
+      return 'مسؤول المخزون';
+    case AppRole.designer:
+      return 'مصمم';
   }
 }
 
