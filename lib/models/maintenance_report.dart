@@ -57,6 +57,15 @@ class MaintenanceReport {
   /// للأعمال الوقائية فقط: كل كم يوم يُذكَّر المسؤول بإعادة فتح هذا العمل.
   final int? reminderIntervalDays;
 
+  /// "مهمة عمل" (داخلية/خارجية) — تصنيف ثالث منفصل عن بلاغ العطل الطارئ
+  /// والصيانة الوقائية، يبادره فريق الصيانة نفسه لمهام عامة لا ترتبط بعطل
+  /// فعلي في معدة (توصيل، نقل معدات، أعمال إدارية...). يبقى [kind] هنا
+  /// emergency عمدًا (فتظهر ضمن نفس تبويب "الأعطال الطارئة" وتتبع نفس دورة
+  /// العمل/الإشعارات تمامًا) — [isTask]/[taskScope] فقط للتمييز في الإنشاء
+  /// والتقارير (راجع maintenance_new_report_screen.dart).
+  final bool isTask;
+  final String? taskScope; // 'internal' | 'external' — فقط عند isTask == true
+
   MaintenanceReport({
     required this.id,
     required this.equipment,
@@ -76,6 +85,8 @@ class MaintenanceReport {
     this.partsUsed,
     this.closedAt,
     this.reminderIntervalDays,
+    this.isTask = false,
+    this.taskScope,
   }) : assignedTechnicianIds = assignedTechnicianIds ?? [];
 
   /// يبني بلاغ/أمر عمل صيانة من استجابة سيرفر صيانتي المحلي (جدول
@@ -99,6 +110,8 @@ class MaintenanceReport {
         closeNotes: d['close_notes'] as String?,
         closedAt: d['completed_at'] == null ? null : DateTime.tryParse(d['completed_at'].toString()),
         reminderIntervalDays: (d['reminder_interval_days'] as num?)?.round(),
+        isTask: (d['is_task'] as bool?) ?? false,
+        taskScope: d['task_scope'] as String?,
       );
 
   /// اسم/أسماء الفني(ين) الجاهزة للعرض — تُفضّل قائمة الفنيين المتعددين
