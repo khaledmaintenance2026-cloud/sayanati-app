@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/app_notification.dart';
 import '../models/batch_edit.dart';
 import '../models/injury_report.dart';
+import '../models/inventory.dart';
 import '../models/maintenance_report.dart';
 import '../models/production.dart';
 import '../models/safety_permit.dart';
@@ -71,6 +72,8 @@ class AppState extends ChangeNotifier {
     _loadBatchesFromCloud();
     _loadWorkOrdersFromCloud();
     _loadPermitsFromCloud();
+    _loadInventoryItemsFromCloud();
+    _loadPartRequestsFromCloud();
     _loadNotificationsFromCloud();
     // لا توجد إشعارات Push حقيقية بعد — نستطلع (Poll) قائمة الإشعارات كل ٤٥
     // ثانية طالما المستخدم مسجّل دخوله، حتى يظهر جرس الإشعارات محدَّثًا بلا
@@ -97,6 +100,8 @@ class AppState extends ChangeNotifier {
       _loadBatchesFromCloud(),
       _loadWorkOrdersFromCloud(),
       _loadPermitsFromCloud(),
+      _loadInventoryItemsFromCloud(),
+      _loadPartRequestsFromCloud(),
     ]);
   }
 
@@ -116,6 +121,10 @@ class AppState extends ChangeNotifier {
     maintenanceReports.clear();
     permitsLoaded = false;
     permits.clear();
+    inventoryItemsLoaded = false;
+    inventoryItems.clear();
+    partRequestsLoaded = false;
+    partRequests.clear();
     notificationsLoaded = false;
     notifications.clear();
     _notificationsTimer?.cancel();
@@ -417,6 +426,223 @@ class AppState extends ChangeNotifier {
       whatsappSent: data['whatsappSent'] as bool? ?? false,
       warning: data['warning'] as String?,
     );
+  }
+
+  // ---------------------------------------------------------------------
+  // المخزون والقطع — كتالوج أصناف [InventoryItem] وطلبات قطع [PartRequest]
+  // (راجع routes/inventory.js وschema.sql للتفاصيل الكاملة). قسم فرعي جديد
+  // داخل تبويب الصيانة، لكن حالته منفصلة تمامًا عن maintenanceReports أعلاه.
+  // ---------------------------------------------------------------------
+  final List<InventoryItem> inventoryItems = [];
+  bool inventoryItemsLoaded = false;
+  String? inventoryItemsError;
+
+  final List<PartRequest> partRequests = [];
+  bool partRequestsLoaded = false;
+  String? partRequestsError;
+
+  Future<void> reloadInventoryItems() => _loadInventoryItemsFromCloud();
+
+  Future<void> _loadInventoryItemsFromCloud() async {
+    if (!_attached) return;
+    try {
+      final data = await _api.get('/inventory/items');
+      final list = (data['items'] as List).cast<Map<String, dynamic>>();
+      inventoryItems
+        ..clear()
+        ..addAll(list.map(InventoryItem.fromApi));
+      inventoryItemsLoaded = true;
+      inventoryItemsError = null;
+      notifyListeners();
+    } catch (e) {
+      inventoryItemsError = 'تعذّر تحميل كتالوج المخزون من السيرفر: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<void> reloadPartRequests() => _loadPartRequestsFromCloud();
+
+  Future<void> _loadPartRequestsFromCloud() async {
+    if (!_attached) return;
+    try {
+      final data = await _api.get('/inventory/part-requests');
+      final list = (data['partRequests'] as List).cast<Map<String, dynamic>>();
+      partRequests
+        ..clear()
+        ..addAll(list.map(PartRequest.fromApi));
+      partRequestsLoaded = true;
+      partRequestsError = null;
+      notifyListeners();
+    } catch (e) {
+      partRequestsError = 'تعذّر تحميل طلبات القطع من السيرفر: $e';
+      notifyListeners();
+    }
+  }
+
+  /// فئات الأصناف المستخدمة سابقًا (بلا تكرار) — تُعرض كاقتراحات سريعة عند
+  /// إضافة صنف جديد، بنفس فكرة [previousTaskLocations] تمامًا.
+  List<String> get previousInventoryCategories {
+    final set = <String>{};
+    for (final i in inventoryItems) {
+      final c = i.category?.trim();
+      if (c != null && c.isNotEmpty) set.add(c);
+    }
+    final list = set.toList()..sort();
+    return list;
+  }
+
+  Future<void> addInventoryItem({
+    required String name,
+    String? category,
+    String unit = 'قطعة',
+    int quantity = 0,
+    int? minQuantity,
+    String? notes,
+  }) async {
+    final data = await _api.post('/inventory/items', {
+      'name': name,
+      'category': category,
+      'unit': unit,
+      'quantity': quantity,
+      'minQuantity': minQuantity,
+      'notes': notes,
+    });
+    inventoryItems.add(InventoryItem.fromApi(data['item'] as Map<String, dynamic>));
+    _log('تمت إضافة صنف جديد للمخزون: $name');
+    notifyListeners();
+  }
+
+  Future<void> updateInventoryItem(
+    String id, {
+    required String name,
+    String? category,
+    required String unit,
+    required int quantity,
+    int? minQuantity,
+    String? notes,
+  }) async {
+    final data = await _api.patch('/inventory/items/$id', {
+      'name': name,
+      'category': category,
+      'unit': unit,
+      'quantity': quantity,
+      'minQuantity': minQuantity,
+      'notes': notes,
+    });
+    final updated = InventoryItem.fromApi(data['item'] as Map<String, dynamic>);
+    final i = inventoryItems.indexWhere((e) => e.id == id);
+    if (i != -1) inventoryItems[i] = updated;
+    notifyListeners();
+  }
+
+  Future<void> removeInventoryItem(String id) async {
+    await _api.delete('/inventory/items/$id');
+    inventoryItems.removeWhere((e) => e.id == id);
+    notifyListeners();
+  }
+
+  /// يقدّم الفني (أو مسؤول الصيانة) طلب قطعة جديدًا — إما من صنف موجود
+  /// بالكتالوج ([itemId]) أو باسم حر لقطعة غير مكتلَنة بعد تحتاج تصميمًا
+  /// ([itemName] + [needsDesign]: true). لا يُخصم أي شيء من المخزون هنا —
+  /// فقط عند تأكيد الصرف لاحقًا (راجع [issuePartRequest]).
+  Future<void> createPartRequest({
+    String? itemId,
+    String? itemName,
+    int quantity = 1,
+    String? workOrderId,
+    String? notes,
+    bool needsDesign = false,
+  }) async {
+    final data = await _api.post('/inventory/part-requests', {
+      if (itemId != null) 'itemId': itemId,
+      if (itemName != null && itemName.trim().isNotEmpty) 'itemName': itemName.trim(),
+      'quantity': quantity,
+      if (workOrderId != null) 'workOrderId': workOrderId,
+      if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+      'needsDesign': needsDesign,
+    });
+    final partRequest = PartRequest.fromApi(data['partRequest'] as Map<String, dynamic>);
+    partRequests.insert(0, partRequest);
+    _log('تم تقديم طلب قطعة جديد: ${partRequest.itemName}');
+    notifyListeners();
+  }
+
+  Future<void> cancelPartRequest(String id) async {
+    await _api.delete('/inventory/part-requests/$id');
+    partRequests.removeWhere((p) => p.id == id);
+    notifyListeners();
+  }
+
+  /// المصمم يرفع نتيجة التصميم (صورة/ملف كـ data URL + ملاحظات اختيارية) —
+  /// ينقل الطلب لمرحلة "بانتظار الصرف".
+  Future<void> submitPartDesign(
+    String id, {
+    required String designFileDataUrl,
+    String? designNotes,
+  }) async {
+    final data = await _api.patch('/inventory/part-requests/$id/design', {
+      'designFileDataUrl': designFileDataUrl,
+      if (designNotes != null && designNotes.trim().isNotEmpty) 'designNotes': designNotes.trim(),
+    });
+    final updated = PartRequest.fromApi(data['partRequest'] as Map<String, dynamic>);
+    final i = partRequests.indexWhere((p) => p.id == id);
+    if (i != -1) partRequests[i] = updated;
+    notifyListeners();
+  }
+
+  /// مسؤول المخزون (أو مسؤول الصيانة) يؤكد صرف القطعة فعليًا — هذه اللحظة
+  /// الوحيدة التي يُخصم فيها العدد من رصيد الصنف بالكتالوج (لو كان مرتبطًا
+  /// بصنف فعلي).
+  Future<void> issuePartRequest(String id) async {
+    final data = await _api.patch('/inventory/part-requests/$id/issue', {});
+    final updated = PartRequest.fromApi(data['partRequest'] as Map<String, dynamic>);
+    final i = partRequests.indexWhere((p) => p.id == id);
+    if (i != -1) partRequests[i] = updated;
+    // تحديث متفائل لرصيد الصنف محليًا بلا انتظار طلب تحميل جديد للكتالوج —
+    // السيرفر نفسه هو مصدر الحقيقة الفعلي، وسيُصحَّح تلقائيًا عند الاستطلاع
+    // الدوري التالي لو اختلف لأي سبب.
+    if (updated.itemId != null) {
+      final itemIdx = inventoryItems.indexWhere((e) => e.id == updated.itemId);
+      if (itemIdx != -1) {
+        final item = inventoryItems[itemIdx];
+        inventoryItems[itemIdx] = InventoryItem(
+          id: item.id,
+          name: item.name,
+          category: item.category,
+          unit: item.unit,
+          quantity: (item.quantity - updated.quantity).clamp(0, 1 << 31),
+          minQuantity: item.minQuantity,
+          notes: item.notes,
+        );
+      }
+    }
+    notifyListeners();
+  }
+
+  /// القطعة صُرفت لكن لم تُستخدم فعليًا — تعيد العدد لرصيد المخزون.
+  Future<void> returnPartRequest(String id, {String? returnNotes}) async {
+    final data = await _api.patch('/inventory/part-requests/$id/return', {
+      if (returnNotes != null && returnNotes.trim().isNotEmpty) 'returnNotes': returnNotes.trim(),
+    });
+    final updated = PartRequest.fromApi(data['partRequest'] as Map<String, dynamic>);
+    final i = partRequests.indexWhere((p) => p.id == id);
+    if (i != -1) partRequests[i] = updated;
+    if (updated.itemId != null) {
+      final itemIdx = inventoryItems.indexWhere((e) => e.id == updated.itemId);
+      if (itemIdx != -1) {
+        final item = inventoryItems[itemIdx];
+        inventoryItems[itemIdx] = InventoryItem(
+          id: item.id,
+          name: item.name,
+          category: item.category,
+          unit: item.unit,
+          quantity: item.quantity + updated.quantity,
+          minQuantity: item.minQuantity,
+          notes: item.notes,
+        );
+      }
+    }
+    notifyListeners();
   }
 
   // ---------------------------------------------------------------------
