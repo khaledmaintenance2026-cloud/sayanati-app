@@ -3,10 +3,19 @@ import 'package:provider/provider.dart';
 
 import '../../services/app_state.dart';
 import '../../services/auth_service.dart';
-import '../../services/constants.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
+/// شاشة زر "+" في تبويب "الأعطال الطارئة" بلوحة الصيانة — كانت مخصّصة سابقًا
+/// لبلاغ عطل مباشر يرفعه فريق الصيانة نفسه (بلا معدة/بلاغ إنتاج سابق). قرار
+/// صريح من الإدارة (2026-09-23): حُوِّلت إلى "إنشاء مهمة عمل" — مهام عامة
+/// داخل المصنع أو خارجه لا ترتبط بعطل فعلي في معدة (توصيل، نقل معدات، أعمال
+/// إدارية...). تبقى kind = 'emergency' على السيرفر عمدًا (راجع isTask/taskScope
+/// في MaintenanceReport وAppState.createMaintenanceTask) فتظهر ضمن نفس تبويب
+/// "الأعطال الطارئة" وتتبع نفس دورة العمل والإشعارات تمامًا بلا أي كود جديد،
+/// ولا علاقة لها إطلاقًا ببلاغات الإنتاج (production_incidents_screen.dart)
+/// ولا بالأعمال الوقائية (maintenance_work_order_screen.dart) — كلاهما بلا
+/// أي تغيير.
 class MaintenanceNewReportScreen extends StatefulWidget {
   const MaintenanceNewReportScreen({super.key});
 
@@ -15,56 +24,45 @@ class MaintenanceNewReportScreen extends StatefulWidget {
 }
 
 class _MaintenanceNewReportScreenState extends State<MaintenanceNewReportScreen> {
-  String _line = kFacilityLocations.first;
-  final _locationDetailCtrl = TextEditingController();
-  final _equipmentCtrl = TextEditingController(text: 'ماكينة الخلط');
+  String _scope = 'internal'; // 'internal' | 'external'
+  final _locationCtrl = TextEditingController();
   final _descriptionCtrl = TextEditingController();
+  // يدعم النظام تعيين أكثر من فني لنفس المهمة مباشرة عند الإنشاء، تمامًا
+  // كأمر العمل الوقائي (راجع maintenance_work_order_screen.dart) — لكن هنا
+  // اختياري: تركه فارغًا يُبقي المهمة "بانتظار التعيين" كأي بلاغ عادي.
+  final Set<String> _selectedTechIds = {};
   bool _submitting = false;
-
-  final _lines = kFacilityLocations;
-
-  /// يجمع القسم المختار من القائمة مع تفاصيل موقع حرة اختيارية — يسمح لفريق
-  /// الصيانة برفع بلاغ لأي مكان فعلي في المصنع (مثل "الإدارة" أو "بوابة
-  /// الاستقبال" أو أي موقع لا يقع أصلًا ضمن الأقسام الثلاثة الرئيسية) بدل
-  /// حصر البلاغ بأحد هذه الأقسام فقط كما كان سابقًا. بنفس نمط _fullLocation
-  /// في safety_permit_request_screen.dart تمامًا (ونفس صيغة "$facility —
-  /// $detail" المعروضة أصلًا في قائمة بلاغات الصيانة، راجع MaintenanceReport.line).
-  String get _fullLocation =>
-      _locationDetailCtrl.text.trim().isEmpty ? _line : '$_line — ${_locationDetailCtrl.text.trim()}';
 
   @override
   void dispose() {
-    _locationDetailCtrl.dispose();
-    _equipmentCtrl.dispose();
+    _locationCtrl.dispose();
     _descriptionCtrl.dispose();
     super.dispose();
   }
 
-  /// وصف العطل إلزامي (نفس تحقق _submit أدناه بالضبط) — يُستخدم أيضًا لتعطيل
-  /// زر الإرسال بصريًا قبل المحاولة، بنفس نمط باقي شاشات "بلاغ/إغلاق" في
-  /// التطبيق (راجع general_report_screen.dart وmaintenance_task_close_screen.dart)
-  /// بدل تركه مفعّلًا دائمًا وعرض رسالة خطأ بعد الضغط عليه فقط.
-  bool get _canSubmit => !_submitting && _descriptionCtrl.text.trim().isNotEmpty;
+  bool get _canSubmit =>
+      !_submitting && _locationCtrl.text.trim().isNotEmpty && _descriptionCtrl.text.trim().isNotEmpty;
 
   Future<void> _submit() async {
     if (!_canSubmit) return;
     setState(() => _submitting = true);
     try {
-      await context.read<AppState>().createReport(
-            equipment: _equipmentCtrl.text.trim(),
-            facility: _fullLocation,
+      await context.read<AppState>().createMaintenanceTask(
+            taskScope: _scope,
+            location: _locationCtrl.text.trim(),
             description: _descriptionCtrl.text.trim(),
+            technicianIds: _selectedTechIds.toList(),
           );
       if (!mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم إرسال البلاغ لقسم الصيانة')),
+        const SnackBar(content: Text('تم إنشاء المهمة')),
       );
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تعذّر إرسال البلاغ: $e')),
+        SnackBar(content: Text('تعذّر إنشاء المهمة: $e')),
       );
     }
   }
@@ -78,10 +76,15 @@ class _MaintenanceNewReportScreenState extends State<MaintenanceNewReportScreen>
 
   @override
   Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
     final currentUser = context.watch<AuthService>().currentUser;
     final userName = currentUser?.name ?? 'مستخدم';
+    // مواقع مهام سابقة (بلا تكرار) — تُعرض كاقتراحات سريعة بدل كتابة نفس
+    // الموقع من الصفر في كل مرة، مع بقاء الحقل نصًا حرًا يقبل أي موقع جديد.
+    final previousLocations = state.previousTaskLocations;
+
     return Scaffold(
-      appBar: const ScreenTopBar(title: 'بلاغ عطل جديد'),
+      appBar: const ScreenTopBar(title: 'إنشاء مهمة عمل'),
       body: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
         child: Column(
@@ -105,33 +108,75 @@ class _MaintenanceNewReportScreenState extends State<MaintenanceNewReportScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(userName, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
-                            const Text('رافع البلاغ (تلقائيًا من حسابك)', style: TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+                            const Text('مُنشئ المهمة (تلقائيًا من حسابك)', style: TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
                           ],
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const _FieldLabel('الخط / الموقع'),
-                  DropdownButtonFormField<String>(
-                    value: _line,
-                    decoration: _fieldDecoration(),
-                    items: _lines.map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
-                    onChanged: (v) => setState(() => _line = v ?? _line),
+                  const _FieldLabel('نوع المهمة'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ChoiceChip(
+                          label: const Text('داخلية — داخل المصنع'),
+                          selected: _scope == 'internal',
+                          selectedColor: AppColors.maintenance.withOpacity(0.16),
+                          labelStyle: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: _scope == 'internal' ? AppColors.maintenance : AppColors.textSecondary,
+                          ),
+                          onSelected: (_) => setState(() => _scope = 'internal'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ChoiceChip(
+                          label: const Text('خارجية — خارج المصنع'),
+                          selected: _scope == 'external',
+                          selectedColor: AppColors.maintenance.withOpacity(0.16),
+                          labelStyle: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: _scope == 'external' ? AppColors.maintenance : AppColors.textSecondary,
+                          ),
+                          onSelected: (_) => setState(() => _scope = 'external'),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 14),
-                  const _FieldLabel('تفاصيل الموقع (اختياري)'),
-                  TextField(
-                    controller: _locationDetailCtrl,
-                    decoration: _fieldDecoration(hint: 'مثال: الإدارة، بوابة الاستقبال...'),
-                  ),
-                  const SizedBox(height: 14),
-                  const _FieldLabel('المعدة'),
-                  TextField(controller: _equipmentCtrl, decoration: _fieldDecoration()),
                   const SizedBox(height: 14),
                   Row(
                     children: [
-                      const _FieldLabel('وصف العطل'),
+                      const _FieldLabel('الموقع'),
+                      const SizedBox(width: 6),
+                      Text('إلزامي', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppColors.warningText)),
+                    ],
+                  ),
+                  TextField(
+                    controller: _locationCtrl,
+                    onChanged: (_) => setState(() {}),
+                    decoration: _fieldDecoration(hint: 'مثال: مستودع القطع، أو عند العميل — خارج المصنع'),
+                  ),
+                  if (previousLocations.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    const Text('مواقع سابقة (اضغط لتعبئتها):', style: TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: previousLocations
+                          .map((loc) => ActionChip(
+                                label: Text(loc, style: const TextStyle(fontSize: 12)),
+                                onPressed: () => setState(() => _locationCtrl.text = loc),
+                              ))
+                          .toList(),
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      const _FieldLabel('وصف عمل المهمة'),
                       const SizedBox(width: 6),
                       Text('إلزامي', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppColors.warningText)),
                     ],
@@ -141,11 +186,38 @@ class _MaintenanceNewReportScreenState extends State<MaintenanceNewReportScreen>
                     minLines: 3,
                     maxLines: 5,
                     onChanged: (_) => setState(() {}),
-                    decoration: _fieldDecoration(hint: 'مثال: توقف مفاجئ — صوت غير طبيعي بالمحرك'),
+                    decoration: _fieldDecoration(hint: 'مثال: نقل معدات إلى المستودع الجديد'),
+                  ),
+                  const SizedBox(height: 14),
+                  const _FieldLabel('الفني/الفنيون (اختياري — يمكن تعيينهم لاحقًا)'),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: state.technicians.map((t) {
+                      final selected = _selectedTechIds.contains(t.id);
+                      return FilterChip(
+                        label: Text(t.name),
+                        selected: selected,
+                        selectedColor: AppColors.maintenance.withOpacity(0.14),
+                        checkmarkColor: AppColors.maintenance,
+                        labelStyle: TextStyle(color: selected ? AppColors.maintenance : AppColors.textSecondary, fontWeight: FontWeight.w600, fontSize: 12.5),
+                        side: BorderSide(color: selected ? AppColors.maintenance : AppColors.border),
+                        onSelected: (v) => setState(() {
+                          if (v) {
+                            _selectedTechIds.add(t.id);
+                          } else {
+                            _selectedTechIds.remove(t.id);
+                          }
+                        }),
+                      );
+                    }).toList(),
                   ),
                   const SizedBox(height: 16),
-                  const InfoNote(
-                    text: 'سيصل إشعار فوري لمسؤولَي الصيانة + رسالة في جروب واتساب الصيانة',
+                  InfoNote(
+                    text: _selectedTechIds.isEmpty
+                        ? 'ستُنشأ المهمة بانتظار تعيين فني لاحقًا + إشعار ورسالة واتساب فورية لقسم الصيانة'
+                        : 'ستبدأ المهمة "قيد التنفيذ" مباشرة بالفني/الفنيين المختارين + إشعار ورسالة واتساب فورية لقسم الصيانة',
                     color: AppColors.production,
                   ),
                 ],
@@ -155,7 +227,7 @@ class _MaintenanceNewReportScreenState extends State<MaintenanceNewReportScreen>
             _submitting
                 ? const Center(child: Padding(padding: EdgeInsets.all(10), child: CircularProgressIndicator(color: AppColors.maintenance)))
                 : PrimaryButton(
-                    label: 'إرسال البلاغ',
+                    label: 'إنشاء المهمة',
                     color: _canSubmit ? AppColors.maintenance : AppColors.textFaint,
                     icon: Icons.send,
                     onPressed: _canSubmit ? _submit : null,
