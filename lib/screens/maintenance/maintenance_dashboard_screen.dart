@@ -8,6 +8,7 @@ import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../safety/safety_permit_request_screen.dart';
+import 'inventory_screen.dart';
 import 'maintenance_assign_screen.dart';
 import 'maintenance_completed_screen.dart';
 import 'maintenance_incoming_incidents_screen.dart';
@@ -17,6 +18,12 @@ import 'maintenance_reports_screen.dart';
 import 'maintenance_task_close_screen.dart';
 import 'maintenance_work_order_screen.dart';
 
+/// تبويبات لوحة الصيانة الثلاثة — أُضيف [inventory] (المخزون والقطع) لاحقًا
+/// (راجع inventory_screen.dart). مسؤول المخزون والمصمم (isInventoryOnlyRole
+/// في auth_service.dart) يريان تبويب المخزون فقط دائمًا بغض النظر عن قيمة
+/// [_MaintenanceDashboardScreenState._tab] — راجع build() أدناه.
+enum _DashTab { emergency, preventive, inventory }
+
 class MaintenanceDashboardScreen extends StatefulWidget {
   const MaintenanceDashboardScreen({super.key});
 
@@ -25,23 +32,30 @@ class MaintenanceDashboardScreen extends StatefulWidget {
 }
 
 class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen> {
-  bool _showEmergency = true;
+  _DashTab _tab = _DashTab.emergency;
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final role = context.watch<AuthService>().currentUser?.role ?? AppRole.maintenanceTechnician;
+    // مسؤول المخزون والمصمم لا يريان بقية تبويبات الصيانة إطلاقًا (لا علاقة
+    // لهما بتوزيع/تنفيذ بلاغات الأعطال) — تبويب المخزون هو كل ما يخصهما.
+    final isInventoryOnly = isInventoryOnlyRole(role);
+    final tab = isInventoryOnly ? _DashTab.inventory : _tab;
     // إنشاء "بلاغ وقائي جديد" (تبويب "أعمال وقائية") قرار صريح من الإدارة:
     // مسؤول الصيانة أو المدير فقط، وليس الفني — راجع نفس القيد الملزم فعليًا
     // على السيرفر في routes/workOrders.js (POST / يرفض kind: 'preventive' من
     // أي دور غير هذين). بلاغ العطل الطارئ (تبويب "الأعطال الطارئة") يبقى
     // متاحًا للفني كما كان دائمًا — لا علاقة له بهذا القيد.
-    final canManage = canManageMaintenance(context.watch<AuthService>().currentUser?.role ?? AppRole.maintenanceTechnician);
+    final canManage = canManageMaintenance(role);
     // الأعمال المنجزة لا تظهر في لوحة العمل اليومية هذه حتى لا تتراكم فيها
     // للأبد — تبقى متاحة (وقابلة للحذف نهائيًا) من شاشة "الأعمال المنجزة"
     // التي يفتحها زر شريط الأدوات بالأسفل.
-    final reports = state.maintenanceReports
-        .where((r) => (_showEmergency ? r.isEmergency : !r.isEmergency) && r.status != MaintenanceStatus.completed)
-        .toList();
+    final reports = tab == _DashTab.inventory
+        ? const <MaintenanceReport>[]
+        : state.maintenanceReports
+            .where((r) => (tab == _DashTab.emergency ? r.isEmergency : !r.isEmergency) && r.status != MaintenanceStatus.completed)
+            .toList();
 
     final now = DateTime.now();
     final completedThisMonth = state.maintenanceReports.where((r) =>
@@ -59,66 +73,71 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('الصيانة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-        actions: [
-          // بلاغات إنتاج وصلت للتو ولم تتحوّل بعد إلى أمر عمل — راجع
-          // maintenance_incoming_incidents_screen.dart. الرقم يعكس فورًا أي
-          // بلاغ جديد يصل عبر الاستطلاع الدوري (نفس آلية جرس الإشعارات).
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.move_to_inbox_outlined),
-                tooltip: 'بلاغات إنتاج بانتظار التحويل',
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const MaintenanceIncomingIncidentsScreen()),
-                ),
-              ),
-              if (incomingIncidentsCount > 0)
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                    decoration: BoxDecoration(color: const Color(0xFFB3261E), borderRadius: BorderRadius.circular(999)),
-                    child: Text(
-                      ArabicFormat.number(incomingIncidentsCount),
-                      style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.bold),
+        title: Text(isInventoryOnly ? 'المخزون والقطع' : 'الصيانة', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        // كل هذه الإجراءات (بلاغات إنتاج/تصريح عمل/أعمال منجزة/تقارير) لا
+        // علاقة لها بمسؤول المخزون أو المصمم — تختفي كليًا لهما، فلا تظهر
+        // شاشة إدارية لا صلاحية لهما عليها أصلًا على السيرفر.
+        actions: isInventoryOnly
+            ? null
+            : [
+                // بلاغات إنتاج وصلت للتو ولم تتحوّل بعد إلى أمر عمل — راجع
+                // maintenance_incoming_incidents_screen.dart. الرقم يعكس فورًا أي
+                // بلاغ جديد يصل عبر الاستطلاع الدوري (نفس آلية جرس الإشعارات).
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.move_to_inbox_outlined),
+                      tooltip: 'بلاغات إنتاج بانتظار التحويل',
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const MaintenanceIncomingIncidentsScreen()),
+                      ),
                     ),
+                    if (incomingIncidentsCount > 0)
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(color: const Color(0xFFB3261E), borderRadius: BorderRadius.circular(999)),
+                          child: Text(
+                            ArabicFormat.number(incomingIncidentsCount),
+                            style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                // طلب تصريح عمل (لأعمال خطرة كاللحام/الأماكن المغلقة/الارتفاعات...)
+                // — نفس شاشة/عملية الطلب المستخدمة أصلًا من قسم السلامة تمامًا
+                // (SafetyPermitRequestScreen)، بلا أي تعديل عليها: المسار على
+                // السيرفر (POST /api/safety-permits) لم يكن مقيّدًا بقسم مُعيَّن
+                // أصلًا (أي مستخدم مسجَّل دخول يقدر يطلب)، وحتى خيار "ربط بعملية
+                // بلاغ قائمة" داخل الشاشة يعرض أوامر عمل الصيانة المفتوحة نفسها —
+                // كان ناقصًا فقط زر يفتحها من قسم الصيانة. الطلب يصل لقسم السلامة
+                // للمراجعة والاعتماد كالمعتاد، ولا علاقة لقسم الصيانة بالموافقة عليه.
+                IconButton(
+                  icon: const Icon(Icons.verified_user_outlined),
+                  tooltip: 'طلب تصريح عمل',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SafetyPermitRequestScreen()),
                   ),
                 ),
-            ],
-          ),
-          // طلب تصريح عمل (لأعمال خطرة كاللحام/الأماكن المغلقة/الارتفاعات...)
-          // — نفس شاشة/عملية الطلب المستخدمة أصلًا من قسم السلامة تمامًا
-          // (SafetyPermitRequestScreen)، بلا أي تعديل عليها: المسار على
-          // السيرفر (POST /api/safety-permits) لم يكن مقيّدًا بقسم مُعيَّن
-          // أصلًا (أي مستخدم مسجَّل دخول يقدر يطلب)، وحتى خيار "ربط بعملية
-          // بلاغ قائمة" داخل الشاشة يعرض أوامر عمل الصيانة المفتوحة نفسها —
-          // كان ناقصًا فقط زر يفتحها من قسم الصيانة. الطلب يصل لقسم السلامة
-          // للمراجعة والاعتماد كالمعتاد، ولا علاقة لقسم الصيانة بالموافقة عليه.
-          IconButton(
-            icon: const Icon(Icons.verified_user_outlined),
-            tooltip: 'طلب تصريح عمل',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SafetyPermitRequestScreen()),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.task_alt_outlined),
-            tooltip: 'الأعمال المنجزة',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MaintenanceCompletedScreen()),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.description_outlined),
-            tooltip: 'التقارير',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MaintenanceReportsScreen()),
-            ),
-          ),
-        ],
+                IconButton(
+                  icon: const Icon(Icons.task_alt_outlined),
+                  tooltip: 'الأعمال المنجزة',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const MaintenanceCompletedScreen()),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.description_outlined),
+                  tooltip: 'التقارير',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const MaintenanceReportsScreen()),
+                  ),
+                ),
+              ],
       ),
       body: Stack(
         children: [
@@ -127,43 +146,54 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  children: [
-                    KpiCard(value: avgResolutionLabel, label: 'متوسط وقت الإصلاح', valueColor: AppColors.maintenance),
-                    const SizedBox(width: 10),
-                    KpiCard(value: ArabicFormat.number(completedThisMonth), label: 'أعطال هذا الشهر', valueColor: AppColors.maintenance),
-                    const SizedBox(width: 10),
-                    KpiCard(value: '٪${ArabicFormat.toEasternDigits(preventiveRatio)}', label: 'نسبة الوقائي', valueColor: AppColors.maintenance),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(12)),
-                  child: Row(
+                if (tab != _DashTab.inventory) ...[
+                  Row(
                     children: [
-                      Expanded(child: _Segment(label: 'الأعطال الطارئة', selected: _showEmergency, onTap: () => setState(() => _showEmergency = true))),
-                      Expanded(child: _Segment(label: 'أعمال وقائية', selected: !_showEmergency, onTap: () => setState(() => _showEmergency = false))),
+                      KpiCard(value: avgResolutionLabel, label: 'متوسط وقت الإصلاح', valueColor: AppColors.maintenance),
+                      const SizedBox(width: 10),
+                      KpiCard(value: ArabicFormat.number(completedThisMonth), label: 'أعطال هذا الشهر', valueColor: AppColors.maintenance),
+                      const SizedBox(width: 10),
+                      KpiCard(value: '٪${ArabicFormat.toEasternDigits(preventiveRatio)}', label: 'نسبة الوقائي', valueColor: AppColors.maintenance),
                     ],
                   ),
-                ),
-                const SizedBox(height: 14),
+                  const SizedBox(height: 14),
+                ],
+                // مسؤول المخزون والمصمم لا يريان شريط التبديل هذا إطلاقًا —
+                // تبويب المخزون هو كل ما يظهر لهما، فلا فائدة من شريط بخيار
+                // واحد فقط. باقي الأدوار يرون التبويبات الثلاثة معًا.
+                if (!isInventoryOnly) ...[
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(12)),
+                    child: Row(
+                      children: [
+                        Expanded(child: _Segment(label: 'الأعطال الطارئة', selected: tab == _DashTab.emergency, onTap: () => setState(() => _tab = _DashTab.emergency))),
+                        Expanded(child: _Segment(label: 'أعمال وقائية', selected: tab == _DashTab.preventive, onTap: () => setState(() => _tab = _DashTab.preventive))),
+                        Expanded(child: _Segment(label: 'المخزون', selected: tab == _DashTab.inventory, onTap: () => setState(() => _tab = _DashTab.inventory))),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
                 Expanded(
-                  child: reports.isEmpty
-                      ? const Center(child: Text('لا توجد بلاغات جارية', style: TextStyle(color: AppColors.textMuted)))
-                      : ListView.separated(
-                          itemCount: reports.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 10),
-                          itemBuilder: (context, i) => MaintenanceReportCard(report: reports[i]),
-                        ),
+                  child: tab == _DashTab.inventory
+                      ? const InventorySection()
+                      : (reports.isEmpty
+                          ? const Center(child: Text('لا توجد بلاغات جارية', style: TextStyle(color: AppColors.textMuted)))
+                          : ListView.separated(
+                              itemCount: reports.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 10),
+                              itemBuilder: (context, i) => MaintenanceReportCard(report: reports[i]),
+                            )),
                 ),
               ],
             ),
           ),
           // زر الإضافة (+) يظهر دائمًا لتبويب "الأعطال الطارئة"، لكن لا يظهر
           // إطلاقًا لتبويب "أعمال وقائية" إلا لمسؤول الصيانة أو المدير —
-          // بدل إظهاره ثم رفض السيرفر الطلب برسالة خطأ بعد الضغط عليه.
-          if (_showEmergency || canManage)
+          // بدل إظهاره ثم رفض السيرفر الطلب برسالة خطأ بعد الضغط عليه. تبويب
+          // "المخزون" له أزرار إضافة خاصة به داخل InventorySection نفسها.
+          if (tab != _DashTab.inventory && (tab == _DashTab.emergency || canManage))
             Positioned(
               bottom: 20,
               left: 20,
@@ -172,7 +202,7 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => _showEmergency ? const MaintenanceNewReportScreen() : const MaintenanceWorkOrderScreen(),
+                    builder: (_) => tab == _DashTab.emergency ? const MaintenanceNewReportScreen() : const MaintenanceWorkOrderScreen(),
                   ),
                 ),
                 child: const Icon(Icons.add, color: Colors.white),
