@@ -21,7 +21,9 @@ class HomeScreen extends StatelessWidget {
     final activeLines = state.productionLines.where((l) => l.activeToday).length;
     final pendingPermits = state.permits.where((p) => p.status.name == 'pending').length;
 
-    final showMaintenance = role == AppRole.admin || isMaintenanceRole(role);
+    // مسؤول المخزون والمصمم يدخلان قسم "الصيانة" أيضًا (يريان تبويب "المخزون"
+    // فقط بمجرد الدخول — راجع isInventoryOnlyRole في maintenance_dashboard_screen.dart).
+    final showMaintenance = role == AppRole.admin || isMaintenanceRole(role) || isInventoryOnlyRole(role);
     final showProduction = role == AppRole.admin || isProductionRole(role);
     final showSafety = role == AppRole.admin || role == AppRole.safety;
 
