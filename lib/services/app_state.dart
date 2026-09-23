@@ -286,6 +286,57 @@ class AppState extends ChangeNotifier {
     return order;
   }
 
+  /// "مهمة عمل" جديدة (داخلية/خارجية) — تصنيف ثالث منفصل تمامًا عن بلاغ العطل
+  /// الطارئ والصيانة الوقائية (راجع isTask/taskScope في MaintenanceReport).
+  /// تعيين الفنيين هنا اختياري: لو اختير فني واحد على الأقل، تُنشأ المهمة ثم
+  /// تُسنَد فورًا فتبدأ "قيد التنفيذ" مباشرة (بنفس نمط createWorkOrder أعلاه
+  /// تمامًا)؛ ولو لم يُختر أي فني، تبقى المهمة "بانتظار التعيين" كأي بلاغ عطل
+  /// عادي، وتُسنَد لاحقًا من الشاشة المعتادة (MaintenanceAssignScreen).
+  Future<MaintenanceReport> createMaintenanceTask({
+    required String taskScope, // 'internal' | 'external'
+    required String location,
+    required String description,
+    List<String> technicianIds = const [],
+  }) async {
+    final scopeLabel = taskScope == 'external' ? 'مهمة خارجية' : 'مهمة داخلية';
+    final createData = await _api.post('/work-orders', {
+      'kind': 'emergency',
+      'isTask': true,
+      'taskScope': taskScope,
+      'equipmentName': scopeLabel,
+      'facility': location,
+      'description': description,
+    });
+    var order = MaintenanceReport.fromApi(createData['workOrder'] as Map<String, dynamic>);
+
+    if (technicianIds.isNotEmpty) {
+      final assignData = await _api.patch('/work-orders/${order.id}/assign', {'technicianIds': technicianIds});
+      order = MaintenanceReport.fromApi(assignData['workOrder'] as Map<String, dynamic>);
+      for (final id in technicianIds) {
+        final techIdx = technicians.indexWhere((t) => t.id == id);
+        if (techIdx != -1) technicians[techIdx].available = false;
+      }
+    }
+
+    maintenanceReports.insert(0, order);
+    _log('تم إنشاء مهمة عمل جديدة ($scopeLabel) — $location');
+    notifyListeners();
+    return order;
+  }
+
+  /// مواقع "مهام العمل" المستخدمة سابقًا (بلا تكرار) — تُعرض كاقتراحات سريعة
+  /// عند إنشاء مهمة جديدة (راجع maintenance_new_report_screen.dart) بدل إجبار
+  /// المستخدم على كتابة نفس الموقع من الصفر في كل مرة. لا علاقة لها بمواقع
+  /// بلاغات الأعطال الفعلية (facility) — تُفلتَر هنا بـisTask فقط.
+  List<String> get previousTaskLocations {
+    final set = <String>{};
+    for (final r in maintenanceReports) {
+      if (r.isTask && r.line.trim().isNotEmpty) set.add(r.line.trim());
+    }
+    final list = set.toList()..sort();
+    return list;
+  }
+
   /// تعيين فني واحد أو أكثر لنفس البلاغ — يدعم النظام الآن أكثر من فني لنفس
   /// أمر العمل (راجع work_order_technicians على السيرفر).
   Future<void> assignTechnicians(String reportId, List<String> technicianIds) async {
