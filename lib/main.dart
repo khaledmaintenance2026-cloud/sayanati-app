@@ -234,7 +234,9 @@ class _RootNavState extends State<RootNav> {
   List<String> _buildKeys(BuildContext context) {
     final role = context.read<AuthService>().currentUser?.role ?? AppRole.production;
     final keys = <String>['home'];
-    if (role == AppRole.admin || isMaintenanceRole(role)) keys.add('maintenance');
+    // مسؤول المخزون والمصمم يدخلان قسم الصيانة أيضًا (يريان تبويب "المخزون"
+    // فقط — راجع isInventoryOnlyRole وnفس التعليق في home_screen.dart).
+    if (role == AppRole.admin || isMaintenanceRole(role) || isInventoryOnlyRole(role)) keys.add('maintenance');
     if (role == AppRole.admin || isProductionRole(role)) keys.add('production');
     if (role == AppRole.admin || role == AppRole.safety) keys.add('safety');
     if (role == AppRole.admin) keys.add('admin');
