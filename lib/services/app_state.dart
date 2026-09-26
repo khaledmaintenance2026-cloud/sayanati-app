@@ -4,12 +4,15 @@ import 'package:flutter/foundation.dart';
 
 import '../models/app_notification.dart';
 import '../models/batch_edit.dart';
+import '../models/custody.dart';
 import '../models/injury_report.dart';
 import '../models/inventory.dart';
 import '../models/maintenance_report.dart';
 import '../models/production.dart';
 import '../models/safety_permit.dart';
+import '../models/supplier.dart';
 import '../models/technician.dart';
+import '../models/work_site.dart';
 import 'api_client.dart';
 
 /// نتيجة طلب تقرير إنتاج بمدة مخصصة — الرابط دائمًا متاح لو نجح الإنشاء
@@ -74,6 +77,9 @@ class AppState extends ChangeNotifier {
     _loadPermitsFromCloud();
     _loadInventoryItemsFromCloud();
     _loadPartRequestsFromCloud();
+    _loadSuppliersFromCloud();
+    _loadWorkSitesFromCloud();
+    _loadCustodyItemsFromCloud();
     _loadNotificationsFromCloud();
     // لا توجد إشعارات Push حقيقية بعد — نستطلع (Poll) قائمة الإشعارات كل ٤٥
     // ثانية طالما المستخدم مسجّل دخوله، حتى يظهر جرس الإشعارات محدَّثًا بلا
@@ -102,6 +108,7 @@ class AppState extends ChangeNotifier {
       _loadPermitsFromCloud(),
       _loadInventoryItemsFromCloud(),
       _loadPartRequestsFromCloud(),
+      _loadCustodyItemsFromCloud(),
     ]);
   }
 
@@ -125,6 +132,14 @@ class AppState extends ChangeNotifier {
     inventoryItems.clear();
     partRequestsLoaded = false;
     partRequests.clear();
+    suppliersLoaded = false;
+    suppliers.clear();
+    workSitesLoaded = false;
+    workSites.clear();
+    inventoryMovementsLoaded = false;
+    inventoryMovements.clear();
+    custodyItemsLoaded = false;
+    custodyItems.clear();
     notificationsLoaded = false;
     notifications.clear();
     _notificationsTimer?.cancel();
@@ -498,6 +513,8 @@ class AppState extends ChangeNotifier {
     int quantity = 0,
     int? minQuantity,
     String? notes,
+    String? supplierId,
+    String? siteId,
   }) async {
     final data = await _api.post('/inventory/items', {
       'name': name,
@@ -506,6 +523,8 @@ class AppState extends ChangeNotifier {
       'quantity': quantity,
       'minQuantity': minQuantity,
       'notes': notes,
+      'supplierId': supplierId,
+      'siteId': siteId,
     });
     inventoryItems.add(InventoryItem.fromApi(data['item'] as Map<String, dynamic>));
     _log('تمت إضافة صنف جديد للمخزون: $name');
@@ -520,6 +539,8 @@ class AppState extends ChangeNotifier {
     required int quantity,
     int? minQuantity,
     String? notes,
+    String? supplierId,
+    String? siteId,
   }) async {
     final data = await _api.patch('/inventory/items/$id', {
       'name': name,
@@ -528,6 +549,8 @@ class AppState extends ChangeNotifier {
       'quantity': quantity,
       'minQuantity': minQuantity,
       'notes': notes,
+      'supplierId': supplierId,
+      'siteId': siteId,
     });
     final updated = InventoryItem.fromApi(data['item'] as Map<String, dynamic>);
     final i = inventoryItems.indexWhere((e) => e.id == id);
@@ -539,6 +562,31 @@ class AppState extends ChangeNotifier {
     await _api.delete('/inventory/items/$id');
     inventoryItems.removeWhere((e) => e.id == id);
     notifyListeners();
+  }
+
+  /// "حركة مخزون سريعة" — ودجت البحث عن صنف + توريد/صرف/تسوية جرد مباشرة
+  /// بلا فتح نموذج تعديل الصنف الكامل. [type] واحد من: supply (توريد)،
+  /// consumable_issue (صرف استهلاكي)، stock_reconciliation (تسوية جرد) —
+  /// راجع POST /inventory/items/:id/movement في routes/inventory.js لشرح
+  /// معنى [quantity] المختلف حسب النوع (كمية الحركة نفسها لتوريد/صرف، أو
+  /// الرصيد الفعلي المعدود لتسوية الجرد).
+  Future<InventoryItem> recordQuickMovement({
+    required String itemId,
+    required String type,
+    required num quantity,
+    String? notes,
+  }) async {
+    final data = await _api.post('/inventory/items/$itemId/movement', {
+      'type': type,
+      'quantity': quantity,
+      if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+    });
+    final updated = InventoryItem.fromApi(data['item'] as Map<String, dynamic>);
+    final i = inventoryItems.indexWhere((e) => e.id == itemId);
+    if (i != -1) inventoryItems[i] = updated;
+    _log('تسجيل حركة مخزون سريعة على: ${updated.name}');
+    notifyListeners();
+    return updated;
   }
 
   /// يقدّم الفني (أو مسؤول الصيانة) طلب قطعة جديدًا — إما من صنف موجود
@@ -613,6 +661,10 @@ class AppState extends ChangeNotifier {
           quantity: (item.quantity - updated.quantity).clamp(0, 1 << 31),
           minQuantity: item.minQuantity,
           notes: item.notes,
+          supplierId: item.supplierId,
+          supplierName: item.supplierName,
+          siteId: item.siteId,
+          siteName: item.siteName,
         );
       }
     }
@@ -639,10 +691,267 @@ class AppState extends ChangeNotifier {
           quantity: item.quantity + updated.quantity,
           minQuantity: item.minQuantity,
           notes: item.notes,
+          supplierId: item.supplierId,
+          supplierName: item.supplierName,
+          siteId: item.siteId,
+          siteName: item.siteName,
         );
       }
     }
     notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------
+  // سجل حركات المخزون [InventoryMovement] — للمراجعة والتدقيق فقط (سجل دائم
+  // لا يُعدَّل من التطبيق). يُحمَّل عند فتح شاشته فقط (وليس ضمن attachAuth أو
+  // الاستطلاع الدوري) لأنه سجل تاريخي طويل لا يحتاج تحديثًا لحظيًا كبيانات
+  // العمل اليومية أعلاه. راجع routes/inventory.js (GET /movements).
+  // ---------------------------------------------------------------------
+  final List<InventoryMovement> inventoryMovements = [];
+  bool inventoryMovementsLoaded = false;
+  String? inventoryMovementsError;
+
+  /// [itemId] فلترة اختيارية لعرض حركة صنف واحد فقط من داخل شاشته.
+  Future<void> loadInventoryMovements({String? itemId}) async {
+    if (!_attached) return;
+    try {
+      final data = await _api.get('/inventory/movements', query: itemId != null ? {'itemId': itemId} : null);
+      final list = (data['movements'] as List).cast<Map<String, dynamic>>();
+      inventoryMovements
+        ..clear()
+        ..addAll(list.map(InventoryMovement.fromApi));
+      inventoryMovementsLoaded = true;
+      inventoryMovementsError = null;
+      notifyListeners();
+    } catch (e) {
+      inventoryMovementsError = 'تعذّر تحميل سجل حركة المخزون من السيرفر: $e';
+      notifyListeners();
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // الموردون [Supplier] — سجل مستقل يُربط اختياريًا بأصناف الكتالوج. راجع
+  // routes/inventory.js وschema.sql (جدول suppliers) للتفاصيل الكاملة.
+  // ---------------------------------------------------------------------
+  final List<Supplier> suppliers = [];
+  bool suppliersLoaded = false;
+  String? suppliersError;
+
+  Future<void> reloadSuppliers() => _loadSuppliersFromCloud();
+
+  Future<void> _loadSuppliersFromCloud() async {
+    if (!_attached) return;
+    try {
+      final data = await _api.get('/inventory/suppliers');
+      final list = (data['suppliers'] as List).cast<Map<String, dynamic>>();
+      suppliers
+        ..clear()
+        ..addAll(list.map(Supplier.fromApi));
+      suppliersLoaded = true;
+      suppliersError = null;
+      notifyListeners();
+    } catch (e) {
+      suppliersError = 'تعذّر تحميل قائمة الموردين من السيرفر: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<void> addSupplier({
+    required String name,
+    String? contactName,
+    String? phone,
+    String? email,
+    String? address,
+    String? notes,
+  }) async {
+    final data = await _api.post('/inventory/suppliers', {
+      'name': name,
+      'contactName': contactName,
+      'phone': phone,
+      'email': email,
+      'address': address,
+      'notes': notes,
+    });
+    suppliers.add(Supplier.fromApi(data['supplier'] as Map<String, dynamic>));
+    _log('تمت إضافة مورّد جديد: $name');
+    notifyListeners();
+  }
+
+  Future<void> updateSupplier(
+    String id, {
+    required String name,
+    String? contactName,
+    String? phone,
+    String? email,
+    String? address,
+    bool active = true,
+    String? notes,
+  }) async {
+    final data = await _api.patch('/inventory/suppliers/$id', {
+      'name': name,
+      'contactName': contactName,
+      'phone': phone,
+      'email': email,
+      'address': address,
+      'active': active,
+      'notes': notes,
+    });
+    final updated = Supplier.fromApi(data['supplier'] as Map<String, dynamic>);
+    final i = suppliers.indexWhere((e) => e.id == id);
+    if (i != -1) suppliers[i] = updated;
+    notifyListeners();
+  }
+
+  Future<void> removeSupplier(String id) async {
+    await _api.delete('/inventory/suppliers/$id');
+    suppliers.removeWhere((e) => e.id == id);
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------
+  // مواقع العمل [WorkSite] — كيانات مُدارة يُربط بها اختياريًا أصناف
+  // الكتالوج. راجع routes/inventory.js وschema.sql (جدول work_sites).
+  // ---------------------------------------------------------------------
+  final List<WorkSite> workSites = [];
+  bool workSitesLoaded = false;
+  String? workSitesError;
+
+  Future<void> reloadWorkSites() => _loadWorkSitesFromCloud();
+
+  Future<void> _loadWorkSitesFromCloud() async {
+    if (!_attached) return;
+    try {
+      final data = await _api.get('/inventory/sites');
+      final list = (data['sites'] as List).cast<Map<String, dynamic>>();
+      workSites
+        ..clear()
+        ..addAll(list.map(WorkSite.fromApi));
+      workSitesLoaded = true;
+      workSitesError = null;
+      notifyListeners();
+    } catch (e) {
+      workSitesError = 'تعذّر تحميل قائمة مواقع العمل من السيرفر: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<void> addWorkSite({required String name, String? notes}) async {
+    final data = await _api.post('/inventory/sites', {'name': name, 'notes': notes});
+    workSites.add(WorkSite.fromApi(data['site'] as Map<String, dynamic>));
+    _log('تمت إضافة موقع عمل جديد: $name');
+    notifyListeners();
+  }
+
+  Future<void> updateWorkSite(String id, {required String name, bool active = true, String? notes}) async {
+    final data = await _api.patch('/inventory/sites/$id', {'name': name, 'active': active, 'notes': notes});
+    final updated = WorkSite.fromApi(data['site'] as Map<String, dynamic>);
+    final i = workSites.indexWhere((e) => e.id == id);
+    if (i != -1) workSites[i] = updated;
+    notifyListeners();
+  }
+
+  Future<void> removeWorkSite(String id) async {
+    await _api.delete('/inventory/sites/$id');
+    workSites.removeWhere((e) => e.id == id);
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------
+  // "العهدة" — عدة ومعدات [CustodyItem] تُسلَّم لفني وتُرجَع لاحقًا، بعكس
+  // القطع الاستهلاكية أعلاه. راجع routes/custody.js وschema.sql للتفاصيل
+  // الكاملة. استجابة /custody/items تدمج بيانات آخر تسليم مفتوح مباشرة مع
+  // كل عدة (current*) — لا حاجة لتحميل سجل تسليمات منفصل لعرض الشاشة
+  // الرئيسية.
+  // ---------------------------------------------------------------------
+  final List<CustodyItem> custodyItems = [];
+  bool custodyItemsLoaded = false;
+  String? custodyItemsError;
+
+  Future<void> reloadCustodyItems() => _loadCustodyItemsFromCloud();
+
+  Future<void> _loadCustodyItemsFromCloud() async {
+    if (!_attached) return;
+    try {
+      final data = await _api.get('/custody/items');
+      final list = (data['items'] as List).cast<Map<String, dynamic>>();
+      custodyItems
+        ..clear()
+        ..addAll(list.map(CustodyItem.fromApi));
+      custodyItemsLoaded = true;
+      custodyItemsError = null;
+      notifyListeners();
+    } catch (e) {
+      custodyItemsError = 'تعذّر تحميل كتالوج العهدة من السيرفر: $e';
+      notifyListeners();
+    }
+  }
+
+  /// فئات العهدة المستخدمة سابقًا (بلا تكرار) — بنفس فكرة
+  /// [previousInventoryCategories] تمامًا.
+  List<String> get previousCustodyCategories {
+    final set = <String>{};
+    for (final i in custodyItems) {
+      final c = i.category?.trim();
+      if (c != null && c.isNotEmpty) set.add(c);
+    }
+    final list = set.toList()..sort();
+    return list;
+  }
+
+  Future<void> addCustodyItem({required String name, String? category, String? code, String? notes}) async {
+    final data = await _api.post('/custody/items', {'name': name, 'category': category, 'code': code, 'notes': notes});
+    custodyItems.add(CustodyItem.fromApi(data['item'] as Map<String, dynamic>));
+    _log('تمت إضافة عدة جديدة للعهدة: $name');
+    notifyListeners();
+  }
+
+  Future<void> updateCustodyItem(String id, {required String name, String? category, String? code, String? notes}) async {
+    final data = await _api.patch('/custody/items/$id', {'name': name, 'category': category, 'code': code, 'notes': notes});
+    final updated = CustodyItem.fromApi(data['item'] as Map<String, dynamic>);
+    final i = custodyItems.indexWhere((e) => e.id == id);
+    if (i != -1) custodyItems[i] = updated;
+    notifyListeners();
+  }
+
+  Future<void> removeCustodyItem(String id) async {
+    await _api.delete('/custody/items/$id');
+    custodyItems.removeWhere((e) => e.id == id);
+    notifyListeners();
+  }
+
+  /// يسلّم عدة لفني — إما بمعرّف فني موجود ([technicianId]، يُشتق منه الاسم
+  /// تلقائيًا) أو باسم حر ([assignedToName])، بنفس نمط itemId/itemName
+  /// الاختياري في [createPartRequest]. يعيد تحميل الكتالوج بعدها مباشرة
+  /// لأن الاستجابة الوحيدة القادمة هي سجل التسليم نفسه، وأبسط طريقة لعكس
+  /// current* الجديدة على العدة هي إعادة الجلب بدل بناء الدمج يدويًا هنا.
+  Future<void> assignCustodyItem({
+    required String itemId,
+    String? technicianId,
+    String? assignedToName,
+    String? workOrderId,
+    DateTime? expectedReturnAt,
+    String? notes,
+  }) async {
+    await _api.post('/custody/assignments', {
+      'itemId': itemId,
+      if (technicianId != null) 'technicianId': technicianId,
+      if (assignedToName != null && assignedToName.trim().isNotEmpty) 'assignedToName': assignedToName.trim(),
+      if (workOrderId != null) 'workOrderId': workOrderId,
+      if (expectedReturnAt != null) 'expectedReturnAt': expectedReturnAt.toIso8601String(),
+      if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+    });
+    _log('تم تسليم عهدة');
+    await _loadCustodyItemsFromCloud();
+  }
+
+  /// يسترجع عهدة عبر معرّف سجل التسليم المفتوح (راجع
+  /// [CustodyItem.currentAssignmentId]).
+  Future<void> returnCustodyItem(String assignmentId, {String? returnNotes}) async {
+    await _api.patch('/custody/assignments/$assignmentId/return', {
+      if (returnNotes != null && returnNotes.trim().isNotEmpty) 'returnNotes': returnNotes.trim(),
+    });
+    _log('تم استرجاع عهدة');
+    await _loadCustodyItemsFromCloud();
   }
 
   // ---------------------------------------------------------------------
