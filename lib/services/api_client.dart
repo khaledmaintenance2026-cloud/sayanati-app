@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'constants.dart';
 
@@ -32,33 +32,34 @@ class ApiClient {
 
   static const _tokenPrefKey = 'sayanati_jwt_token';
 
-  // تخزين مشفّر (Android Keystore / iOS Keychain) بدل SharedPreferences —
-  // رمز الدخول صالح ٣٠ يومًا فلا يجوز بقاؤه كنص صريح على القرص (راجع تقرير
-  // فحص الثغرات: تسريب الرمز عبر adb backup أو نسخة احتياطية للجهاز كان
-  // ممكنًا طالما android:allowBackup لم يُعطَّل صراحة، فضلًا عن أي وصول مباشر
-  // لملفات التطبيق على جهاز مفتوح الروت).
-  static const _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
-
   String? _token;
 
   bool get hasToken => _token != null;
 
+  /// قيمة رمز الدخول (JWT) نفسه — تُستخدم فقط لبناء روابط تنزيل مباشرة تُفتح
+  /// عبر متصفح خارجي (url_launcher)، مثل تصدير CSV، حيث لا يقدر الرابط
+  /// إرسال ترويسة Authorization فيُمرَّر الرمز عبر ?token= بدلًا منها (راجع
+  /// تعليق requireAuth في middleware/auth.js على السيرفر). لا يُستخدم لأي
+  /// غرض آخر — كل الطلبات العادية تستمر بالترويسة كما هي عبر _headers.
+  String? get token => _token;
+
   /// يُستدعى مرة واحدة عند بدء التطبيق لاسترجاع رمز دخول محفوظ من جلسة سابقة.
   Future<String?> loadPersistedToken() async {
-    _token = await _storage.read(key: _tokenPrefKey);
+    final prefs = await SharedPreferences.getInstance();
+    _token = prefs.getString(_tokenPrefKey);
     return _token;
   }
 
   Future<void> setToken(String token) async {
     _token = token;
-    await _storage.write(key: _tokenPrefKey, value: token);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_tokenPrefKey, token);
   }
 
   Future<void> clearToken() async {
     _token = null;
-    await _storage.delete(key: _tokenPrefKey);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_tokenPrefKey);
   }
 
   Uri _uri(String path, [Map<String, dynamic>? query]) {
