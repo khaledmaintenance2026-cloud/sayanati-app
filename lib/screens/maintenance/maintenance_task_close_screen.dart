@@ -8,6 +8,7 @@ import '../../services/arabic_format.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import 'maintenance_assign_screen.dart';
+import 'inventory_screen.dart';
 
 class MaintenanceTaskCloseScreen extends StatefulWidget {
   final MaintenanceReport report;
@@ -78,6 +79,16 @@ class _MaintenanceTaskCloseScreenState extends State<MaintenanceTaskCloseScreen>
       appBar: ScreenTopBar(
         title: 'إغلاق البلاغ',
         actions: [
+          // رابط سريع لطلب قطعة من "المخزون" (تبويب مستقل الآن، راجع
+          // inventory_dashboard_screen.dart) مربوطة تلقائيًا بهذا البلاغ —
+          // الفني يطلب القطعة بدون مغادرة شاشة البلاغ أو التنقل لتبويب
+          // آخر، والطلب يصل لمسؤول المخزون مربوطًا بأمر العمل نفسه (راجع
+          // preselectedWorkOrder في openPartRequestSheet بـinventory_screen.dart).
+          IconButton(
+            icon: const Icon(Icons.inventory_2_outlined),
+            tooltip: 'طلب قطعة لهذا البلاغ',
+            onPressed: () => openPartRequestSheet(context, preselectedWorkOrder: widget.report),
+          ),
           // يسمح بإضافة فني إضافي لهذا البلاغ نفسه أثناء العمل عليه (مثلًا
           // لو احتاج الفني المُسنَد مساعدة زميل) — تفتح نفس شاشة "تعيين فني"
           // المستخدمة أصلًا للتعيين الأول، وتُضيف فقط بلا أي مساس بالفني/
