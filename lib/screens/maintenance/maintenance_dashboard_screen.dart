@@ -8,9 +8,9 @@ import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../safety/safety_permit_request_screen.dart';
-import 'inventory_screen.dart';
 import 'maintenance_assign_screen.dart';
 import 'maintenance_completed_screen.dart';
+import 'maintenance_edit_screen.dart';
 import 'maintenance_incoming_incidents_screen.dart';
 import 'maintenance_new_report_screen.dart';
 import 'maintenance_report_print_screen.dart';
@@ -18,11 +18,11 @@ import 'maintenance_reports_screen.dart';
 import 'maintenance_task_close_screen.dart';
 import 'maintenance_work_order_screen.dart';
 
-/// تبويبات لوحة الصيانة الثلاثة — أُضيف [inventory] (المخزون والقطع) لاحقًا
-/// (راجع inventory_screen.dart). مسؤول المخزون والمصمم (isInventoryOnlyRole
-/// في auth_service.dart) يريان تبويب المخزون فقط دائمًا بغض النظر عن قيمة
-/// [_MaintenanceDashboardScreenState._tab] — راجع build() أدناه.
-enum _DashTab { emergency, preventive, inventory }
+/// تبويبا لوحة الصيانة — "المخزون والقطع" كان تبويبًا ثالثًا هنا لفترة، ثم
+/// فُصل ليصير تبويبًا مستقلاً بالتنقل السفلي (راجع inventory_dashboard_screen.dart
+/// وmain.dart) بقرار من الإدارة أن لا يبقى محصورًا داخل لوحة الصيانة فقط،
+/// فعادت هذه اللوحة لتبويبيها الأصليين فقط.
+enum _DashTab { emergency, preventive }
 
 class MaintenanceDashboardScreen extends StatefulWidget {
   const MaintenanceDashboardScreen({super.key});
@@ -34,14 +34,45 @@ class MaintenanceDashboardScreen extends StatefulWidget {
 class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen> {
   _DashTab _tab = _DashTab.emergency;
 
+  // الحذف من هنا (لوحة العمل اليومية، أي حالة غير مكتمل) قرار صريح من
+  // الإدارة 2026-09-26: كان مقصورًا سابقًا على شاشة "الأعمال المنجزة" فقط —
+  // الآن مسؤول الصيانة/المدير يقدر يحذف أي مهمة بأي حالة من هنا مباشرة، بلا
+  // فتح شاشة التعديل. نفس نص التأكيد المستخدم في maintenance_completed_screen.dart.
+  Future<void> _confirmDelete(String reportId, String title) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حذف نهائي', style: TextStyle(fontSize: 15)),
+        content: Text(
+          'سيُحذف "$title" نهائيًا من قاعدة البيانات على السيرفر — يختفي من كل '
+          'الأجهزة، ويصل إشعار بذلك لجروب الصيانة والفنيين المُسنَدين. لا يمكن التراجع عن هذا الإجراء.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('إلغاء')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB3261E), foregroundColor: Colors.white),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await context.read<AppState>().deleteMaintenanceReport(reportId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم حذف العمل')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذّر الحذف: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final role = context.watch<AuthService>().currentUser?.role ?? AppRole.maintenanceTechnician;
-    // مسؤول المخزون والمصمم لا يريان بقية تبويبات الصيانة إطلاقًا (لا علاقة
-    // لهما بتوزيع/تنفيذ بلاغات الأعطال) — تبويب المخزون هو كل ما يخصهما.
-    final isInventoryOnly = isInventoryOnlyRole(role);
-    final tab = isInventoryOnly ? _DashTab.inventory : _tab;
+    final tab = _tab;
     // إنشاء "بلاغ وقائي جديد" (تبويب "أعمال وقائية") قرار صريح من الإدارة:
     // مسؤول الصيانة أو المدير فقط، وليس الفني — راجع نفس القيد الملزم فعليًا
     // على السيرفر في routes/workOrders.js (POST / يرفض kind: 'preventive' من
@@ -51,11 +82,9 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
     // الأعمال المنجزة لا تظهر في لوحة العمل اليومية هذه حتى لا تتراكم فيها
     // للأبد — تبقى متاحة (وقابلة للحذف نهائيًا) من شاشة "الأعمال المنجزة"
     // التي يفتحها زر شريط الأدوات بالأسفل.
-    final reports = tab == _DashTab.inventory
-        ? const <MaintenanceReport>[]
-        : state.maintenanceReports
-            .where((r) => (tab == _DashTab.emergency ? r.isEmergency : !r.isEmergency) && r.status != MaintenanceStatus.completed)
-            .toList();
+    final reports = state.maintenanceReports
+        .where((r) => (tab == _DashTab.emergency ? r.isEmergency : !r.isEmergency) && r.status != MaintenanceStatus.completed)
+        .toList();
 
     final now = DateTime.now();
     final completedThisMonth = state.maintenanceReports.where((r) =>
@@ -73,13 +102,8 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(isInventoryOnly ? 'المخزون والقطع' : 'الصيانة', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-        // كل هذه الإجراءات (بلاغات إنتاج/تصريح عمل/أعمال منجزة/تقارير) لا
-        // علاقة لها بمسؤول المخزون أو المصمم — تختفي كليًا لهما، فلا تظهر
-        // شاشة إدارية لا صلاحية لهما عليها أصلًا على السيرفر.
-        actions: isInventoryOnly
-            ? null
-            : [
+        title: const Text('الصيانة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        actions: [
                 // بلاغات إنتاج وصلت للتو ولم تتحوّل بعد إلى أمر عمل — راجع
                 // maintenance_incoming_incidents_screen.dart. الرقم يعكس فورًا أي
                 // بلاغ جديد يصل عبر الاستطلاع الدوري (نفس آلية جرس الإشعارات).
@@ -146,54 +170,54 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (tab != _DashTab.inventory) ...[
-                  Row(
+                Row(
+                  children: [
+                    KpiCard(value: avgResolutionLabel, label: 'متوسط وقت الإصلاح', valueColor: AppColors.maintenance),
+                    const SizedBox(width: 10),
+                    KpiCard(value: ArabicFormat.number(completedThisMonth), label: 'أعطال هذا الشهر', valueColor: AppColors.maintenance),
+                    const SizedBox(width: 10),
+                    KpiCard(value: '٪${ArabicFormat.toEasternDigits(preventiveRatio)}', label: 'نسبة الوقائي', valueColor: AppColors.maintenance),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(12)),
+                  child: Row(
                     children: [
-                      KpiCard(value: avgResolutionLabel, label: 'متوسط وقت الإصلاح', valueColor: AppColors.maintenance),
-                      const SizedBox(width: 10),
-                      KpiCard(value: ArabicFormat.number(completedThisMonth), label: 'أعطال هذا الشهر', valueColor: AppColors.maintenance),
-                      const SizedBox(width: 10),
-                      KpiCard(value: '٪${ArabicFormat.toEasternDigits(preventiveRatio)}', label: 'نسبة الوقائي', valueColor: AppColors.maintenance),
+                      Expanded(child: _Segment(label: 'الأعطال الطارئة', selected: tab == _DashTab.emergency, onTap: () => setState(() => _tab = _DashTab.emergency))),
+                      Expanded(child: _Segment(label: 'أعمال وقائية', selected: tab == _DashTab.preventive, onTap: () => setState(() => _tab = _DashTab.preventive))),
                     ],
                   ),
-                  const SizedBox(height: 14),
-                ],
-                // مسؤول المخزون والمصمم لا يريان شريط التبديل هذا إطلاقًا —
-                // تبويب المخزون هو كل ما يظهر لهما، فلا فائدة من شريط بخيار
-                // واحد فقط. باقي الأدوار يرون التبويبات الثلاثة معًا.
-                if (!isInventoryOnly) ...[
-                  Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(12)),
-                    child: Row(
-                      children: [
-                        Expanded(child: _Segment(label: 'الأعطال الطارئة', selected: tab == _DashTab.emergency, onTap: () => setState(() => _tab = _DashTab.emergency))),
-                        Expanded(child: _Segment(label: 'أعمال وقائية', selected: tab == _DashTab.preventive, onTap: () => setState(() => _tab = _DashTab.preventive))),
-                        Expanded(child: _Segment(label: 'المخزون', selected: tab == _DashTab.inventory, onTap: () => setState(() => _tab = _DashTab.inventory))),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                ],
+                ),
+                const SizedBox(height: 14),
                 Expanded(
-                  child: tab == _DashTab.inventory
-                      ? const InventorySection()
-                      : (reports.isEmpty
-                          ? const Center(child: Text('لا توجد بلاغات جارية', style: TextStyle(color: AppColors.textMuted)))
-                          : ListView.separated(
-                              itemCount: reports.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 10),
-                              itemBuilder: (context, i) => MaintenanceReportCard(report: reports[i]),
-                            )),
+                  child: reports.isEmpty
+                      ? const Center(child: Text('لا توجد بلاغات جارية', style: TextStyle(color: AppColors.textMuted)))
+                      : ListView.separated(
+                          itemCount: reports.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 10),
+                          itemBuilder: (context, i) {
+                            final r = reports[i];
+                            return MaintenanceReportCard(
+                              report: r,
+                              onEdit: canManage
+                                  ? () => Navigator.of(context).push(
+                                        MaterialPageRoute(builder: (_) => MaintenanceEditScreen(report: r)),
+                                      )
+                                  : null,
+                              onDelete: canManage ? () => _confirmDelete(r.id, '${r.equipment} — ${r.line}') : null,
+                            );
+                          },
+                        ),
                 ),
               ],
             ),
           ),
           // زر الإضافة (+) يظهر دائمًا لتبويب "الأعطال الطارئة"، لكن لا يظهر
           // إطلاقًا لتبويب "أعمال وقائية" إلا لمسؤول الصيانة أو المدير —
-          // بدل إظهاره ثم رفض السيرفر الطلب برسالة خطأ بعد الضغط عليه. تبويب
-          // "المخزون" له أزرار إضافة خاصة به داخل InventorySection نفسها.
-          if (tab != _DashTab.inventory && (tab == _DashTab.emergency || canManage))
+          // بدل إظهاره ثم رفض السيرفر الطلب برسالة خطأ بعد الضغط عليه.
+          if (tab == _DashTab.emergency || canManage)
             Positioned(
               bottom: 20,
               left: 20,
@@ -250,12 +274,16 @@ class _Segment extends StatelessWidget {
 
 /// بطاقة عرض بلاغ/أمر عمل صيانة — مستخدمة في لوحة العمل اليومية وفي شاشة
 /// الأعمال المنجزة (maintenance_completed_screen.dart) معًا. تمرير [onDelete]
-/// يضيف زر حذف نهائي للبطاقة (يُستخدم فقط للأعمال المنجزة المؤرشفة).
+/// يضيف زر حذف نهائي للبطاقة (كان يُستخدم فقط للأعمال المنجزة المؤرشفة، ثم
+/// صار متاحًا أيضًا للوحة العمل اليومية بأي حالة — قرار 2026-09-26). تمرير
+/// [onEdit] يضيف زر "تعديل" (قلم) يفتح شاشة تعديل المهمة — لمسؤول
+/// الصيانة/المدير فقط، مطابقةً لقيد السيرفر (requireRole('maintenance_manager')).
 class MaintenanceReportCard extends StatelessWidget {
   final MaintenanceReport report;
+  final VoidCallback? onEdit;
   final VoidCallback? onDelete;
 
-  const MaintenanceReportCard({super.key, required this.report, this.onDelete});
+  const MaintenanceReportCard({super.key, required this.report, this.onEdit, this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -326,6 +354,18 @@ class MaintenanceReportCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                if (onEdit != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: InkWell(
+                      onTap: onEdit,
+                      borderRadius: BorderRadius.circular(8),
+                      child: const Padding(
+                        padding: EdgeInsets.all(2),
+                        child: Icon(Icons.edit_outlined, size: 18, color: AppColors.maintenance),
+                      ),
+                    ),
+                  ),
                 StatusPill(label: statusInfo.label, color: statusInfo.color, background: statusInfo.bg),
                 if (onDelete != null)
                   Padding(
@@ -343,6 +383,14 @@ class MaintenanceReportCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(report.description, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+            // اسم/أسماء الفنيين المُسنَدين — قرار صريح 2026-09-26: يظهر لكل من
+            // يرى البطاقة أصلًا (فني مُسنَد لها أو مسؤول/مدير)، ليعرف الفني من
+            // يشاركه المهمة. لا يظهر شيء طالما "بانتظار التعيين" (لا فني بعد).
+            if (report.technicianDisplayNames != '—') ...[
+              const SizedBox(height: 4),
+              Text('الفنيون: ${report.technicianDisplayNames}',
+                  style: const TextStyle(fontSize: 12, color: AppColors.textMuted, fontWeight: FontWeight.w600)),
+            ],
             const SizedBox(height: 6),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
