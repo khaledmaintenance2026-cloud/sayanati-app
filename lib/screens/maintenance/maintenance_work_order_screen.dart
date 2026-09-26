@@ -117,27 +117,17 @@ class _MaintenanceWorkOrderScreenState extends State<MaintenanceWorkOrderScreen>
                   const SizedBox(height: 14),
                   const Text('الفني المسؤول (يمكن اختيار أكثر من فني)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
                   const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: state.technicians.map((t) {
-                      final selected = _selectedTechIds.contains(t.id);
-                      return FilterChip(
-                        label: Text(t.name),
-                        selected: selected,
-                        selectedColor: AppColors.maintenance.withOpacity(0.14),
-                        checkmarkColor: AppColors.maintenance,
-                        labelStyle: TextStyle(color: selected ? AppColors.maintenance : AppColors.textSecondary, fontWeight: FontWeight.w600, fontSize: 12.5),
-                        side: BorderSide(color: selected ? AppColors.maintenance : AppColors.border),
-                        onSelected: (v) => setState(() {
-                          if (v) {
-                            _selectedTechIds.add(t.id);
-                          } else {
-                            _selectedTechIds.remove(t.id);
-                          }
-                        }),
-                      );
-                    }).toList(),
+                  TechnicianChipPicker(
+                    technicians: state.technicians,
+                    selectedIds: _selectedTechIds,
+                    color: AppColors.maintenance,
+                    onToggle: (id) => setState(() {
+                      if (_selectedTechIds.contains(id)) {
+                        _selectedTechIds.remove(id);
+                      } else {
+                        _selectedTechIds.add(id);
+                      }
+                    }),
                   ),
                   const SizedBox(height: 14),
                   const Text('تكرار التذكير (كل كم يوم)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
