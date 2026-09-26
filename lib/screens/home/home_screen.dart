@@ -20,10 +20,13 @@ class HomeScreen extends StatelessWidget {
     final openReports = state.openEmergencyReports.length;
     final activeLines = state.productionLines.where((l) => l.activeToday).length;
     final pendingPermits = state.permits.where((p) => p.status.name == 'pending').length;
+    final lowStockItems = state.inventoryItems.where((i) => i.isLow).length;
 
-    // مسؤول المخزون والمصمم يدخلان قسم "الصيانة" أيضًا (يريان تبويب "المخزون"
-    // فقط بمجرد الدخول — راجع isInventoryOnlyRole في maintenance_dashboard_screen.dart).
-    final showMaintenance = role == AppRole.admin || isMaintenanceRole(role) || isInventoryOnlyRole(role);
+    final showMaintenance = role == AppRole.admin || isMaintenanceRole(role);
+    // "المخزون" بطاقة مستقلة الآن (تبويب مستقل — راجع inventory_dashboard_screen.dart
+    // وmain.dart)، لكنها تبقى مقصورة على فريق الصيانة والمخزون فقط (فني/مسؤول
+    // صيانة، مسؤول المخزون، المصمم) بقرار من الإدارة رغم استقلاليتها.
+    final showInventory = role == AppRole.admin || isMaintenanceRole(role) || isInventoryOnlyRole(role);
     final showProduction = role == AppRole.admin || isProductionRole(role);
     final showSafety = role == AppRole.admin || role == AppRole.safety;
 
@@ -127,6 +130,16 @@ class HomeScreen extends StatelessWidget {
                 title: 'الصيانة',
                 subtitle: '$openReports بلاغات مفتوحة الآن',
                 onTap: () => onSelectModule?.call('maintenance'),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (showInventory) ...[
+              _ModuleCard(
+                icon: Icons.inventory_2_outlined,
+                color: AppColors.inventory,
+                title: 'المخزون',
+                subtitle: lowStockItems > 0 ? '$lowStockItems أصناف منخفضة' : 'المخزون بحالة جيدة',
+                onTap: () => onSelectModule?.call('inventory'),
               ),
               const SizedBox(height: 12),
             ],
