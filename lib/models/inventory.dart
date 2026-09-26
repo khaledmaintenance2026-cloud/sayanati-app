@@ -12,6 +12,10 @@ class InventoryItem {
   final int quantity;
   final int? minQuantity;
   final String? notes;
+  final String? supplierId;
+  final String? supplierName;
+  final String? siteId;
+  final String? siteName;
 
   const InventoryItem({
     required this.id,
@@ -21,6 +25,10 @@ class InventoryItem {
     required this.quantity,
     this.minQuantity,
     this.notes,
+    this.supplierId,
+    this.supplierName,
+    this.siteId,
+    this.siteName,
   });
 
   /// منخفض — الكمية المتوفرة عند أو تحت الحد الأدنى المحدَّد (لو حُدِّد أصلًا).
@@ -34,6 +42,95 @@ class InventoryItem {
         quantity: (d['quantity'] as num?)?.round() ?? 0,
         minQuantity: (d['min_quantity'] as num?)?.round(),
         notes: d['notes'] as String?,
+        supplierId: d['supplier_id']?.toString(),
+        supplierName: d['supplier_name'] as String?,
+        siteId: d['site_id']?.toString(),
+        siteName: d['site_name'] as String?,
+      );
+}
+
+/// حركة واحدة في سجل حركات المخزون [InventoryMovement] — عرض للمراجعة
+/// والتدقيق فقط (سجل دائم لا يُعدَّل من التطبيق)، يعكس جدول
+/// inventory_movements على السيرفر كما هو. راجع services/inventoryMovements.js
+/// (logMovement) وroutes/inventory.js وroutes/custody.js لشرح متى تُنشأ كل
+/// حركة. ستة أنواع (بعد أن كانت أربعة) — الأنواع الجديدة الأربعة الأخيرة
+/// (custodyIssue/custodyReturn/stockReconciliation) تُضاف هنا لتطابق تصنيف
+/// نظام "مخزني بلس" المرجعي بالضبط: توريد، صرف استهلاكي، صرف معدات،
+/// إعادة معدات، تسوية جرد، تعديل مخزون.
+enum InventoryMovementType {
+  supply,
+  consumableIssue,
+  custodyIssue,
+  custodyReturn,
+  stockReconciliation,
+  stockAdjustment,
+}
+
+InventoryMovementType _movementTypeFromApi(String? s) {
+  switch (s) {
+    case 'supply':
+      return InventoryMovementType.supply;
+    case 'consumable_issue':
+      return InventoryMovementType.consumableIssue;
+    case 'custody_issue':
+      return InventoryMovementType.custodyIssue;
+    case 'custody_return':
+      return InventoryMovementType.custodyReturn;
+    case 'stock_reconciliation':
+      return InventoryMovementType.stockReconciliation;
+    default: // stock_adjustment
+      return InventoryMovementType.stockAdjustment;
+  }
+}
+
+/// مصدر الحركة — 'inventory' (كتالوج المخزون الاستهلاكي) أو 'custody'
+/// (كتالوج العهدة). حركات العهدة بلا كمية رقمية أصلًا (quantityDelta/
+/// quantityAfter تُترك null من السيرفر لها) — كل عدة عنصر واحد بحالة
+/// متاح/مُسلَّم لا رصيد له.
+enum InventoryMovementSource { inventory, custody }
+
+InventoryMovementSource _movementSourceFromApi(String? s) =>
+    s == 'custody' ? InventoryMovementSource.custody : InventoryMovementSource.inventory;
+
+class InventoryMovement {
+  final String id;
+  final String? itemId;
+  final String itemName;
+  final InventoryMovementType type;
+  final InventoryMovementSource source;
+  final int? quantityDelta;
+  final int? quantityAfter;
+  final String? partRequestId;
+  final String performedBy;
+  final String? notes;
+  final DateTime createdAt;
+
+  const InventoryMovement({
+    required this.id,
+    this.itemId,
+    required this.itemName,
+    required this.type,
+    required this.source,
+    this.quantityDelta,
+    this.quantityAfter,
+    this.partRequestId,
+    required this.performedBy,
+    this.notes,
+    required this.createdAt,
+  });
+
+  factory InventoryMovement.fromApi(Map<String, dynamic> d) => InventoryMovement(
+        id: d['id'].toString(),
+        itemId: d['item_id']?.toString(),
+        itemName: (d['item_name'] as String?) ?? '',
+        type: _movementTypeFromApi(d['type'] as String?),
+        source: _movementSourceFromApi(d['source'] as String?),
+        quantityDelta: (d['quantity_delta'] as num?)?.round(),
+        quantityAfter: (d['quantity_after'] as num?)?.round(),
+        partRequestId: d['part_request_id']?.toString(),
+        performedBy: (d['performed_by'] as String?) ?? '',
+        notes: d['notes'] as String?,
+        createdAt: DateTime.tryParse(d['created_at']?.toString() ?? '') ?? DateTime.now(),
       );
 }
 
