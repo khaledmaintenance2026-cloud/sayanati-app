@@ -379,6 +379,63 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// تعديل بيانات مهمة/بلاغ قائم بعد الإنشاء (الوصف، الموقع، كود/اسم المعدة،
+  /// نوع المهمة) — مقصور على مسؤول الصيانة/المدير على السيرفر (PATCH
+  /// /work-orders/:id)، قرار صريح 2026-09-26. كل معامل اختياري: يُرسَل فقط
+  /// لو مُرِّر فعليًا، فيتحقق تعديل جزئي (حقل واحد فقط مثلًا) بلا مساس بالباقي.
+  Future<void> updateWorkOrder(
+    String reportId, {
+    String? description,
+    String? facility,
+    String? equipmentName,
+    String? equipmentCode,
+    String? taskScope,
+  }) async {
+    final body = <String, dynamic>{};
+    if (description != null) body['description'] = description.trim();
+    if (facility != null) body['facility'] = facility.trim();
+    if (equipmentName != null) body['equipmentName'] = equipmentName.trim();
+    if (equipmentCode != null) body['equipmentCode'] = equipmentCode.trim();
+    if (taskScope != null) body['taskScope'] = taskScope;
+    if (body.isEmpty) return;
+
+    final data = await _api.patch('/work-orders/$reportId', body);
+    final updated = MaintenanceReport.fromApi(data['workOrder'] as Map<String, dynamic>);
+    final i = maintenanceReports.indexWhere((r) => r.id == reportId);
+    if (i != -1) maintenanceReports[i] = updated;
+    _log('تم تعديل بيانات "${updated.equipment}"');
+    notifyListeners();
+  }
+
+  /// كل الفنيين المُسنَدين لمهمة/أمر عمل معيّن (معرّف + اسم + جوال) — يُستدعى
+  /// فقط عند فتح شاشة تعديل المهمة (بعكس technicianDisplayNames الجاهز أصلًا
+  /// على MaintenanceReport، وهو نص عرض فقط بلا معرّفات تصلح لإزالة فني بعينه).
+  Future<List<Technician>> fetchWorkOrderTechnicians(String reportId) async {
+    final data = await _api.get('/work-orders/$reportId/technicians');
+    final list = (data['technicians'] as List<dynamic>? ?? [])
+        .map((t) => Technician.fromApi(t as Map<String, dynamic>))
+        .toList();
+    return list;
+  }
+
+  /// إزالة فني واحد بعينه من مهمة/أمر عمل — بعكس [assignTechnicians] الذي
+  /// يُضيف فقط ولا يقدر يزيل أحدًا. مقصور على مسؤول الصيانة/المدير على
+  /// السيرفر (DELETE /work-orders/:id/technicians/:techId)، قرار صريح
+  /// 2026-09-26. الفني المُزال يعود "متاح" فورًا (إلا لو كان مشغولًا فعليًا
+  /// بأمر عمل آخر مفتوح — السيرفر يتحقق من هذا بنفسه).
+  Future<void> removeTechnicianFromWorkOrder(String reportId, String technicianId) async {
+    final data = await _api.delete('/work-orders/$reportId/technicians/$technicianId');
+    final updated = MaintenanceReport.fromApi(data['workOrder'] as Map<String, dynamic>);
+    final i = maintenanceReports.indexWhere((r) => r.id == reportId);
+    if (i != -1) maintenanceReports[i] = updated;
+    // لا نُحدِّث technicians[].available تفاؤليًا هنا (بعكس assignTechnicians)
+    // — السيرفر قد يُبقي الفني "مشغولًا" فعليًا لو كان مُسنَدًا لأمر عمل آخر
+    // مفتوح غير هذا، فتحديث متفائل هنا قد يعرض "متاح" خطأً؛ يُصحَّح تلقائيًا
+    // مع أول تحديث دوري لقائمة الفنيين.
+    _log('تم إزالة فني من "${updated.equipment}"');
+    notifyListeners();
+  }
+
   Future<void> closeReport(
     String reportId, {
     required String closeDescription,
