@@ -9,6 +9,9 @@ class AppColors {
   static const Color production = Color(0xFF1F7A63); // أخضر مطفي
   static const Color safety = Color(0xFFFEBD10); // كهرماني/أصفر
   static const Color safetyText = Color(0xFF7A5100); // نص فوق خلفية السلامة الفاتحة
+  // لون قسم "المخزون والقطع" المستقل (فُصل عن الصيانة لاحقًا) — بنفسجي مائل
+  // للنيلي، متمايز بوضوح عن كحلي الصيانة وأخضر الإنتاج وأصفر السلامة.
+  static const Color inventory = Color(0xFF6C4BA6);
 
   // محايدة
   static const Color background = Color(0xFFF5F6F8);
