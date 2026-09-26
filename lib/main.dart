@@ -13,6 +13,7 @@ import 'screens/auth/complete_phone_screen.dart';
 import 'screens/auth/pending_approval_screen.dart';
 import 'screens/auth/welcome_screen.dart';
 import 'screens/home/home_screen.dart';
+import 'screens/maintenance/inventory_dashboard_screen.dart';
 import 'screens/maintenance/maintenance_dashboard_screen.dart';
 import 'screens/production/production_lines_screen.dart';
 import 'screens/safety/safety_home_screen.dart';
@@ -234,9 +235,13 @@ class _RootNavState extends State<RootNav> {
   List<String> _buildKeys(BuildContext context) {
     final role = context.read<AuthService>().currentUser?.role ?? AppRole.production;
     final keys = <String>['home'];
-    // مسؤول المخزون والمصمم يدخلان قسم الصيانة أيضًا (يريان تبويب "المخزون"
-    // فقط — راجع isInventoryOnlyRole وnفس التعليق في home_screen.dart).
-    if (role == AppRole.admin || isMaintenanceRole(role) || isInventoryOnlyRole(role)) keys.add('maintenance');
+    if (role == AppRole.admin || isMaintenanceRole(role)) keys.add('maintenance');
+    // "المخزون" تبويب مستقل الآن (فُصل عن لوحة الصيانة — راجع
+    // inventory_dashboard_screen.dart)، لكنه يبقى مقصورًا على فريق الصيانة
+    // والمخزون فقط (فني/مسؤول صيانة، مسؤول المخزون، المصمم) بقرار من الإدارة
+    // — لم يُفتح لبقية الأقسام رغم استقلاليته. راجع نفس التعليق في
+    // home_screen.dart.
+    if (role == AppRole.admin || isMaintenanceRole(role) || isInventoryOnlyRole(role)) keys.add('inventory');
     if (role == AppRole.admin || isProductionRole(role)) keys.add('production');
     if (role == AppRole.admin || role == AppRole.safety) keys.add('safety');
     if (role == AppRole.admin) keys.add('admin');
@@ -251,6 +256,7 @@ class _RootNavState extends State<RootNav> {
     final screens = <String, Widget>{
       'home': HomeScreen(role: role, onSelectModule: _goToModule),
       'maintenance': const MaintenanceDashboardScreen(),
+      'inventory': const InventoryDashboardScreen(),
       'production': const ProductionLinesScreen(),
       'safety': const SafetyHomeScreen(),
       'admin': const AdminHomeScreen(),
@@ -258,6 +264,7 @@ class _RootNavState extends State<RootNav> {
     final items = <String, BottomNavigationBarItem>{
       'home': const BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'الرئيسية'),
       'maintenance': const BottomNavigationBarItem(icon: Icon(Icons.build_outlined), label: 'الصيانة'),
+      'inventory': const BottomNavigationBarItem(icon: Icon(Icons.inventory_2_outlined), label: 'المخزون'),
       'production': const BottomNavigationBarItem(icon: Icon(Icons.factory_outlined), label: 'الإنتاج'),
       'safety': const BottomNavigationBarItem(icon: Icon(Icons.shield_outlined), label: 'السلامة'),
       'admin': const BottomNavigationBarItem(icon: Icon(Icons.admin_panel_settings_outlined), label: 'الإدارة'),
