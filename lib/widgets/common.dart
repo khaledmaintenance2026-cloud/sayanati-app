@@ -1,6 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../models/technician.dart';
 import '../theme/app_theme.dart';
+
+/// تنسيق موحّد لحقول النماذج (TextField/DropdownButtonFormField) في كل شاشات
+/// التطبيق تقريبًا — إطار خفيف بلون AppColors.border وحواف دائرية. مُستخرَج
+/// هنا كي تستخدمه شاشات الموردين ومواقع العمل (inventory_suppliers_screen.dart
+/// وinventory_work_sites_screen.dart) بلا تكرار محلي في كل ملف.
+InputDecoration fieldDecoration({String? hint}) {
+  return InputDecoration(
+    hintText: hint,
+    filled: true,
+    fillColor: AppColors.surface,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(13), borderSide: const BorderSide(color: AppColors.border)),
+    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(13), borderSide: const BorderSide(color: AppColors.border)),
+  );
+}
 
 /// شريط علوي موحّد بزر رجوع وعنوان، مطابق لتصميم الشاشات المعتمد.
 class ScreenTopBar extends StatelessWidget implements PreferredSizeWidget {
@@ -141,6 +157,82 @@ class InfoNote extends StatelessWidget {
           Expanded(child: Text(text, style: TextStyle(fontSize: 12.5, color: color))),
         ],
       ),
+    );
+  }
+}
+
+/// شبكة اختيار فنيين متعددة (Wrap من FilterChip) لشاشات إنشاء أمر عمل/مهمة
+/// جديدة — نفس القاعدة المطبَّقة في شاشة "إضافة فني" لبلاغ قائم
+/// (maintenance_assign_screen.dart: تعطيل اختيار الفني غير المتاح + توضيح
+/// حالته) لكن بشكل شرائح أفقية يلائم شاشة إنشاء جديدة بدل قائمة بطاقات
+/// عمودية. قبل هذا الودجت كانت شاشتا "أمر عمل وقائي جديد" و"إنشاء مهمة عمل"
+/// تعرضان كل الفنيين كشرائح عادية بلا أي تمييز بينهما بتاتًا، فيسهل تعيين فني
+/// مشغول أو في إجازة فعليًا بالخطأ — بينما شاشة "إضافة فني" وحدها كانت تُظهر
+/// الفرق بشكل صحيح؛ هذا ما دفع العميل لملاحظة تراكم الفنيين "غير متاحين" عند
+/// إنشاء أعمال طارئة/مهام تحديدًا (2026-09-26). يبقى PATCH
+/// /work-orders/:id/assign بالسيرفر هو الفاصل الملزم فعليًا (راجع تعليقه) —
+/// هذا فقط يمنع الخطأ من الواجهة قبل الإرسال ويوضّح سببه للمستخدم.
+class TechnicianChipPicker extends StatelessWidget {
+  final List<Technician> technicians;
+  final Set<String> selectedIds;
+  final ValueChanged<String> onToggle;
+  final Color color;
+
+  const TechnicianChipPicker({
+    super.key,
+    required this.technicians,
+    required this.selectedIds,
+    required this.onToggle,
+    required this.color,
+  });
+
+  static String _statusSuffix(Technician t) {
+    switch (t.status) {
+      case 'on_leave':
+        return ' — إجازة';
+      case 'busy':
+        return ' — مشغول';
+      default:
+        return '';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final anyUnavailable = technicians.any((t) => !t.available);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: technicians.map((t) {
+            final selected = selectedIds.contains(t.id);
+            final available = t.available;
+            return FilterChip(
+              label: Text('${t.name}${available ? '' : _statusSuffix(t)}'),
+              selected: selected,
+              selectedColor: color.withOpacity(0.14),
+              checkmarkColor: color,
+              backgroundColor: available ? null : AppColors.divider,
+              labelStyle: TextStyle(
+                color: !available ? AppColors.textFaint : (selected ? color : AppColors.textSecondary),
+                fontWeight: FontWeight.w600,
+                fontSize: 12.5,
+              ),
+              side: BorderSide(color: !available ? AppColors.divider : (selected ? color : AppColors.border)),
+              onSelected: available ? (_) => onToggle(t.id) : null,
+            );
+          }).toList(),
+        ),
+        if (anyUnavailable) ...[
+          const SizedBox(height: 6),
+          const Text(
+            'الفنيون الباهتون غير متاحين حاليًا (مشغولون بأمر آخر أو في إجازة) ولا يمكن اختيارهم',
+            style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+          ),
+        ],
+      ],
     );
   }
 }
