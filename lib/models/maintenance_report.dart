@@ -66,6 +66,12 @@ class MaintenanceReport {
   final bool isTask;
   final String? taskScope; // 'internal' | 'external' — فقط عند isTask == true
 
+  /// رقم الباتش المتوقع (اختياري) — يصل من بلاغ الإنتاج الأصلي إن وُجد (نُسخ
+  /// تلقائيًا عند تحويل البلاغ لأمر عمل). يُستخدم فقط لعرض تنبيه "بانتظار
+  /// تسجيله" في شاشة تعديل أمر العمل قبل أن تُربط أي باتشات به فعليًا —
+  /// الربط الفعلي يحدث تلقائيًا على السيرفر (راجع findAutoLinkWorkOrder).
+  final String? expectedBatchNumber;
+
   MaintenanceReport({
     required this.id,
     required this.equipment,
@@ -87,6 +93,7 @@ class MaintenanceReport {
     this.reminderIntervalDays,
     this.isTask = false,
     this.taskScope,
+    this.expectedBatchNumber,
   }) : assignedTechnicianIds = assignedTechnicianIds ?? [];
 
   /// يبني بلاغ/أمر عمل صيانة من استجابة سيرفر صيانتي المحلي (جدول
@@ -112,6 +119,7 @@ class MaintenanceReport {
         reminderIntervalDays: (d['reminder_interval_days'] as num?)?.round(),
         isTask: (d['is_task'] as bool?) ?? false,
         taskScope: d['task_scope'] as String?,
+        expectedBatchNumber: d['expected_batch_number'] as String?,
       );
 
   /// اسم/أسماء الفني(ين) الجاهزة للعرض — تُفضّل قائمة الفنيين المتعددين
