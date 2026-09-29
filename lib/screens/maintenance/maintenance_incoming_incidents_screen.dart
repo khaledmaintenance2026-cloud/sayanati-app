@@ -134,6 +134,20 @@ class _MaintenanceIncomingIncidentsScreenState extends State<MaintenanceIncoming
                                       const SizedBox(height: 4),
                                     ],
                                     Text(incident.description, style: const TextStyle(fontSize: 13.5)),
+                                    if (incident.expectedBatchNumber != null && incident.expectedBatchNumber!.isNotEmpty) ...[
+                                      const SizedBox(height: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.maintenance.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          'الباتش المتوقع: ${incident.expectedBatchNumber} — سيُربط تلقائيًا عند تسجيله',
+                                          style: const TextStyle(fontSize: 11, color: AppColors.maintenance, fontWeight: FontWeight.w600),
+                                        ),
+                                      ),
+                                    ],
                                     const SizedBox(height: 8),
                                     Text(
                                       'بلّغ: ${incident.reportedBy} — ${ArabicFormat.dateTime(incident.reportedAt)} — توقف: ${ArabicFormat.duration(Duration(minutes: incident.downtimeMinutes))}',
