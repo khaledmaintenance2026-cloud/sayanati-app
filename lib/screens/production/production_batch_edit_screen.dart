@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/batch_edit.dart';
+import '../../models/maintenance_report.dart';
 import '../../models/production.dart';
 import '../../services/app_state.dart';
 import '../../services/arabic_format.dart';
@@ -35,6 +36,10 @@ class _ProductionBatchEditScreenState extends State<ProductionBatchEditScreen> {
   bool _hasStoppage = false;
   bool _submitting = false;
 
+  /// أمر الصيانة الفعلي المرتبط بهذا الباتش (اختياري) — راجع نفس الحقل في
+  /// production_batch_form_screen.dart لشرح كامل لمنطق الربط/الحساب التلقائي.
+  String? _workOrderId;
+
   @override
   void initState() {
     super.initState();
@@ -50,6 +55,7 @@ class _ProductionBatchEditScreenState extends State<ProductionBatchEditScreen> {
     _preventionMethodsCtrl = TextEditingController(text: b.preventionMethods ?? '');
     _occurredDate = b.date;
     _hasStoppage = b.hasStoppage;
+    _workOrderId = b.workOrderId;
   }
 
   @override
@@ -81,7 +87,7 @@ class _ProductionBatchEditScreenState extends State<ProductionBatchEditScreen> {
     final qty = int.tryParse(_qtyCtrl.text.trim());
     if (_batchNumberCtrl.text.trim().isEmpty) return false;
     if (_productCtrl.text.trim().isEmpty || qty == null || qty <= 0) return false;
-    if (_hasStoppage && _reasonCtrl.text.trim().isEmpty) return false;
+    if (_workOrderId == null && _hasStoppage && _reasonCtrl.text.trim().isEmpty) return false;
     return true;
   }
 
@@ -98,19 +104,25 @@ class _ProductionBatchEditScreenState extends State<ProductionBatchEditScreen> {
       now.second,
     );
     try {
+      // workOrderId/unlinkWorkOrder يُرسَلان دائمًا (لا بالشرط if != null)
+      // ليعكسا حالة الربط الحالية بدقة — راجع editBatchCloud في app_state.dart.
+      // لو رُبط بأمر صيانة، يتجاهل السيرفر حقول التوقف اليدوية أدناه ويحسبها
+      // بنفسه من بيانات الأمر (راجع routes/production.js — PATCH /batches/:id).
       await context.read<AppState>().editBatchCloud(
             b.id,
             batchNumber: _batchNumberCtrl.text.trim(),
             productName: _productCtrl.text.trim(),
             quantity: int.parse(_qtyCtrl.text.trim()),
             occurredAt: occurredAt,
+            workOrderId: _workOrderId,
+            unlinkWorkOrder: _workOrderId == null,
             hasStoppage: _hasStoppage,
             stoppageReason: _hasStoppage ? _reasonCtrl.text.trim() : '',
             stoppageMinutes: _hasStoppage ? int.tryParse(_minutesCtrl.text.trim()) : 0,
             operationalNotes: _operationalNotesCtrl.text.trim(),
-            actionsTaken: _hasStoppage ? _actionsTakenCtrl.text.trim() : '',
+            actionsTaken: (_workOrderId != null || _hasStoppage) ? _actionsTakenCtrl.text.trim() : '',
             workersCount: int.tryParse(_workersCtrl.text.trim()) ?? 0,
-            preventionMethods: _hasStoppage ? _preventionMethodsCtrl.text.trim() : '',
+            preventionMethods: (_workOrderId != null || _hasStoppage) ? _preventionMethodsCtrl.text.trim() : '',
           );
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -135,6 +147,15 @@ class _ProductionBatchEditScreenState extends State<ProductionBatchEditScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final workOrders = context.watch<AppState>().openWorkOrdersForLinking;
+    // أمر العمل المرتبط حاليًا قد يكون أُنجز/أُغلق فعلاً (فلا يظهر ضمن
+    // openWorkOrdersForLinking بعد الآن) — نضيفه للقائمة صراحة حتى يبقى
+    // ظاهرًا ومُختارًا في القائمة المنسدلة بدل اختفائه فجأة عند فتح الشاشة.
+    final currentLinked = _workOrderId == null ? null : context.read<AppState>().maintenanceReportById(_workOrderId!);
+    final dropdownOptions = [
+      ...workOrders,
+      if (currentLinked != null && !workOrders.any((r) => r.id == currentLinked.id)) currentLinked,
+    ];
     return Scaffold(
       appBar: ScreenTopBar(
         title: 'تعديل باتش — ${widget.line.name}',
@@ -185,29 +206,74 @@ class _ProductionBatchEditScreenState extends State<ProductionBatchEditScreen> {
                   const _Label('عدد العمال'),
                   TextField(controller: _workersCtrl, keyboardType: TextInputType.number, decoration: _decoration()),
                   const SizedBox(height: 18),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(color: AppColors.surface, border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(14)),
-                    child: Row(
-                      children: [
-                        const Expanded(
-                          child: Text('هل حدث توقف أثناء هذا الباتش؟', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  const _Label('ربط بأمر صيانة فعلي (اختياري)'),
+                  DropdownButtonFormField<String?>(
+                    value: _workOrderId,
+                    decoration: _decoration(),
+                    isExpanded: true,
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('بدون ربط — إدخال بيانات التوقف يدويًا', style: TextStyle(color: AppColors.textMuted)),
+                      ),
+                      ...dropdownOptions.map(
+                        (r) => DropdownMenuItem<String?>(
+                          value: r.id,
+                          child: Text(_workOrderLabel(r), overflow: TextOverflow.ellipsis),
                         ),
-                        Switch(
-                          value: _hasStoppage,
-                          activeColor: AppColors.safety,
-                          onChanged: (v) => setState(() => _hasStoppage = v),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
+                    onChanged: (v) => setState(() => _workOrderId = v),
                   ),
-                  if (_hasStoppage) ...[
+                  const SizedBox(height: 6),
+                  const Text(
+                    'لو اخترت أمر صيانة، تُحسَب مدة وسبب التوقف تلقائيًا من بياناته الفعلية بدل إدخالهما يدويًا.',
+                    style: TextStyle(fontSize: 11.5, color: AppColors.textMuted, height: 1.5),
+                  ),
+                  const SizedBox(height: 14),
+                  if (_workOrderId != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(color: AppColors.maintenance.withOpacity(0.08), borderRadius: BorderRadius.circular(14)),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.link, size: 18, color: AppColors.maintenance),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'سيُسجَّل هذا الباتش كمتوقف بسبب أمر الصيانة المختار، وتُحدَّث المدة تلقائيًا عند إنجازه.',
+                              style: TextStyle(fontSize: 12, color: AppColors.maintenance, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(color: AppColors.surface, border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(14)),
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text('هل حدث توقف أثناء هذا الباتش؟', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                          ),
+                          Switch(
+                            value: _hasStoppage,
+                            activeColor: AppColors.safety,
+                            onChanged: (v) => setState(() => _hasStoppage = v),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (_workOrderId == null && _hasStoppage) ...[
                     const SizedBox(height: 14),
                     const _Label('سبب التوقف'),
                     TextField(controller: _reasonCtrl, decoration: _decoration(), onChanged: (_) => setState(() {})),
                     const SizedBox(height: 14),
                     const _Label('مدة التوقف (بالدقائق)'),
                     TextField(controller: _minutesCtrl, keyboardType: TextInputType.number, decoration: _decoration()),
+                  ],
+                  if (_workOrderId != null || _hasStoppage) ...[
                     const SizedBox(height: 14),
                     const _Label('الحلول والإجراءات المتخذة'),
                     TextField(controller: _actionsTakenCtrl, maxLines: 3, decoration: _decoration()),
@@ -314,6 +380,15 @@ class _Label extends StatelessWidget {
       child: Text(text, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
     );
   }
+}
+
+// نص مختصر لعنصر أمر عمل ضمن قائمة الربط — راجع نفس الدالة في
+// production_batch_form_screen.dart.
+String _workOrderLabel(MaintenanceReport r) {
+  final title = r.equipment.isNotEmpty
+      ? r.equipment
+      : (r.description.length > 30 ? '${r.description.substring(0, 30)}…' : r.description);
+  return '$title — ${maintenanceStatusLabel(r.status)}';
 }
 
 InputDecoration _decoration() {
