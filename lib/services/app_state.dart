@@ -248,6 +248,34 @@ class AppState extends ChangeNotifier {
   List<MaintenanceReport> get completedMaintenanceReports =>
       maintenanceReports.where((r) => r.status == MaintenanceStatus.completed).toList();
 
+  /// كل أوامر العمل المفتوحة (طارئة أو وقائية أو مهمة) بأي حالة قبل الإنجاز —
+  /// مصدر قائمة الاختيار عند ربط باتش إنتاج بأمر صيانة فعلي (راجع
+  /// production_batch_form_screen.dart/production_batch_edit_screen.dart).
+  /// maintenanceReports محمَّلة أصلًا لكل الأدوار بما فيها الإنتاج (راجع
+  /// attachAuth)، فلا حاجة لطلب سيرفر خاص بهذه القائمة.
+  List<MaintenanceReport> get openWorkOrdersForLinking =>
+      maintenanceReports.where((r) => r.status != MaintenanceStatus.completed).toList();
+
+  /// يبحث عن أمر صيانة/بلاغ بمعرّف معيّن ضمن القائمة المحمَّلة محليًا — يُعيد
+  /// null لو لم يوجد. بديل يدوي بسيط عن firstWhereOrNull (package:collection
+  /// غير مُضاف لهذا المشروع عمدًا) — يُستخدم لعرض اسم/حالة أمر الصيانة
+  /// المرتبط بباتش دون طلب سيرفر إضافي.
+  MaintenanceReport? maintenanceReportById(String id) {
+    for (final r in maintenanceReports) {
+      if (r.id == id) return r;
+    }
+    return null;
+  }
+
+  /// الباتشات المرتبطة بأمر صيانة معيّن — تُعرض في شاشة تفاصيل أمر العمل نفسه
+  /// ("الباتشات المتأثرة بهذا العمل") عبر فلتر workOrderId الجديد على
+  /// GET /production/batches (راجع routes/production.js بالسيرفر).
+  Future<List<Batch>> fetchBatchesForWorkOrder(String workOrderId) async {
+    final data = await _api.get('/production/batches', query: {'workOrderId': workOrderId});
+    final list = (data['batches'] as List).cast<Map<String, dynamic>>();
+    return list.map(Batch.fromApi).toList();
+  }
+
   /// يحذف بلاغًا/أمر عمل منجزًا نهائيًا — حذف حقيقي من قاعدة البيانات على
   /// السيرفر (وليس من هذا الجهاز فقط كما كان سابقًا)، فيختفي من كل الأجهزة.
   Future<void> deleteMaintenanceReport(String reportId) async {
@@ -1201,6 +1229,7 @@ class AppState extends ChangeNotifier {
     String? timeTo,
     String? preventionMethods,
     DateTime? occurredAt,
+    String? workOrderId,
   }) async {
     final data = await _api.post('/production/batches', {
       'lineId': lineId,
@@ -1217,6 +1246,10 @@ class AppState extends ChangeNotifier {
       if (timeTo != null) 'timeTo': timeTo,
       if (preventionMethods != null) 'preventionMethods': preventionMethods,
       if (occurredAt != null) 'occurredAt': occurredAt.toIso8601String(),
+      // عند تحديد أمر صيانة، يحسب السيرفر حقول التوقف الثلاثة تلقائيًا من
+      // بياناته ويتجاهل أي قيم يدوية أُرسلت معه أعلاه (راجع POST /batches
+      // في routes/production.js).
+      if (workOrderId != null) 'workOrderId': workOrderId,
     });
     final batch = Batch.fromApi(data['batch'] as Map<String, dynamic>);
     batches.insert(0, batch);
@@ -1251,6 +1284,8 @@ class AppState extends ChangeNotifier {
     String? timeTo,
     String? preventionMethods,
     DateTime? occurredAt,
+    String? workOrderId,
+    bool unlinkWorkOrder = false,
   }) async {
     final data = await _api.patch('/production/batches/$id', {
       if (lineId != null) 'lineId': lineId,
@@ -1267,6 +1302,13 @@ class AppState extends ChangeNotifier {
       if (timeTo != null) 'timeTo': timeTo,
       if (preventionMethods != null) 'preventionMethods': preventionMethods,
       if (occurredAt != null) 'occurredAt': occurredAt.toIso8601String(),
+      // unlinkWorkOrder يُرسِل workOrderId صراحة كـ null لفك الربط — تمييزه
+      // عن مجرد عدم إرسال المفتاح إطلاقًا (لا تغيير) ضروري هنا لأن null قيمة
+      // صالحة فعليًا (راجع PATCH /batches/:id في routes/production.js).
+      if (unlinkWorkOrder)
+        'workOrderId': null
+      else if (workOrderId != null)
+        'workOrderId': workOrderId,
     });
     final batch = Batch.fromApi(data['batch'] as Map<String, dynamic>);
     final index = batches.indexWhere((b) => b.id == id);
