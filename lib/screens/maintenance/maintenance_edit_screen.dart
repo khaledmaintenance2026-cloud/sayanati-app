@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/maintenance_report.dart';
+import '../../models/production.dart';
 import '../../models/technician.dart';
 import '../../services/app_state.dart';
+import '../../services/arabic_format.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
@@ -38,6 +40,13 @@ class _MaintenanceEditScreenState extends State<MaintenanceEditScreen> {
   bool _addingTechnicians = false;
   String? _removingTechnicianId;
 
+  /// الباتشات المرتبطة بهذا العمل (راجع Batch.workOrderId) — للاطّلاع فقط،
+  /// حتى يرى فريق الصيانة أثر عمله على الإنتاج فعليًا. تُحمَّل من نفس مسار
+  /// GET /production/batches عبر فلتر workOrderId الجديد (راجع
+  /// fetchBatchesForWorkOrder في app_state.dart).
+  List<Batch>? _linkedBatches;
+  bool _loadingBatches = true;
+
   bool get _isTask => widget.report.isTask;
 
   @override
@@ -49,6 +58,23 @@ class _MaintenanceEditScreenState extends State<MaintenanceEditScreen> {
     _equipmentCodeCtrl = TextEditingController(text: widget.report.equipmentCode ?? '');
     _taskScope = widget.report.taskScope ?? 'internal';
     _loadTechnicians();
+    _loadLinkedBatches();
+  }
+
+  Future<void> _loadLinkedBatches() async {
+    try {
+      final list = await context.read<AppState>().fetchBatchesForWorkOrder(widget.report.id);
+      if (!mounted) return;
+      setState(() {
+        _linkedBatches = list;
+        _loadingBatches = false;
+      });
+    } catch (e) {
+      // قسم معلوماتي ثانوي — تعذّر تحميله لا يمنع تعديل بقية بيانات المهمة،
+      // فقط تبقى القائمة فارغة بصمت بدل إظهار خطأ يُربك المستخدم.
+      if (!mounted) return;
+      setState(() => _loadingBatches = false);
+    }
   }
 
   @override
@@ -302,7 +328,55 @@ class _MaintenanceEditScreenState extends State<MaintenanceEditScreen> {
                 ),
               ),
             ],
-            const SizedBox(height: 30),
+            const SizedBox(height: 26),
+            const Divider(),
+            const SizedBox(height: 12),
+            const Text('الباتشات المتأثرة بهذا العمل', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            const Text(
+              'باتشات الإنتاج التي رُبطت بهذا العمل — تُحسَب مدة توقفها تلقائيًا من بيانات هذا العمل، وتتحدّث عند إنجازه.',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textMuted, height: 1.5),
+            ),
+            const SizedBox(height: 10),
+            if (_loadingBatches)
+              const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
+            else if ((_linkedBatches ?? []).isEmpty)
+              const Text('لا يوجد أي باتش إنتاج مربوط بهذا العمل حتى الآن', style: TextStyle(fontSize: 12.5, color: AppColors.textMuted))
+            else
+              ...(_linkedBatches!.map((b) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        border: Border.all(color: AppColors.border),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '${state.lineById(b.lineId).name} — ${b.productName}',
+                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              if (b.stoppageMinutes != null)
+                                Text('${b.stoppageMinutes} دقيقة', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.maintenance)),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'باتش رقم: ${b.batchNumber} — ${ArabicFormat.date(b.date)}',
+                            style: const TextStyle(fontSize: 11.5, color: AppColors.textFaint),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ))),
+            const SizedBox(height: 20),
             const Divider(),
             const SizedBox(height: 12),
             SizedBox(
