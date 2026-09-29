@@ -128,6 +128,20 @@ class MaintenanceReport {
   bool get isEmergency => kind == MaintenanceKind.emergency;
 }
 
+/// تسمية عربية قصيرة لحالة أمر العمل — تُستخدم في أي مكان يحتاج عرض الحالة
+/// كنص فقط (مثل قائمة اختيار أمر صيانة لربط باتش إنتاج به)، بدل تكرار نفس
+/// الـswitch في كل شاشة. لا علاقة لها بألوان StatusPill الخاصة بكل شاشة.
+String maintenanceStatusLabel(MaintenanceStatus status) {
+  switch (status) {
+    case MaintenanceStatus.pendingAssignment:
+      return 'بانتظار التعيين';
+    case MaintenanceStatus.inProgress:
+      return 'قيد التنفيذ';
+    case MaintenanceStatus.completed:
+      return 'مكتمل';
+  }
+}
+
 /// متوسط زمن الإصلاح لمجموعة من البلاغات/أوامر العمل المُنجزة فقط — null لو
 /// لم يوجد أي عمل منجز بعد ضمن القائمة الممرَّرة.
 Duration? averageMaintenanceResolution(Iterable<MaintenanceReport> reports) {
