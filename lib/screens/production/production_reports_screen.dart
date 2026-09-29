@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/maintenance_report.dart';
 import '../../models/production.dart';
 import '../../services/app_state.dart';
 import '../../services/arabic_format.dart';
@@ -255,6 +256,10 @@ class _ProductionReportsScreenState extends State<ProductionReportsScreen> {
                             'باتش رقم: ${b.batchNumber} — ${ArabicFormat.date(b.date)}',
                             style: const TextStyle(fontSize: 11.5, color: AppColors.textFaint),
                           ),
+                          if (b.workOrderId != null) ...[
+                            const SizedBox(height: 6),
+                            _WorkOrderLinkBadge(workOrderId: b.workOrderId!),
+                          ],
                           if ((b.operationalNotes?.isNotEmpty ?? false) || (b.hasStoppage && (b.actionsTaken?.isNotEmpty ?? false))) ...[
                             const SizedBox(height: 6),
                             if (b.operationalNotes?.isNotEmpty ?? false)
@@ -295,6 +300,40 @@ class _ProductionReportsScreenState extends State<ProductionReportsScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// شارة صغيرة تظهر على باتش مربوط بأمر صيانة فعلي — تعرض اسم المعدة/الوصف
+/// وحالة الأمر الحالية (تُقرأ من maintenanceReports المحمَّلة أصلًا، بلا طلب
+/// سيرفر إضافي). لو تعذّر إيجاد الأمر محليًا لأي سبب (نادر) تُخفى الشارة
+/// بصمت بدل إظهار معرّف رقمي بلا معنى للمستخدم.
+class _WorkOrderLinkBadge extends StatelessWidget {
+  final String workOrderId;
+  const _WorkOrderLinkBadge({required this.workOrderId});
+
+  @override
+  Widget build(BuildContext context) {
+    final report = context.watch<AppState>().maintenanceReportById(workOrderId);
+    if (report == null) return const SizedBox.shrink();
+    final title = report.equipment.isNotEmpty ? report.equipment : report.description;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(color: AppColors.maintenance.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.link, size: 13, color: AppColors.maintenance),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              'متوقف بسبب صيانة: $title (${maintenanceStatusLabel(report.status)})',
+              style: const TextStyle(fontSize: 11, color: AppColors.maintenance, fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }
