@@ -48,6 +48,12 @@ class Batch {
   /// لاحقًا. يُستخدم فقط للمقارنة/العرض التقني، لا في أي واجهة عادية.
   final DateTime recordedAt;
 
+  /// أمر الصيانة الفعلي الذي تأخر هذا الباتش بسببه (اختياري) — عند تحديده،
+  /// يحسب السيرفر [hasStoppage]/[stoppageReason]/[stoppageMinutes] تلقائيًا
+  /// من بيانات ذلك الأمر بدل إدخالها يدويًا، ويُحدَّثان تلقائيًا مرة أخرى عند
+  /// إنجاز/إلغاء الأمر لاحقًا. راجع services/batchWorkOrderLink.js بالسيرفر.
+  final String? workOrderId;
+
   Batch({
     required this.id,
     required this.lineId,
@@ -66,6 +72,7 @@ class Batch {
     this.timeTo,
     this.preventionMethods,
     DateTime? recordedAt,
+    this.workOrderId,
   }) : recordedAt = recordedAt ?? date;
 
   /// يبني باتشًا من استجابة سيرفر صيانتي المحلي (جدول production_batches) —
@@ -90,6 +97,7 @@ class Batch {
         timeTo: d['time_to'] as String?,
         preventionMethods: d['prevention_methods'] as String?,
         recordedAt: DateTime.tryParse(d['created_at']?.toString() ?? ''),
+        workOrderId: d['work_order_id']?.toString(),
       );
 }
 
