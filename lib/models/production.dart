@@ -167,6 +167,13 @@ class Incident {
   /// اجمعها مع kApiOrigin (services/constants.dart) لعرضها بـ Image.network.
   final String? photoPath;
 
+  /// رقم الباتش المتوقع (اختياري) — يكتبه مشرف الإنتاج لحظة رفع البلاغ نفسه،
+  /// قبل أن يُسجَّل الباتش الفعلي (لا يُعرف إلا بعد انتهاء الإنتاج ومعرفة
+  /// الكمية النهائية). يُنسَخ تلقائيًا لأمر الصيانة عند تحويل هذا البلاغ إليه،
+  /// ثم يُستخدم لربط الباتش تلقائيًا بأمر الصيانة فور تسجيله لاحقًا بنفس
+  /// الرقم على نفس الخط — بلا اختيار يدوي من قائمة الربط.
+  final String? expectedBatchNumber;
+
   Incident({
     required this.id,
     this.lineId,
@@ -183,6 +190,7 @@ class Incident {
     required this.downtimeMinutes,
     this.severity,
     this.photoPath,
+    this.expectedBatchNumber,
   });
 
   bool get isOpen => status == 'open';
@@ -214,5 +222,6 @@ class Incident {
         downtimeMinutes: ((d['downtime_minutes'] as num?) ?? 0).round(),
         severity: d['severity'] as String?,
         photoPath: d['photo_path'] as String?,
+        expectedBatchNumber: d['expected_batch_number'] as String?,
       );
 }
