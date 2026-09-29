@@ -43,6 +43,7 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
     final appState = context.read<AppState>();
     final lines = appState.linesByFacility(widget.facility);
     final descCtrl = TextEditingController();
+    final batchCtrl = TextEditingController();
     String? selectedLineId = lines.isNotEmpty ? lines.first.id : null;
     // تصنيف حدة العطل — يظهر لاحقًا في رسالة واتساب "بلاغ عطل مفاجئ" (اختياري).
     String? selectedSeverity;
@@ -207,6 +208,22 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
                       }).toList(),
                     ),
                     const SizedBox(height: 12),
+                    const Align(alignment: Alignment.centerRight, child: Text('رقم الباتش المتوقع (اختياري)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: batchCtrl,
+                      decoration: _decoration(hint: 'مثال: B-2026-0150'),
+                    ),
+                    const SizedBox(height: 4),
+                    const Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        'لو تعرف رقم الباتش الذي تأثر بهذا العطل ولم يُسجَّل بعد، اكتبه هنا — سيُربط به تلقائيًا فور تسجيله لاحقًا بنفس الرقم.',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     const Align(alignment: Alignment.centerRight, child: Text('صورة العطل (اختياري)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
                     const SizedBox(height: 8),
                     _ReportPhotoPicker(bytes: photoBytes, onTap: showPhotoSourceSheet),
@@ -232,6 +249,9 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
                                   description: descCtrl.text.trim(),
                                   severity: selectedSeverity,
                                   photo: photoDataUrl,
+                                  expectedBatchNumber: batchCtrl.text.trim().isEmpty
+                                      ? null
+                                      : batchCtrl.text.trim(),
                                 );
                                 if (ctx.mounted) Navigator.of(ctx).pop();
                               } catch (e) {
@@ -337,6 +357,10 @@ class _ProductionIncidentsScreenState extends State<ProductionIncidentsScreen> {
                                         if (incident.equipmentName != null && incident.equipmentName!.isNotEmpty) ...[
                                           const SizedBox(height: 4),
                                           Text('المعدة: ${incident.equipmentName}', style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+                                        ],
+                                        if (incident.expectedBatchNumber != null && incident.expectedBatchNumber!.isNotEmpty) ...[
+                                          const SizedBox(height: 4),
+                                          Text('الباتش المتوقع: ${incident.expectedBatchNumber}', style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
                                         ],
                                         const SizedBox(height: 8),
                                         Text(
