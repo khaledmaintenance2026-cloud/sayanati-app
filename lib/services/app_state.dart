@@ -1417,6 +1417,7 @@ class AppState extends ChangeNotifier {
     required String description,
     String? severity,
     String? photo,
+    String? expectedBatchNumber,
   }) async {
     final data = await _api.post('/production/incidents', {
       if (lineId != null) 'lineId': lineId,
@@ -1424,6 +1425,7 @@ class AppState extends ChangeNotifier {
       'description': description,
       if (severity != null) 'severity': severity,
       if (photo != null) 'photo': photo,
+      if (expectedBatchNumber != null) 'expectedBatchNumber': expectedBatchNumber,
     });
     incidents.insert(0, Incident.fromApi(data['incident'] as Map<String, dynamic>));
     _log('🔔 بلاغ عطل جديد في الإنتاج: $description');
