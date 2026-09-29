@@ -57,6 +57,8 @@ String batchFieldLabel(String key) {
       return 'طرق تجنّب تكرار المشكلة';
     case 'occurredAt':
       return 'تاريخ الباتش';
+    case 'workOrderId':
+      return 'أمر الصيانة المرتبط';
     default:
       return key;
   }
