@@ -338,6 +338,20 @@ class _MaintenanceEditScreenState extends State<MaintenanceEditScreen> {
               style: TextStyle(fontSize: 11.5, color: AppColors.textMuted, height: 1.5),
             ),
             const SizedBox(height: 10),
+            if (widget.report.expectedBatchNumber != null && widget.report.expectedBatchNumber!.isNotEmpty && (_linkedBatches ?? []).isEmpty) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.maintenance.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'بانتظار تسجيله: باتش رقم ${widget.report.expectedBatchNumber} — سيُربط بهذا العمل تلقائيًا فور تسجيله من الإنتاج.',
+                  style: const TextStyle(fontSize: 12, color: AppColors.maintenance, fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
             if (_loadingBatches)
               const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
             else if ((_linkedBatches ?? []).isEmpty)
