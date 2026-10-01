@@ -158,3 +158,49 @@ Duration? averageMaintenanceResolution(Iterable<MaintenanceReport> reports) {
   final totalMs = durations.fold<int>(0, (sum, d) => sum + d.inMilliseconds);
   return Duration(milliseconds: (totalMs / durations.length).round());
 }
+
+/// ملخص أرقام سريع إضافي للوحة الصيانة — "أكثر عطل تكرارًا" و"الفني الأعلى
+/// أداءً" خلال آخر ٣٠ يومًا، مصدره GET /api/dashboard (مقطع "maintenance")
+/// الموجود والعامل فعليًا على السيرفر مسبقًا، ولم يكن مُستخدَمًا من أي شاشة
+/// في التطبيق قبل هذا التحديث. فشل تحميله لا يُعطّل باقي لوحة الصيانة (راجع
+/// AppState.reloadMaintenanceQuickStats) — مجرد إضافة معلوماتية، لا أساسية.
+class MaintenanceQuickStats {
+  final String? topFaultDescription;
+  final int topFaultOccurrences;
+  final String? topTechnicianName;
+  final int topTechnicianCompletedCount;
+
+  MaintenanceQuickStats({
+    this.topFaultDescription,
+    this.topFaultOccurrences = 0,
+    this.topTechnicianName,
+    this.topTechnicianCompletedCount = 0,
+  });
+
+  /// يبني الملخص من مقطع "maintenance" في استجابة GET /api/dashboard مباشرة
+  /// (وليس من استجابة كاملة) — راجع routes/dashboard.js::loadMaintenanceSection
+  /// على السيرفر لشكل topFaults/technicianPerformance الخام.
+  factory MaintenanceQuickStats.fromMaintenanceSection(Map<String, dynamic> section) {
+    final topFaults = ((section['topFaults'] as List?) ?? []).cast<Map<String, dynamic>>();
+    final technicianPerformance = ((section['technicianPerformance'] as List?) ?? []).cast<Map<String, dynamic>>();
+
+    final topFault = topFaults.isNotEmpty ? topFaults.first : null;
+
+    // القائمة من السيرفر مرتبة تنازليًا بعدد الأعمال المنجزة أصلًا — نأخذ أول
+    // فني لديه عمل منجز واحد على الأقل (نتجاهل من لم يُنجز شيئًا بعد هنا).
+    Map<String, dynamic>? topTechnician;
+    for (final t in technicianPerformance) {
+      if (((t['completedCount'] as num?) ?? 0) > 0) {
+        topTechnician = t;
+        break;
+      }
+    }
+
+    return MaintenanceQuickStats(
+      topFaultDescription: topFault?['description'] as String?,
+      topFaultOccurrences: (topFault?['occurrences'] as num?)?.round() ?? 0,
+      topTechnicianName: topTechnician?['name'] as String?,
+      topTechnicianCompletedCount: (topTechnician?['completedCount'] as num?)?.round() ?? 0,
+    );
+  }
+}
