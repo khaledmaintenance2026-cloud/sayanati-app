@@ -1411,6 +1411,28 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  // ملخص أرقام سريع إضافي للوحة الصيانة (أكثر عطل تكرارًا + الفني الأعلى
+  // أداءً) — مصدره GET /api/dashboard الموجود والعامل فعليًا على السيرفر
+  // مسبقًا لقسم "maintenance" فقط؛ لا علاقة له بمقطعي production/safety من
+  // نفس الاستجابة. إضافة معلوماتية غير أساسية: فشل تحميلها (مثلًا لدور لا
+  // يملك صلاحية رؤية هذا المقطع) يُبقي maintenanceQuickStats بقيمته null
+  // بصمت، بلا أي رسالة خطأ تُعطّل باقي لوحة الصيانة.
+  MaintenanceQuickStats? maintenanceQuickStats;
+
+  Future<void> reloadMaintenanceQuickStats() => _loadMaintenanceQuickStatsFromCloud();
+
+  Future<void> _loadMaintenanceQuickStatsFromCloud() async {
+    if (!_attached) return;
+    try {
+      final data = await _api.get('/dashboard');
+      final section = data['maintenance'] as Map<String, dynamic>?;
+      maintenanceQuickStats = section == null ? null : MaintenanceQuickStats.fromMaintenanceSection(section);
+      notifyListeners();
+    } catch (_) {
+      // غير أساسية — لا نعرض خطأ ولا نكرر المحاولة تلقائيًا.
+    }
+  }
+
   Future<void> addIncidentCloud({
     String? lineId,
     String? equipmentId,
