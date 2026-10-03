@@ -23,9 +23,15 @@ import 'push_notification_service.dart';
 ///
 /// "مسؤول المخزون" (inventoryManager) و"مصمم" (designer): دوران جديدان لقسم
 /// "المخزون والقطع" الجديد داخل تبويب الصيانة (راجع inventory_screen.dart
-/// وInventoryItem/PartRequest في models/inventory.dart) — لا يريان بقية
-/// تبويبات الصيانة (الأعطال الطارئة/الأعمال الوقائية) إطلاقًا، فقط تبويب
-/// المخزون — راجع [canManageInventory]/[isDesigner] بدل مقارنة الدور مباشرة.
+/// وInventoryItem/PartRequest في models/inventory.dart) — راجع
+/// [canManageInventory]/[isDesigner] بدل مقارنة الدور مباشرة.
+/// تحديث 2026-10-03 (قرار صريح من الإدارة): الاثنان يُعتبران الآن أيضًا
+/// "أفراد صيانة" قابلين للتكليف — يظهر اسمهما في قائمة تعيين الفنيين، ويريان
+/// تبويب "الصيانة" (MaintenanceDashboardScreen) بنفس القيد المطبَّق على
+/// الفني العادي (فقط الأعمال المُسندة إليهما فعليًا أو التي رفعاها بنفسهما —
+/// التصفية فعليًا من السيرفر، راجع TECHNICIAN_ROLES في middleware/auth.js)،
+/// فيقدران يحدّثان حالة أو يُنجزان مهامهما — بالإضافة لتبويب "المخزون" كما
+/// كان. راجع [isInventoryOnlyRole] تحت لرؤية تبويب المخزون تحديدًا.
 enum AppRole { admin, maintenanceTechnician, maintenanceManager, production, productionManager, safety, general, inventoryManager, designer }
 bool isMaintenanceRole(AppRole r) => r == AppRole.maintenanceTechnician || r == AppRole.maintenanceManager;
 
@@ -40,9 +46,11 @@ bool canManageInventory(AppRole r) => r == AppRole.admin || r == AppRole.mainten
 /// نتيجة التصميم لها — راجع PartRequestStatus.pendingDesign.
 bool isDesigner(AppRole r) => r == AppRole.designer;
 
-/// هل يرى هذا الدور تبويب "المخزون" فقط داخل قسم الصيانة (بلا الأعطال
-/// الطارئة/الأعمال الوقائية إطلاقًا)؟ مسؤول المخزون والمصمم كلاهما هنا فقط
-/// لعمل واحد محدد ولا علاقة لهما بتوزيع/تنفيذ بلاغات الأعطال.
+/// هل يرى هذا الدور تبويب "المخزون"؟ (مسؤول المخزون أو المصمم تحديدًا).
+/// الاسم من عهد أقدم كانا فيه يريان هذا التبويب فقط دون تبويب "الصيانة" —
+/// هذا لم يعد دقيقًا تمامًا منذ 2026-10-03 (راجع التعليق أعلى [AppRole]):
+/// الآن يريان الاثنين معًا (المخزون + الصيانة بنطاق محدود كالفني). أبقينا
+/// الاسم لتفادي تغييرات غير ضرورية في كل مكان يستخدمها.
 bool isInventoryOnlyRole(AppRole r) => r == AppRole.inventoryManager || r == AppRole.designer;
 
 /// هل يملك هذا الدور صلاحية إنشاء "بلاغ وقائي جديد"، طلب "تقرير صيانة بمدة
