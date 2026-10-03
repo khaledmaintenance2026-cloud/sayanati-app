@@ -61,7 +61,11 @@ class _InventorySectionState extends State<InventorySection> {
     final currentUser = context.watch<AuthService>().currentUser;
     final role = currentUser?.role ?? AppRole.maintenanceTechnician;
     final canManage = canManageInventory(role);
-    final canRequestParts = role == AppRole.admin || isMaintenanceRole(role);
+    // مسؤول المخزون (inventoryManager) مضاف هنا صراحة — قرار 2026-10-03 — كان
+    // يملك صلاحية تقديم طلب قطعة على السيرفر بالفعل وغير قادر على الوصول لها
+    // من الواجهة فقط. المصمم عمدًا غير مضاف هنا (لم يُطلب له هذا تحديدًا —
+    // راجع نفس القيد على routes/inventory.js: POST /part-requests).
+    final canRequestParts = role == AppRole.admin || isMaintenanceRole(role) || role == AppRole.inventoryManager;
     final canDesign = role == AppRole.admin || role == AppRole.maintenanceManager || isDesigner(role);
 
     final pendingDesignCount = state.partRequests.where((p) => p.status == PartRequestStatus.pendingDesign).length;
