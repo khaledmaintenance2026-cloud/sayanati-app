@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../models/maintenance_report.dart';
 import '../../services/app_state.dart';
 import '../../services/arabic_format.dart';
+import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import 'maintenance_assign_screen.dart';
@@ -75,6 +76,15 @@ class _MaintenanceTaskCloseScreenState extends State<MaintenanceTaskCloseScreen>
 
   @override
   Widget build(BuildContext context) {
+    final role = context.watch<AuthService>().currentUser?.role ?? AppRole.maintenanceTechnician;
+    // زر "طلب قطعة" هنا يجب أن يطابق تمامًا من يقدر فعليًا يقدّم طلب قطعة على
+    // السيرفر (POST /api/inventory/part-requests): أدوار الصيانة الأصلية +
+    // مسؤول المخزون تحديدًا (قرار 2026-10-03) — لا المصمم.
+    final canRequestParts = role == AppRole.admin || isMaintenanceRole(role) || role == AppRole.inventoryManager;
+    // زر "إضافة فني" يجب أن يطابق تمامًا من يقدر فعليًا على PATCH /:id/assign
+    // على السيرفر: أدوار الصيانة الأصلية فقط — عمدًا بلا مسؤول المخزون أو
+    // المصمم (قرار صريح 2026-10-03: رفضتم إعطائهما هذه الصلاحية تحديدًا).
+    final canAssignTechnician = role == AppRole.admin || isMaintenanceRole(role);
     return Scaffold(
       appBar: ScreenTopBar(
         title: 'إغلاق البلاغ',
@@ -84,22 +94,24 @@ class _MaintenanceTaskCloseScreenState extends State<MaintenanceTaskCloseScreen>
           // الفني يطلب القطعة بدون مغادرة شاشة البلاغ أو التنقل لتبويب
           // آخر، والطلب يصل لمسؤول المخزون مربوطًا بأمر العمل نفسه (راجع
           // preselectedWorkOrder في openPartRequestSheet بـinventory_screen.dart).
-          IconButton(
-            icon: const Icon(Icons.inventory_2_outlined),
-            tooltip: 'طلب قطعة لهذا البلاغ',
-            onPressed: () => openPartRequestSheet(context, preselectedWorkOrder: widget.report),
-          ),
+          if (canRequestParts)
+            IconButton(
+              icon: const Icon(Icons.inventory_2_outlined),
+              tooltip: 'طلب قطعة لهذا البلاغ',
+              onPressed: () => openPartRequestSheet(context, preselectedWorkOrder: widget.report),
+            ),
           // يسمح بإضافة فني إضافي لهذا البلاغ نفسه أثناء العمل عليه (مثلًا
           // لو احتاج الفني المُسنَد مساعدة زميل) — تفتح نفس شاشة "تعيين فني"
           // المستخدمة أصلًا للتعيين الأول، وتُضيف فقط بلا أي مساس بالفني/
           // الفنيين المُسندين حاليًا (راجع maintenance_assign_screen.dart).
-          IconButton(
-            icon: const Icon(Icons.person_add_alt_1_outlined),
-            tooltip: 'إضافة فني',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => MaintenanceAssignScreen(report: widget.report)),
+          if (canAssignTechnician)
+            IconButton(
+              icon: const Icon(Icons.person_add_alt_1_outlined),
+              tooltip: 'إضافة فني',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => MaintenanceAssignScreen(report: widget.report)),
+              ),
             ),
-          ),
         ],
       ),
       body: Padding(
