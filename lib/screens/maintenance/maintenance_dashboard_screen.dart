@@ -1,509 +1,669 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../models/maintenance_analysis.dart';
+import '../../models/maintenance_report.dart';
+import '../../models/production.dart';
 import '../../services/app_state.dart';
 import '../../services/arabic_format.dart';
+import '../../services/auth_service.dart';
+import '../../services/constants.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../safety/safety_permit_request_screen.dart';
+import 'maintenance_assign_screen.dart';
+import 'maintenance_completed_screen.dart';
+import 'maintenance_edit_screen.dart';
+import 'maintenance_analysis_screen.dart';
+import 'maintenance_new_report_screen.dart';
+import 'maintenance_report_print_screen.dart';
+import 'maintenance_reports_screen.dart';
+import 'maintenance_task_close_screen.dart';
+import 'maintenance_work_order_screen.dart';
 
-/// صفحة "تحليل الصيانة" — طلب صريح من مسؤول الصيانة (2026-10-03): "كـ إدارة
-/// الصيانة أريد صفحة للتحليل — المهام وعمل الفنيين". تعرض إحصائيات عامة عن
-/// أوامر العمل (الحالات، التوزيع حسب النوع، الاتجاه الزمني) وأداء كل فني
-/// (عدد المهام المُنجزة، متوسط وقت الإنجاز، المهام المفتوحة) خلال فترة
-/// زمنية يختارها المستخدم — إما آخر ٣٠ يومًا (افتراضي) أو فترة مخصصة بتاريخ
-/// بداية ونهاية. كل الأرقام تُعرض برسوم بيانية (أعمدة) بناءً على تفضيلكم.
+/// تبويبا لوحة الصيانة — "المخزون والقطع" كان تبويبًا ثالثًا هنا لفترة، ثم
+/// فُصل ليصير تبويبًا مستقلاً بالتنقل السفلي (راجع inventory_dashboard_screen.dart
+/// وmain.dart) بقرار من الإدارة أن لا يبقى محصورًا داخل لوحة الصيانة فقط،
+/// فعادت هذه اللوحة لتبويبيها الأصليين فقط.
 ///
-/// مصدر البيانات: GET /api/maintenance-analysis (راجع
-/// routes/maintenanceAnalysis.js على السيرفر) — مقصور على مسؤول الصيانة
-/// (ومدير النظام تلقائيًا) فقط؛ الدخول لهذه الشاشة نفسها مقصور بنفس الشرط من
-/// maintenance_dashboard_screen.dart (أيقونة "تحليل الصيانة" لا تظهر لغيرهما).
-enum _RangeMode { last30, custom }
+/// أُضيف تبويب ثالث "المهام العامة" (طلب 2026-10-01): كانت "مهام العمل"
+/// (توصيل، نقل معدات، أعمال إدارية... — راجع isTask في MaintenanceReport)
+/// تظهر مختلطة داخل تبويب "الأعطال الطارئة" نفسه (لأن kind تبقى 'emergency'
+/// على السيرفر عمدًا)، فصار لها تبويبها الخاص هنا فقط للعرض — بلا أي تغيير
+/// في كود السيرفر أو في kind المخزّنة فعليًا.
+///
+/// كما صار تبويب "الأعطال الطارئة" يعرض الآن بلاغات الإنتاج التي لم تتحوّل
+/// بعد لأمر عمل (كانت سابقًا في شاشة منفصلة "بلاغات إنتاج بانتظار التحويل"
+/// تُفتح من أيقونة بالأعلى) ضمن نفس القائمة مباشرة، بلا أي خطوة/شاشة إضافية
+/// لمجرد رؤيتها — بطاقة مختلفة الشكل والألوان (IncomingIncidentCard، بالأخضر
+/// المطفي لون قسم الإنتاج) ومكتوب عليها "بلاغ إنتاج" للتفريق البصري الفوري
+/// عن بطاقة أمر عمل فعلي (MaintenanceReportCard)، مع بقاء زر "تحويل" مباشرة
+/// على البطاقة نفسها لمن يريد تحويلها فعليًا لأمر عمل.
+enum _DashTab { emergency, preventive, tasks }
 
-class MaintenanceAnalysisScreen extends StatefulWidget {
-  const MaintenanceAnalysisScreen({super.key});
+class MaintenanceDashboardScreen extends StatefulWidget {
+  const MaintenanceDashboardScreen({super.key});
 
   @override
-  State<MaintenanceAnalysisScreen> createState() => _MaintenanceAnalysisScreenState();
+  State<MaintenanceDashboardScreen> createState() => _MaintenanceDashboardScreenState();
 }
 
-class _MaintenanceAnalysisScreenState extends State<MaintenanceAnalysisScreen> {
-  _RangeMode _mode = _RangeMode.last30;
-  DateTime? _customFrom;
-  DateTime? _customTo;
-  bool _loading = true;
-  String? _error;
-  MaintenanceAnalysis? _data;
+class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen> {
+  _DashTab _tab = _DashTab.emergency;
+  final Set<String> _convertingIncidentIds = {};
 
   @override
   void initState() {
     super.initState();
-    _load();
+    // بلاغات الإنتاج المعلّقة وملخص الأرقام السريع (أكثر عطل تكرارًا/أعلى
+    // فني أداءً) لم يكونا يُحمَّلان تلقائيًا عند فتح لوحة الصيانة نفسها —
+    // الأول كان يُحمَّل فقط عند فتح الشاشة المنفصلة القديمة، والثاني لم يكن
+    // مستخدَمًا من أي شاشة إطلاقًا. نحمّلهما هنا الآن ليظهرا فورًا بلا أي
+    // تنقل إضافي.
+    Future.microtask(() {
+      final state = context.read<AppState>();
+      state.reloadIncidents();
+      state.reloadMaintenanceQuickStats();
+    });
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  // الحذف من هنا (لوحة العمل اليومية، أي حالة غير مكتمل) قرار صريح من
+  // الإدارة 2026-09-26: كان مقصورًا سابقًا على شاشة "الأعمال المنجزة" فقط —
+  // الآن مسؤول الصيانة/المدير يقدر يحذف أي مهمة بأي حالة من هنا مباشرة، بلا
+  // فتح شاشة التعديل. نفس نص التأكيد المستخدم في maintenance_completed_screen.dart.
+  Future<void> _confirmDelete(String reportId, String title) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حذف نهائي', style: TextStyle(fontSize: 15)),
+        content: Text(
+          'سيُحذف "$title" نهائيًا من قاعدة البيانات على السيرفر — يختفي من كل '
+          'الأجهزة، ويصل إشعار بذلك لجروب الصيانة والفنيين المُسنَدين. لا يمكن التراجع عن هذا الإجراء.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('إلغاء')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB3261E), foregroundColor: Colors.white),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     try {
-      final data = await context.read<AppState>().fetchMaintenanceAnalysis(
-            from: _mode == _RangeMode.custom ? _customFrom : null,
-            to: _mode == _RangeMode.custom ? _customTo : null,
-          );
+      await context.read<AppState>().deleteMaintenanceReport(reportId);
       if (!mounted) return;
-      setState(() {
-        _data = data;
-        _loading = false;
-      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم حذف العمل')));
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _error = 'تعذّر تحميل التحليل: $e';
-        _loading = false;
-      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذّر الحذف: $e')));
     }
   }
 
-  Future<void> _pickDate({required bool isFrom}) async {
-    final now = DateTime.now();
-    final initial = (isFrom ? _customFrom : _customTo) ?? now;
-    final picked = await showDatePicker(
+  /// تحويل بلاغ إنتاج (لم يتحوّل بعد لأمر عمل) إلى أمر عمل صيانة طارئ حقيقي
+  /// — نفس منطق الشاشة القديمة "بلاغات إنتاج بانتظار التحويل" بالضبط (راجع
+  /// AppState.convertIncidentToWorkOrder)، يُستدعى الآن من زر "تحويل" على
+  /// بطاقة البلاغ مباشرة ضمن تبويب "الأعطال الطارئة" نفسه.
+  Future<void> _convertIncident(Incident incident) async {
+    final appState = context.read<AppState>();
+    final ok = await showDialog<bool>(
       context: context,
-      initialDate: initial.isAfter(now) ? now : initial,
-      firstDate: DateTime(now.year - 3),
-      lastDate: now,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تحويل إلى أمر عمل؟'),
+        content: const Text('سيُنشأ أمر عمل صيانة طارئ من هذا البلاغ، ويصبح بانتظار تعيين فني له.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('إلغاء')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('تحويل')),
+        ],
+      ),
     );
-    if (picked == null) return;
-    setState(() {
-      if (isFrom) {
-        _customFrom = picked;
-      } else {
-        _customTo = picked;
-      }
-    });
+    if (ok != true || !mounted) return;
+
+    setState(() => _convertingIncidentIds.add(incident.id));
+    try {
+      await appState.convertIncidentToWorkOrder(incident);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم التحويل — عيّن فنيًا له من هذه القائمة')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذّر التحويل: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _convertingIncidentIds.remove(incident.id));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: const ScreenTopBar(title: 'تحليل الصيانة'),
-      body: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildRangeSelector(),
-            const SizedBox(height: 16),
-            Expanded(child: _buildBody()),
-          ],
-        ),
-      ),
-    );
-  }
+    final state = context.watch<AppState>();
+    final role = context.watch<AuthService>().currentUser?.role ?? AppRole.maintenanceTechnician;
+    final tab = _tab;
+    // إنشاء "بلاغ وقائي جديد" (تبويب "أعمال وقائية") قرار صريح من الإدارة:
+    // مسؤول الصيانة أو المدير فقط، وليس الفني — راجع نفس القيد الملزم فعليًا
+    // على السيرفر في routes/workOrders.js (POST / يرفض kind: 'preventive' من
+    // أي دور غير هذين).
+    final canManage = canManageMaintenance(role);
 
-  Widget _buildRangeSelector() {
-    final canApply = _customFrom != null && _customTo != null && !_customFrom!.isAfter(_customTo!);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(12)),
-          child: Row(
-            children: [
-              Expanded(
-                child: _Segment(
-                  label: 'آخر ٣٠ يوم',
-                  selected: _mode == _RangeMode.last30,
-                  onTap: () {
-                    if (_mode == _RangeMode.last30) return;
-                    setState(() => _mode = _RangeMode.last30);
-                    _load();
-                  },
-                ),
-              ),
-              Expanded(
-                child: _Segment(
-                  label: 'فترة مخصصة',
-                  selected: _mode == _RangeMode.custom,
-                  onTap: () => setState(() => _mode = _RangeMode.custom),
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (_mode == _RangeMode.custom) ...[
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(child: _DateField(label: 'من تاريخ', value: _customFrom, onTap: () => _pickDate(isFrom: true))),
-              const SizedBox(width: 10),
-              Expanded(child: _DateField(label: 'إلى تاريخ', value: _customTo, onTap: () => _pickDate(isFrom: false))),
-            ],
-          ),
-          const SizedBox(height: 10),
-          if (!canApply) ...[
-            const Text('اختر تاريخ البداية والنهاية ثم اضغط "تطبيق"', style: TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
-            const SizedBox(height: 8),
-          ],
-          PrimaryButton(label: 'تطبيق', color: AppColors.maintenance, icon: Icons.check, onPressed: canApply ? _load : null),
-        ],
-      ],
-    );
-  }
+    // الأعمال المنجزة لا تظهر في لوحة العمل اليومية هذه حتى لا تتراكم فيها
+    // للأبد — تبقى متاحة (وقابلة للحذف نهائيًا) من شاشة "الأعمال المنجزة"
+    // التي يفتحها زر شريط الأدوات بالأسفل.
+    final openReports = state.maintenanceReports.where((r) => r.status != MaintenanceStatus.completed);
 
-  Widget _buildBody() {
-    if (_loading) return const Center(child: CircularProgressIndicator(color: AppColors.maintenance));
-    if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.textMuted, fontSize: 12.5)),
-              const SizedBox(height: 14),
-              TextButton(onPressed: _load, child: const Text('إعادة المحاولة')),
-            ],
-          ),
+    // عناصر التبويب الحالي — قائمة موحّدة قد تحوي أوامر عمل (MaintenanceReport)
+    // وبلاغات إنتاج لم تتحوّل بعد (Incident) معًا في تبويب "الأعطال الطارئة"
+    // فقط، مرتّبة زمنيًا (الأحدث أولًا) كأنها قائمة واحدة فعلية.
+    final List<Object> feedItems = switch (tab) {
+      _DashTab.emergency => [
+          ...openReports.where((r) => r.isEmergency && !r.isTask),
+          ...state.incidents.where((i) => i.isOpen),
+        ]..sort((a, b) => _feedTime(b).compareTo(_feedTime(a))),
+      _DashTab.preventive => openReports.where((r) => !r.isEmergency).toList(),
+      _DashTab.tasks => openReports.where((r) => r.isTask).toList(),
+    };
+
+    final now = DateTime.now();
+    final completedThisMonth = state.maintenanceReports.where((r) =>
+        r.status == MaintenanceStatus.completed &&
+        r.closedAt != null &&
+        r.closedAt!.year == now.year &&
+        r.closedAt!.month == now.month).length;
+    final preventiveCount = state.maintenanceReports.where((r) => !r.isEmergency).length;
+    final total = state.maintenanceReports.isEmpty ? 1 : state.maintenanceReports.length;
+    final preventiveRatio = ((preventiveCount / total) * 100).round();
+    final avgResolution = averageMaintenanceResolution(state.maintenanceReports);
+    final avgResolutionLabel = avgResolution == null ? '—' : ArabicFormat.duration(avgResolution);
+
+    // ملخص أرقام سريع إضافي (أكثر عطل تكرارًا + الفني الأعلى أداءً خلال آخر
+    // ٣٠ يومًا) — من GET /api/dashboard، يظهر فقط لو توفّرت بيانات كافية
+    // (مصنع جديد بلا سجل كافٍ مثلًا لن يظهر له هذا السطر، بلا أي خطأ).
+    final quickStats = state.maintenanceQuickStats;
+    final quickStatsParts = <String>[];
+    if (quickStats != null) {
+      if (quickStats.topFaultDescription != null && quickStats.topFaultOccurrences > 0) {
+        quickStatsParts.add(
+          'الأكثر تكرارًا (٣٠ يوم): ${quickStats.topFaultDescription} (${ArabicFormat.number(quickStats.topFaultOccurrences)} مرات)',
+        );
+      }
+      if (quickStats.topTechnicianName != null && quickStats.topTechnicianCompletedCount > 0) {
+        quickStatsParts.add(
+          'الأعلى أداءً: ${quickStats.topTechnicianName} (${ArabicFormat.number(quickStats.topTechnicianCompletedCount)} منجز)',
+        );
+      }
+    }
+    final quickStatsLine = quickStatsParts.isEmpty ? null : quickStatsParts.join('  ·  ');
+
+    // زر "+" مختلف حسب التبويب: "مهام عامة" يفتح إنشاء مهمة عمل لأي دور
+    // صيانة أصلي (فني/مسؤول صيانة — كما كان على تبويب "الأعطال الطارئة"
+    // سابقًا قبل فصل المهام في تبويبها الخاص)، "أعمال وقائية" لمسؤول
+    // الصيانة/المدير فقط كما كان تمامًا. تبويب "الأعطال الطارئة" بلا زر
+    // إضافة إطلاقًا الآن — لا توجد طريقة لرفع عطل طارئ مباشرة من هنا أصلًا
+    // (يصل فقط كبلاغ إنتاج يُحوَّل أو يُستحدث عبر "مهمة عمل")، فيبقى التبويب
+    // للعرض/التحويل فقط.
+    //
+    // تنبيه مهم (قرار صريح 2026-10-03): مسؤول المخزون (inventoryManager)
+    // والمصمم (designer) يريان هذا التبويب الآن أيضًا (راجع isInventoryOnlyRole
+    // في auth_service.dart) لكنهما عمدًا غير مشمولين هنا — isMaintenanceRole
+    // تحديدًا لا isInventoryOnlyRole — لأن الطلب كان "يمكن تكليفهما وإنجاز
+    // مهامهما" فقط، لا "إنشاء مهام جديدة بأنفسهما". المسار المطابق على
+    // السيرفر (POST /api/work-orders في routes/workOrders.js) بقي أيضًا
+    // عمدًا بلا توسيع لهما — فإخفاء الزر هنا ضروري وليس مجرد تجميل، وإلا
+    // سيضغطان عليه ليصلهما خطأ "403" غير مفهوم من السيرفر.
+    final canCreateTask = role == AppRole.admin || isMaintenanceRole(role);
+    Widget? fab;
+    if (tab == _DashTab.tasks && canCreateTask) {
+      fab = FloatingActionButton(
+        backgroundColor: AppColors.maintenance,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const MaintenanceNewReportScreen()),
         ),
+        child: const Icon(Icons.add, color: Colors.white),
+      );
+    } else if (tab == _DashTab.preventive && canManage) {
+      fab = FloatingActionButton(
+        backgroundColor: AppColors.maintenance,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const MaintenanceWorkOrderScreen()),
+        ),
+        child: const Icon(Icons.add, color: Colors.white),
       );
     }
-    final data = _data;
-    if (data == null) return const SizedBox.shrink();
-    final s = data.summary;
-    final avgLabel = s.avgResolutionMinutes != null ? ArabicFormat.duration(Duration(minutes: s.avgResolutionMinutes!)) : '—';
 
-    return ListView(
-      children: [
-        InfoNote(
-          text: 'الفترة المعروضة: من ${ArabicFormat.date(data.from)} إلى ${ArabicFormat.date(data.to)}',
-          color: AppColors.maintenance,
-          icon: Icons.date_range_outlined,
-        ),
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            KpiCard(value: ArabicFormat.number(s.total), label: 'إجمالي الأوامر', valueColor: AppColors.maintenance),
-            const SizedBox(width: 10),
-            KpiCard(value: ArabicFormat.number(s.completed), label: 'مُنجزة', valueColor: AppColors.successText),
-            const SizedBox(width: 10),
-            KpiCard(value: avgLabel, label: 'متوسط وقت الإصلاح', valueColor: AppColors.maintenance),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            KpiCard(value: ArabicFormat.number(s.open), label: 'مفتوحة حاليًا', valueColor: AppColors.warningText),
-            const SizedBox(width: 10),
-            KpiCard(value: ArabicFormat.number(s.cancelled), label: 'ملغاة', valueColor: AppColors.textMuted),
-            const SizedBox(width: 10),
-            KpiCard(value: ArabicFormat.number(data.technicians.length), label: 'عدد الفنيين', valueColor: AppColors.maintenance),
-          ],
-        ),
-        const SizedBox(height: 22),
-        const _SectionTitle('الاتجاه الزمني (أوامر مُنشأة مقابل مُنجزة)'),
-        const SizedBox(height: 10),
-        _TrendChart(points: data.trend, bucket: data.bucket),
-        const SizedBox(height: 22),
-        const _SectionTitle('توزيع المهام حسب النوع'),
-        const SizedBox(height: 10),
-        _KindBarChart(summary: s),
-        const SizedBox(height: 22),
-        const _SectionTitle('أداء الفنيين'),
-        const SizedBox(height: 10),
-        if (data.technicians.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(16),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(color: AppColors.surface, border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(14)),
-            child: const Text('لا يوجد فنيون مسجّلون بعد', style: TextStyle(color: AppColors.textMuted, fontSize: 12.5)),
-          )
-        else
-          _TechnicianBarChart(technicians: data.technicians),
-        const SizedBox(height: 10),
-      ],
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('الصيانة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        actions: [
+          // "تحليل الصيانة" (طلب 2026-10-03: "كـ إدارة الصيانة أريد صفحة
+          // للتحليل — المهام وعمل الفنيين") — مقصورة على مسؤول الصيانة (ومدير
+          // النظام تلقائيًا عبر canManageMaintenance) فقط، نفس تقييد GET
+          // /api/maintenance-analysis على السيرفر تمامًا — لا تظهر لفني
+          // الصيانة العادي ولا لمسؤول المخزون/المصمم.
+          if (canManage)
+            IconButton(
+              icon: const Icon(Icons.bar_chart_outlined),
+              tooltip: 'تحليل الصيانة',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const MaintenanceAnalysisScreen()),
+              ),
+            ),
+          // طلب تصريح عمل (لأعمال خطرة كاللحام/الأماكن المغلقة/الارتفاعات...)
+          // — نفس شاشة/عملية الطلب المستخدمة أصلًا من قسم السلامة تمامًا
+          // (SafetyPermitRequestScreen)، بلا أي تعديل عليها.
+          IconButton(
+            icon: const Icon(Icons.verified_user_outlined),
+            tooltip: 'طلب تصريح عمل',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SafetyPermitRequestScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.task_alt_outlined),
+            tooltip: 'الأعمال المنجزة',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MaintenanceCompletedScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.description_outlined),
+            tooltip: 'التقارير',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MaintenanceReportsScreen()),
+            ),
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    KpiCard(value: avgResolutionLabel, label: 'متوسط وقت الإصلاح', valueColor: AppColors.maintenance),
+                    const SizedBox(width: 10),
+                    KpiCard(value: ArabicFormat.number(completedThisMonth), label: 'أعطال هذا الشهر', valueColor: AppColors.maintenance),
+                    const SizedBox(width: 10),
+                    KpiCard(value: '٪${ArabicFormat.toEasternDigits(preventiveRatio)}', label: 'نسبة الوقائي', valueColor: AppColors.maintenance),
+                  ],
+                ),
+                if (quickStatsLine != null) ...[
+                  const SizedBox(height: 10),
+                  InfoNote(text: quickStatsLine, color: AppColors.maintenance, icon: Icons.insights_outlined),
+                ],
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(12)),
+                  child: Row(
+                    children: [
+                      Expanded(child: _Segment(label: 'الأعطال الطارئة', selected: tab == _DashTab.emergency, onTap: () => setState(() => _tab = _DashTab.emergency))),
+                      Expanded(child: _Segment(label: 'أعمال وقائية', selected: tab == _DashTab.preventive, onTap: () => setState(() => _tab = _DashTab.preventive))),
+                      Expanded(child: _Segment(label: 'المهام العامة', selected: tab == _DashTab.tasks, onTap: () => setState(() => _tab = _DashTab.tasks))),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Expanded(
+                  child: feedItems.isEmpty
+                      ? const Center(child: Text('لا توجد بلاغات جارية', style: TextStyle(color: AppColors.textMuted)))
+                      : ListView.separated(
+                          itemCount: feedItems.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 10),
+                          itemBuilder: (context, i) {
+                            final item = feedItems[i];
+                            if (item is Incident) {
+                              return IncomingIncidentCard(
+                                incident: item,
+                                converting: _convertingIncidentIds.contains(item.id),
+                                // null لمسؤول المخزون/المصمم (قرار 2026-10-03: لا يقدران
+                                // ينشئا أمر عمل جديدًا بأي طريقة، ولو بالتحويل — نفس قيد
+                                // زر "+" أعلاه تمامًا ونفس السبب: POST /api/work-orders
+                                // على السيرفر لم يُفتح لهما عمدًا).
+                                onConvert: canCreateTask ? () => _convertIncident(item) : null,
+                              );
+                            }
+                            final r = item as MaintenanceReport;
+                            return MaintenanceReportCard(
+                              report: r,
+                              onEdit: canManage
+                                  ? () => Navigator.of(context).push(
+                                        MaterialPageRoute(builder: (_) => MaintenanceEditScreen(report: r)),
+                                      )
+                                  : null,
+                              onDelete: canManage ? () => _confirmDelete(r.id, '${r.equipment} — ${r.line}') : null,
+                              canAssign: canCreateTask,
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+          if (fab != null)
+            Positioned(
+              bottom: 20,
+              left: 20,
+              child: fab,
+            ),
+        ],
+      ),
     );
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  final String text;
-  const _SectionTitle(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(text, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: AppColors.textPrimary));
-  }
+/// وقت العنصر — [MaintenanceReport.reportedAt] أو [Incident.reportedAt] —
+/// يُستخدم فقط لترتيب القائمة المدمجة في تبويب "الأعطال الطارئة" زمنيًا.
+DateTime _feedTime(Object item) {
+  if (item is Incident) return item.reportedAt;
+  return (item as MaintenanceReport).reportedAt;
 }
 
 class _Segment extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+
   const _Segment({required this.label, required this.selected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(9),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 2),
         decoration: BoxDecoration(
           color: selected ? AppColors.surface : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          boxShadow: selected ? [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 4)] : null,
+          borderRadius: BorderRadius.circular(9),
+          boxShadow: selected ? [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 3)] : null,
         ),
         alignment: Alignment.center,
         child: Text(
           label,
-          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: selected ? AppColors.maintenance : AppColors.textMuted),
-        ),
-      ),
-    );
-  }
-}
-
-class _DateField extends StatelessWidget {
-  final String label;
-  final DateTime? value;
-  final VoidCallback onTap;
-  const _DateField({required this.label, required this.value, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(color: AppColors.surface, border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(12)),
-        child: Row(
-          children: [
-            const Icon(Icons.calendar_today_outlined, size: 15, color: AppColors.textMuted),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                value != null ? ArabicFormat.date(value!) : label,
-                style: TextStyle(fontSize: 12.5, color: value != null ? AppColors.textPrimary : AppColors.textFaint, fontWeight: FontWeight.w600),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// مخطط أعمدة بسيط (بلا أي حزمة رسم بياني خارجية — بنفس أسلوب التطبيق في
-/// inventory_screen.dart: Container عادي لا تبعيات جديدة) لعدد أوامر العمل
-/// المُنشأة مقابل المُنجزة لكل نقطة زمنية (يوم أو أسبوع حسب [bucket]، يحدده
-/// السيرفر تلقائيًا: أسبوعيًا لو الفترة أطول من ٦٠ يومًا، وإلا يوميًا).
-class _TrendChart extends StatelessWidget {
-  final List<MaintenanceTrendPoint> points;
-  final String bucket;
-  const _TrendChart({required this.points, required this.bucket});
-
-  @override
-  Widget build(BuildContext context) {
-    if (points.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(color: AppColors.surface, border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(14)),
-        child: const Text('لا توجد بيانات كافية خلال هذه الفترة', style: TextStyle(color: AppColors.textMuted, fontSize: 12.5)),
-      );
-    }
-    final maxVal = points.fold<int>(1, (m, p) => [m, p.created, p.completed].reduce((a, b) => a > b ? a : b));
-    // أكثر من ١٤ نقطة يصعب قراءتها كأعمدة منفصلة على شاشة جوال — نعرض آخر ١٤ فقط (الأحدث).
-    final shown = points.length > 14 ? points.sublist(points.length - 14) : points;
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 16, 14, 12),
-      decoration: BoxDecoration(color: AppColors.surface, border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(14)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            bucket == 'week' ? 'البيانات مجمّعة أسبوعيًا (الفترة أطول من ٦٠ يومًا)' : 'البيانات مجمّعة يوميًا',
-            style: const TextStyle(fontSize: 10.5, color: AppColors.textFaint),
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: selected ? FontWeight.bold : FontWeight.w600,
+            color: selected ? AppColors.maintenance : AppColors.textMuted,
           ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 120,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+        ),
+      ),
+    );
+  }
+}
+
+/// بطاقة عرض بلاغ/أمر عمل صيانة — مستخدمة في لوحة العمل اليومية وفي شاشة
+/// الأعمال المنجزة (maintenance_completed_screen.dart) معًا. تمرير [onDelete]
+/// يضيف زر حذف نهائي للبطاقة (كان يُستخدم فقط للأعمال المنجزة المؤرشفة، ثم
+/// صار متاحًا أيضًا للوحة العمل اليومية بأي حالة — قرار 2026-09-26). تمرير
+/// [onEdit] يضيف زر "تعديل" (قلم) يفتح شاشة تعديل المهمة — لمسؤول
+/// الصيانة/المدير فقط، مطابقةً لقيد السيرفر (requireRole('maintenance_manager')).
+class MaintenanceReportCard extends StatelessWidget {
+  final MaintenanceReport report;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+  // هل يظهر زر "إضافة فني آخر" (أيقونة person_add) على بلاغ قيد التنفيذ؟
+  // افتراضيًا true (أدوار الصيانة الأصلية، كما كان دائمًا) — يُمرَّر false
+  // صراحة لمسؤول المخزون/المصمم (قرار 2026-10-03: رفضتم إعطائهما هذه
+  // الصلاحية تحديدًا، خلافًا لاستلام/إنجاز المهمة التي تبقى متاحة لهما).
+  final bool canAssign;
+
+  const MaintenanceReportCard({
+    super.key,
+    required this.report,
+    this.onEdit,
+    this.onDelete,
+    this.canAssign = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final statusInfo = switch (report.status) {
+      MaintenanceStatus.pendingAssignment => (
+          label: 'بانتظار التعيين',
+          color: AppColors.warningText,
+          bg: AppColors.warningBg,
+        ),
+      MaintenanceStatus.inProgress => (
+          label: 'قيد التنفيذ',
+          color: AppColors.maintenance,
+          bg: AppColors.maintenance.withOpacity(0.1),
+        ),
+      MaintenanceStatus.completed => (
+          label: 'مكتمل',
+          color: AppColors.successText,
+          bg: AppColors.successBg,
+        ),
+    };
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () {
+        if (report.status == MaintenanceStatus.pendingAssignment) {
+          Navigator.of(context).push(MaterialPageRoute(builder: (_) => MaintenanceAssignScreen(report: report)));
+        } else if (report.status == MaintenanceStatus.inProgress) {
+          Navigator.of(context).push(MaterialPageRoute(builder: (_) => MaintenanceTaskCloseScreen(report: report)));
+        } else if (report.status == MaintenanceStatus.completed) {
+          Navigator.of(context).push(MaterialPageRoute(builder: (_) => MaintenanceReportPrintScreen(report: report)));
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          border: Border.all(color: AppColors.border),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
               children: [
-                for (final p in shown)
-                  Expanded(
-                    child: Tooltip(
-                      message: '${ArabicFormat.date(p.date)}\nأُنشئت: ${ArabicFormat.number(p.created)} — أُنجزت: ${ArabicFormat.number(p.completed)}',
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          _bar(p.created, maxVal, AppColors.maintenance.withOpacity(0.28)),
-                          const SizedBox(width: 2),
-                          _bar(p.completed, maxVal, AppColors.maintenance),
-                        ],
+                Expanded(
+                  child: Text('${report.equipment} — ${report.line}',
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                ),
+                if (report.status == MaintenanceStatus.completed)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 6),
+                    child: Icon(Icons.picture_as_pdf_outlined, size: 18, color: AppColors.textMuted),
+                  ),
+                // إضافة فني إضافي لبلاغ قيد التنفيذ (سبق تعيين فني له) — بلا
+                // فتح شاشة "إغلاق البلاغ" كاملة؛ نفس شاشة التعيين تُستخدم هنا
+                // أيضًا وتضيف فقط بلا مساس بالفني/الفنيين المُسندين حاليًا.
+                // مقيّد بـcanAssign (أدوار الصيانة الأصلية فقط — راجع تعليق
+                // الحقل أعلى الكلاس) حتى لا يصل مسؤول المخزون/المصمم لخطأ
+                // 403 غير مفهوم من السيرفر لو ضغطا عليه.
+                if (report.status == MaintenanceStatus.inProgress && canAssign)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: InkWell(
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => MaintenanceAssignScreen(report: report)),
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      child: const Padding(
+                        padding: EdgeInsets.all(2),
+                        child: Icon(Icons.person_add_alt_1_outlined, size: 18, color: AppColors.maintenance),
+                      ),
+                    ),
+                  ),
+                if (onEdit != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: InkWell(
+                      onTap: onEdit,
+                      borderRadius: BorderRadius.circular(8),
+                      child: const Padding(
+                        padding: EdgeInsets.all(2),
+                        child: Icon(Icons.edit_outlined, size: 18, color: AppColors.maintenance),
+                      ),
+                    ),
+                  ),
+                StatusPill(label: statusInfo.label, color: statusInfo.color, background: statusInfo.bg),
+                if (onDelete != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: InkWell(
+                      onTap: onDelete,
+                      borderRadius: BorderRadius.circular(8),
+                      child: const Padding(
+                        padding: EdgeInsets.all(2),
+                        child: Icon(Icons.delete_outline, size: 19, color: Color(0xFFB3261E)),
                       ),
                     ),
                   ),
               ],
             ),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              for (final p in shown)
-                Expanded(
-                  child: Text(
-                    '${ArabicFormat.toEasternDigits(p.date.day)}/${ArabicFormat.toEasternDigits(p.date.month)}',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 9, color: AppColors.textFaint),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+            const SizedBox(height: 6),
+            Text(report.description, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+            // اسم/أسماء الفنيين المُسنَدين — قرار صريح 2026-09-26: يظهر لكل من
+            // يرى البطاقة أصلًا (فني مُسنَد لها أو مسؤول/مدير)، ليعرف الفني من
+            // يشاركه المهمة. لا يظهر شيء طالما "بانتظار التعيين" (لا فني بعد).
+            if (report.technicianDisplayNames != '—') ...[
+              const SizedBox(height: 4),
+              Text('الفنيون: ${report.technicianDisplayNames}',
+                  style: const TextStyle(fontSize: 12, color: AppColors.textMuted, fontWeight: FontWeight.w600)),
             ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _legendDot(AppColors.maintenance.withOpacity(0.28), 'أُنشئت'),
-              const SizedBox(width: 16),
-              _legendDot(AppColors.maintenance, 'أُنجزت'),
-            ],
-          ),
-        ],
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(_timeAgo(report.reportedAt), style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                Text('رفع: ${report.reportedBy}', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _bar(int value, int maxVal, Color color) {
-    final height = maxVal == 0 ? 0.0 : (value / maxVal) * 95;
-    final clamped = value > 0 ? (height < 3 ? 3.0 : height) : 0.0;
-    return Container(
-      width: 7,
-      height: clamped,
-      decoration: BoxDecoration(color: color, borderRadius: const BorderRadius.vertical(top: Radius.circular(3))),
-    );
-  }
-
-  Widget _legendDot(Color color, String label) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(width: 10, height: 10, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))),
-        const SizedBox(width: 6),
-        Text(label, style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
-      ],
-    );
+  String _timeAgo(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inDays >= 1) return 'قبل ${ArabicFormat.number(diff.inDays)} يوم';
+    if (diff.inHours >= 1) return 'منذ ${ArabicFormat.number(diff.inHours)} ساعة';
+    return 'منذ ${ArabicFormat.number(diff.inMinutes)} دقيقة';
   }
 }
 
-/// توزيع المهام الثلاثي (أعطال طارئة / أعمال وقائية / مهام عامة) كأعمدة
-/// أفقية نسبية — نفس أسلوب _CategoryDistributionChart في inventory_screen.dart.
-class _KindBarChart extends StatelessWidget {
-  final MaintenanceAnalysisSummary summary;
-  const _KindBarChart({required this.summary});
+/// بطاقة "بلاغ إنتاج" لم يتحوّل بعد لأمر عمل صيانة — تظهر الآن مباشرة ضمن
+/// قائمة تبويب "الأعطال الطارئة" باللوحة الرئيسية (طلب 2026-10-01: "بدون أمر
+/// تحويل تنزل بنفس قائمة الأعمال")، بشكل وألوان مختلفة عمدًا عن
+/// [MaintenanceReportCard] (الأخضر المطفي — لون قسم الإنتاج نفسه في باقي
+/// التطبيق — بدل الكحلي، + وسم "بلاغ إنتاج" صريح بالأعلى) حتى يُفرَّق
+/// المستخدم فورًا بين بلاغ لم يتحوّل بعد (لا فني مُسنَد، لا حالة عمل حقيقية)
+/// وأمر عمل فعلي قائم. زر "تحويل" يبقى متاحًا على البطاقة نفسها لمن يريد
+/// تحويلها الآن؛ بلا تحويل، تبقى ظاهرة هنا فقط للعِلم.
+class IncomingIncidentCard extends StatelessWidget {
+  final Incident incident;
+  final bool converting;
+  // null يعني "لا يقدر هذا المستخدم على التحويل" (مسؤول المخزون/المصمم —
+  // راجع التعليق عند موضع الاستدعاء) — يُخفي زر "تحويل" بالكامل بدل تعطيله
+  // بصريًا فقط، فلا يصل المستخدم لخطأ 403 غير مفهوم من السيرفر.
+  final VoidCallback? onConvert;
+
+  const IncomingIncidentCard({super.key, required this.incident, required this.converting, required this.onConvert});
 
   @override
   Widget build(BuildContext context) {
-    final entries = [
-      MapEntry('أعطال طارئة', summary.emergencyCount),
-      MapEntry('أعمال وقائية', summary.preventiveCount),
-      MapEntry('مهام عامة', summary.taskCount),
-    ];
-    final total = summary.emergencyCount + summary.preventiveCount + summary.taskCount;
+    final locationLabel = [
+      if (incident.lineName != null) incident.lineName!,
+      if (incident.facility != null) incident.facility!,
+    ].join(' — ');
 
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: AppColors.surface, border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(14)),
+      decoration: BoxDecoration(
+        color: AppColors.production.withOpacity(0.07),
+        border: Border.all(color: AppColors.production.withOpacity(0.35)),
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (int i = 0; i < entries.length; i++) ...[
-            Row(
-              children: [
-                Expanded(child: Text(entries[i].key, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600))),
-                const SizedBox(width: 8),
-                Text(
-                  '${ArabicFormat.number(entries[i].value)} (${total == 0 ? 0 : (entries[i].value * 100 / total).round()}٪)',
+          Row(
+            children: [
+              const StatusPill(label: 'بلاغ إنتاج', color: Colors.white, background: AppColors.production),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  locationLabel.isEmpty ? 'بدون خط محدد' : locationLabel,
+                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (incident.severityLabel != null) ...[
+                const SizedBox(width: 6),
+                StatusPill(label: incident.severityLabel!, color: AppColors.textSecondary, background: AppColors.divider),
+              ],
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (incident.equipmentName != null) ...[
+            Text(incident.equipmentName!, style: const TextStyle(fontSize: 12.5, color: AppColors.textSecondary)),
+            const SizedBox(height: 4),
+          ],
+          Text(incident.description, style: const TextStyle(fontSize: 13.5)),
+          if (incident.expectedBatchNumber != null && incident.expectedBatchNumber!.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.maintenance.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'الباتش المتوقع: ${incident.expectedBatchNumber}',
+                style: const TextStyle(fontSize: 11, color: AppColors.maintenance, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+          if (incident.photoPath != null) ...[
+            const SizedBox(height: 8),
+            PhotoThumbnailButton(url: '$kApiOrigin${incident.photoPath}'),
+          ],
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'بلّغ: ${incident.reportedBy} — توقف: ${ArabicFormat.duration(Duration(minutes: incident.downtimeMinutes))}',
                   style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: LayoutBuilder(
-                builder: (context, constraints) => Stack(
-                  children: [
-                    Container(height: 8, width: constraints.maxWidth, color: AppColors.divider),
-                    Container(height: 8, width: constraints.maxWidth * (total == 0 ? 0.0 : entries[i].value / total), color: AppColors.maintenance),
-                  ],
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-            ),
-            if (i != entries.length - 1) const SizedBox(height: 10),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// أداء الفنيين — شريط أفقي لكل فني بطول يعكس عدد المهام المُنجزة خلال
-/// الفترة (نسبةً لأعلى فني أداءً)، مع نص إضافي تحته يوضح متوسط وقت الإنجاز
-/// وعدد المهام المفتوحة حاليًا المُسندة له.
-class _TechnicianBarChart extends StatelessWidget {
-  final List<TechnicianPerformance> technicians;
-  const _TechnicianBarChart({required this.technicians});
-
-  @override
-  Widget build(BuildContext context) {
-    final sorted = [...technicians]..sort((a, b) => b.completedCount.compareTo(a.completedCount));
-    final maxVal = sorted.fold<int>(1, (m, t) => t.completedCount > m ? t.completedCount : m);
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: AppColors.surface, border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(14)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (int i = 0; i < sorted.length; i++) ...[
-            Row(
-              children: [
-                Expanded(child: Text(sorted[i].name, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+              if (onConvert != null || converting) ...[
                 const SizedBox(width: 8),
-                Text('${ArabicFormat.number(sorted[i].completedCount)} مُنجزة', style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+                converting
+                    ? const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.2)),
+                      )
+                    : TextButton.icon(
+                        onPressed: onConvert,
+                        icon: const Icon(Icons.build_circle_outlined, size: 16),
+                        label: const Text('تحويل', style: TextStyle(fontSize: 12.5)),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.production,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: Size.zero,
+                        ),
+                      ),
               ],
-            ),
-            const SizedBox(height: 4),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: LayoutBuilder(
-                builder: (context, constraints) => Stack(
-                  children: [
-                    Container(height: 8, width: constraints.maxWidth, color: AppColors.divider),
-                    Container(height: 8, width: constraints.maxWidth * (sorted[i].completedCount / maxVal), color: AppColors.maintenance),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              [
-                sorted[i].openCount > 0 ? 'لديه ${ArabicFormat.number(sorted[i].openCount)} مهمة مفتوحة حاليًا' : 'لا توجد مهام مفتوحة حاليًا',
-                if (sorted[i].avgResolutionMinutes != null) 'متوسط الإنجاز ${ArabicFormat.duration(Duration(minutes: sorted[i].avgResolutionMinutes!))}',
-              ].join(' — '),
-              style: const TextStyle(fontSize: 11, color: AppColors.textFaint),
-            ),
-            if (i != sorted.length - 1) const SizedBox(height: 14),
-          ],
+            ],
+          ),
         ],
       ),
     );
