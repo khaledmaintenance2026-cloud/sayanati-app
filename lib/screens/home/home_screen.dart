@@ -22,7 +22,11 @@ class HomeScreen extends StatelessWidget {
     final pendingPermits = state.permits.where((p) => p.status.name == 'pending').length;
     final lowStockItems = state.inventoryItems.where((i) => i.isLow).length;
 
-    final showMaintenance = role == AppRole.admin || isMaintenanceRole(role);
+    // تحديث 2026-10-03: مسؤول المخزون والمصمم أصبحا أيضًا "أفراد صيانة" قابلين
+    // للتكليف (راجع التعليق أعلى isInventoryOnlyRole في auth_service.dart) —
+    // فتظهر لهما بطاقة "الصيانة" الآن أيضًا، بنطاق محدود بمهامهما فقط تمامًا
+    // كالفني العادي (التصفية فعليًا من السيرفر، لا من هنا).
+    final showMaintenance = role == AppRole.admin || isMaintenanceRole(role) || isInventoryOnlyRole(role);
     // "المخزون" بطاقة مستقلة الآن (تبويب مستقل — راجع inventory_dashboard_screen.dart
     // وmain.dart)، لكنها تبقى مقصورة على فريق الصيانة والمخزون فقط (فني/مسؤول
     // صيانة، مسؤول المخزون، المصمم) بقرار من الإدارة رغم استقلاليتها.
