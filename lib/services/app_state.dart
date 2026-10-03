@@ -7,6 +7,7 @@ import '../models/batch_edit.dart';
 import '../models/custody.dart';
 import '../models/injury_report.dart';
 import '../models/inventory.dart';
+import '../models/maintenance_analysis.dart';
 import '../models/maintenance_report.dart';
 import '../models/production.dart';
 import '../models/safety_permit.dart';
@@ -499,6 +500,19 @@ class AppState extends ChangeNotifier {
   /// spare_parts_used) — تُستخدم عند فتح تقرير PDF لعمل مُنجز، لضمان دقة
   /// القطع المعروضة حتى بعد إعادة تشغيل التطبيق (بخلاف الاعتماد على القيمة
   /// المحلية المؤقتة في [closeReport] أعلاه).
+  /// بيانات صفحة "تحليل الصيانة" (طلب 2026-10-03: "كـ إدارة الصيانة أريد صفحة
+  /// للتحليل — المهام وعمل الفنيين") — [from]/[to] اختياريان: لو تُركا فارغين
+  /// يستخدم السيرفر فترة افتراضية (آخر 30 يومًا)، ولو حُدِّدا يُحسب التحليل
+  /// بالضبط عن الفترة المخصصة. يرمي استثناء عند الفشل (مثلاً دور بلا صلاحية)
+  /// ليتولى استدعاء الشاشة عرض رسالة الخطأ المناسبة.
+  Future<MaintenanceAnalysis> fetchMaintenanceAnalysis({DateTime? from, DateTime? to}) async {
+    final query = <String, dynamic>{};
+    if (from != null) query['from'] = from.toIso8601String().split('T').first;
+    if (to != null) query['to'] = to.toIso8601String().split('T').first;
+    final data = await _api.get('/maintenance-analysis', query: query.isEmpty ? null : query);
+    return MaintenanceAnalysis.fromJson((data as Map).cast<String, dynamic>());
+  }
+
   Future<MaintenanceReport> fetchWorkOrderDetail(String id) async {
     final data = await _api.get('/work-orders/$id');
     final report = MaintenanceReport.fromApi(data['workOrder'] as Map<String, dynamic>);
