@@ -7,6 +7,7 @@ import '../../services/arabic_format.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import 'maintenance_analysis_screen.dart';
 
 /// شاشة تقارير الصيانة — كانت بالكامل شاشة عرض ثابتة (أرقام وهمية مكتوبة
 /// مباشرة بالكود، وزر "إنشاء التقرير" يعرض رسالة نجاح مزيّفة بدون أي اتصال
@@ -115,6 +116,21 @@ class _MaintenanceReportsScreenState extends State<MaintenanceReportsScreen> {
               const _ReportRow(title: 'التقرير الشهري', subtitle: 'رابط تقرير — كل ٣٠ يومًا تقريبًا لجروب الصيانة'),
               const SizedBox(height: 10),
               const _ReportRow(title: 'التقرير السنوي', subtitle: 'رابط تقرير — كل سنة تقريبًا لجروب الصيانة'),
+              // اختصار مباشر لصفحة "تحليل الصيانة" (رسوم بيانية تفصيلية عن
+              // المهام وأداء الفنيين) — طلب صريح 2026-10-03: "إضافتها
+              // للتقارير أيضًا"، بنفس قيد canManage المستخدم فوق لباقي هذه
+              // الشاشة (مسؤول الصيانة أو المدير فقط).
+              if (canManage) ...[
+                const SizedBox(height: 10),
+                _ReportRow(
+                  title: 'تحليل الصيانة',
+                  subtitle: 'رسوم بيانية تفصيلية عن المهام وأداء الفنيين',
+                  icon: Icons.insights_outlined,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const MaintenanceAnalysisScreen()),
+                  ),
+                ),
+              ],
               const SizedBox(height: 22),
               if (canManage) Builder(
                 builder: (context) {
@@ -200,11 +216,15 @@ class _MaintenanceReportsScreenState extends State<MaintenanceReportsScreen> {
 class _ReportRow extends StatelessWidget {
   final String title;
   final String subtitle;
-  const _ReportRow({required this.title, required this.subtitle});
+  // onTap اختياري حتى يبقى الصفّان الثابتان (الشهري/السنوي) كما هما بدون أي
+  // تفاعل، بينما يصبح صفّ "تحليل الصيانة" الجديد قابلاً للنقر — بلا كسر توافق.
+  final VoidCallback? onTap;
+  final IconData icon;
+  const _ReportRow({required this.title, required this.subtitle, this.onTap, this.icon = Icons.description_outlined});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final row = Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(color: AppColors.surface, border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(16)),
       child: Row(
@@ -213,7 +233,7 @@ class _ReportRow extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: BoxDecoration(color: AppColors.maintenance.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-            child: const Icon(Icons.description_outlined, color: AppColors.maintenance),
+            child: Icon(icon, color: AppColors.maintenance),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -225,8 +245,11 @@ class _ReportRow extends StatelessWidget {
               ],
             ),
           ),
+          if (onTap != null) const Icon(Icons.chevron_left, size: 20, color: AppColors.textMuted),
         ],
       ),
     );
+    if (onTap == null) return row;
+    return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(16), child: row);
   }
 }
