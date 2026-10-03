@@ -235,7 +235,11 @@ class _RootNavState extends State<RootNav> {
   List<String> _buildKeys(BuildContext context) {
     final role = context.read<AuthService>().currentUser?.role ?? AppRole.production;
     final keys = <String>['home'];
-    if (role == AppRole.admin || isMaintenanceRole(role)) keys.add('maintenance');
+    // تحديث 2026-10-03: مسؤول المخزون والمصمم أصبحا أيضًا "أفراد صيانة"
+    // قابلين للتكليف (راجع التعليق أعلى isInventoryOnlyRole في
+    // auth_service.dart) — فيريان تبويب "الصيانة" الآن أيضًا، بنطاق محدود
+    // بمهامهما فقط تمامًا كالفني العادي (التصفية فعليًا من السيرفر).
+    if (role == AppRole.admin || isMaintenanceRole(role) || isInventoryOnlyRole(role)) keys.add('maintenance');
     // "المخزون" تبويب مستقل الآن (فُصل عن لوحة الصيانة — راجع
     // inventory_dashboard_screen.dart)، لكنه يبقى مقصورًا على فريق الصيانة
     // والمخزون فقط (فني/مسؤول صيانة، مسؤول المخزون، المصمم) بقرار من الإدارة
