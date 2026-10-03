@@ -195,13 +195,24 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
     final quickStatsLine = quickStatsParts.isEmpty ? null : quickStatsParts.join('  ·  ');
 
     // زر "+" مختلف حسب التبويب: "مهام عامة" يفتح إنشاء مهمة عمل لأي دور
-    // صيانة (كما كان على تبويب "الأعطال الطارئة" سابقًا قبل فصل المهام في
-    // تبويبها الخاص)، "أعمال وقائية" لمسؤول الصيانة/المدير فقط كما كان
-    // تمامًا. تبويب "الأعطال الطارئة" بلا زر إضافة إطلاقًا الآن — لا توجد
-    // طريقة لرفع عطل طارئ مباشرة من هنا أصلًا (يصل فقط كبلاغ إنتاج يُحوَّل
-    // أو يُستحدث عبر "مهمة عمل")، فيبقى التبويب للعرض/التحويل فقط.
+    // صيانة أصلي (فني/مسؤول صيانة — كما كان على تبويب "الأعطال الطارئة"
+    // سابقًا قبل فصل المهام في تبويبها الخاص)، "أعمال وقائية" لمسؤول
+    // الصيانة/المدير فقط كما كان تمامًا. تبويب "الأعطال الطارئة" بلا زر
+    // إضافة إطلاقًا الآن — لا توجد طريقة لرفع عطل طارئ مباشرة من هنا أصلًا
+    // (يصل فقط كبلاغ إنتاج يُحوَّل أو يُستحدث عبر "مهمة عمل")، فيبقى التبويب
+    // للعرض/التحويل فقط.
+    //
+    // تنبيه مهم (قرار صريح 2026-10-03): مسؤول المخزون (inventoryManager)
+    // والمصمم (designer) يريان هذا التبويب الآن أيضًا (راجع isInventoryOnlyRole
+    // في auth_service.dart) لكنهما عمدًا غير مشمولين هنا — isMaintenanceRole
+    // تحديدًا لا isInventoryOnlyRole — لأن الطلب كان "يمكن تكليفهما وإنجاز
+    // مهامهما" فقط، لا "إنشاء مهام جديدة بأنفسهما". المسار المطابق على
+    // السيرفر (POST /api/work-orders في routes/workOrders.js) بقي أيضًا
+    // عمدًا بلا توسيع لهما — فإخفاء الزر هنا ضروري وليس مجرد تجميل، وإلا
+    // سيضغطان عليه ليصلهما خطأ "403" غير مفهوم من السيرفر.
+    final canCreateTask = role == AppRole.admin || isMaintenanceRole(role);
     Widget? fab;
-    if (tab == _DashTab.tasks) {
+    if (tab == _DashTab.tasks && canCreateTask) {
       fab = FloatingActionButton(
         backgroundColor: AppColors.maintenance,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
@@ -296,7 +307,11 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
                               return IncomingIncidentCard(
                                 incident: item,
                                 converting: _convertingIncidentIds.contains(item.id),
-                                onConvert: () => _convertIncident(item),
+                                // null لمسؤول المخزون/المصمم (قرار 2026-10-03: لا يقدران
+                                // ينشئا أمر عمل جديدًا بأي طريقة، ولو بالتحويل — نفس قيد
+                                // زر "+" أعلاه تمامًا ونفس السبب: POST /api/work-orders
+                                // على السيرفر لم يُفتح لهما عمدًا).
+                                onConvert: canCreateTask ? () => _convertIncident(item) : null,
                               );
                             }
                             final r = item as MaintenanceReport;
@@ -308,6 +323,7 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
                                       )
                                   : null,
                               onDelete: canManage ? () => _confirmDelete(r.id, '${r.equipment} — ${r.line}') : null,
+                              canAssign: canCreateTask,
                             );
                           },
                         ),
@@ -381,8 +397,19 @@ class MaintenanceReportCard extends StatelessWidget {
   final MaintenanceReport report;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
+  // هل يظهر زر "إضافة فني آخر" (أيقونة person_add) على بلاغ قيد التنفيذ؟
+  // افتراضيًا true (أدوار الصيانة الأصلية، كما كان دائمًا) — يُمرَّر false
+  // صراحة لمسؤول المخزون/المصمم (قرار 2026-10-03: رفضتم إعطائهما هذه
+  // الصلاحية تحديدًا، خلافًا لاستلام/إنجاز المهمة التي تبقى متاحة لهما).
+  final bool canAssign;
 
-  const MaintenanceReportCard({super.key, required this.report, this.onEdit, this.onDelete});
+  const MaintenanceReportCard({
+    super.key,
+    required this.report,
+    this.onEdit,
+    this.onDelete,
+    this.canAssign = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -439,7 +466,10 @@ class MaintenanceReportCard extends StatelessWidget {
                 // إضافة فني إضافي لبلاغ قيد التنفيذ (سبق تعيين فني له) — بلا
                 // فتح شاشة "إغلاق البلاغ" كاملة؛ نفس شاشة التعيين تُستخدم هنا
                 // أيضًا وتضيف فقط بلا مساس بالفني/الفنيين المُسندين حاليًا.
-                if (report.status == MaintenanceStatus.inProgress)
+                // مقيّد بـcanAssign (أدوار الصيانة الأصلية فقط — راجع تعليق
+                // الحقل أعلى الكلاس) حتى لا يصل مسؤول المخزون/المصمم لخطأ
+                // 403 غير مفهوم من السيرفر لو ضغطا عليه.
+                if (report.status == MaintenanceStatus.inProgress && canAssign)
                   Padding(
                     padding: const EdgeInsets.only(left: 6),
                     child: InkWell(
@@ -523,7 +553,10 @@ class MaintenanceReportCard extends StatelessWidget {
 class IncomingIncidentCard extends StatelessWidget {
   final Incident incident;
   final bool converting;
-  final VoidCallback onConvert;
+  // null يعني "لا يقدر هذا المستخدم على التحويل" (مسؤول المخزون/المصمم —
+  // راجع التعليق عند موضع الاستدعاء) — يُخفي زر "تحويل" بالكامل بدل تعطيله
+  // بصريًا فقط، فلا يصل المستخدم لخطأ 403 غير مفهوم من السيرفر.
+  final VoidCallback? onConvert;
 
   const IncomingIncidentCard({super.key, required this.incident, required this.converting, required this.onConvert});
 
@@ -597,22 +630,24 @@ class IncomingIncidentCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const SizedBox(width: 8),
-              converting
-                  ? const Padding(
-                      padding: EdgeInsets.all(4),
-                      child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.2)),
-                    )
-                  : TextButton.icon(
-                      onPressed: onConvert,
-                      icon: const Icon(Icons.build_circle_outlined, size: 16),
-                      label: const Text('تحويل', style: TextStyle(fontSize: 12.5)),
-                      style: TextButton.styleFrom(
-                        foregroundColor: AppColors.production,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        minimumSize: Size.zero,
+              if (onConvert != null || converting) ...[
+                const SizedBox(width: 8),
+                converting
+                    ? const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.2)),
+                      )
+                    : TextButton.icon(
+                        onPressed: onConvert,
+                        icon: const Icon(Icons.build_circle_outlined, size: 16),
+                        label: const Text('تحويل', style: TextStyle(fontSize: 12.5)),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.production,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: Size.zero,
+                        ),
                       ),
-                    ),
+              ],
             ],
           ),
         ],
