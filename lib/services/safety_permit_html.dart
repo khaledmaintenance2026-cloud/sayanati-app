@@ -110,7 +110,9 @@ String buildSafetyPermitHtml(SafetyPermit permit) {
     ${permit.endAt != null ? row('نهاية العمل', ArabicFormat.dateTime(permit.endAt!)) : ''}
     ${permit.responsiblePhone != null && permit.responsiblePhone!.isNotEmpty ? row('جوال المسؤول', permit.responsiblePhone!) : ''}
     ${permit.equipmentUsed != null && permit.equipmentUsed!.isNotEmpty ? row('المعدات/الأدوات المستخدمة', permit.equipmentUsed!) : ''}
-    ${permit.relatedWorkOrderId != null ? row('مرتبط ببلاغ صيانة رقم', '#${permit.relatedWorkOrderId}') : ''}
+    ${permit.relatedWorkOrderId != null ? row('مرتبط بأمر عمل رقم', '#${permit.relatedWorkOrderId}') : ''}
+    ${permit.relatedTask != null ? row('وصف المهمة المرتبطة', permit.relatedTask!.description) : ''}
+    ${permit.relatedTask != null ? row('موقع المهمة / المعدة', '${permit.relatedTask!.locationLabel} — ${permit.relatedTask!.equipmentLabel}') : ''}
   </div>
 
   <div style="font-size:15px; font-weight:700; margin:20px 0 8px;">وصف العمل</div>
