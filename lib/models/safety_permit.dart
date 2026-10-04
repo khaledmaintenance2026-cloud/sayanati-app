@@ -1,289 +1,238 @@
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-const { Router } = require('../lib/http/router');
-const { pool } = require('../config/db');
-const { requireAuth, requireApproved, requireRole } = require('../middleware/auth');
-const { fireWebhook } = require('../services/webhooks');
-const { notifyEvent } = require('../services/notifications');
-const { generateSafetyReport } = require('../services/safetyReport');
-const { sendWhatsappText } = require('../services/textmebot');
+enum PermitStatus { pending, approved, rejected }
 
-const router = new Router();
-router.use(requireAuth, requireApproved);
+PermitStatus _statusFromApi(String? s) => switch (s) {
+      'approved' => PermitStatus.approved,
+      'rejected' => PermitStatus.rejected,
+      _ => PermitStatus.pending,
+    };
 
-// التصريح مع بيانات المهمة (أمر العمل) المرتبطة به إن وُجدت — حتى يعرف مسؤول
-// السلامة عند المراجعة ما هي المهمة بالضبط (وصفها، موقعها، معدتها، حالتها،
-// فنيوها) فيحدّد الاحتياطات المطلوبة بدل رؤية عبارة "مرتبط ببلاغ صيانة قائم"
-// فقط. كل الأعمدة الإضافية بادئتها wo_ فلا تتعارض مع أعمدة safety_permits.
-// نفس صياغة LIST_QUERY في routes/workOrders.js لاسم المعدة والخط والفنيين.
-const PERMIT_WITH_TASK_SELECT = `
-  SELECT sp.*,
-    wo.kind AS wo_kind, wo.description AS wo_description, wo.status AS wo_status,
-    COALESCE(wo.equipment_name, e.name) AS wo_equipment_name, wo.equipment_code AS wo_equipment_code,
-    wo.facility AS wo_facility, l.name AS wo_line_name,
-    wo.created_by AS wo_created_by, wo.created_at AS wo_created_at,
-    (SELECT string_agg(t2.name, '، ' ORDER BY t2.name)
-       FROM work_order_technicians wot
-       JOIN technicians t2 ON t2.id = wot.technician_id
-      WHERE wot.work_order_id = wo.id) AS wo_technician_names
-  FROM safety_permits sp
-  LEFT JOIN work_orders wo ON wo.id = sp.related_work_order_id
-  LEFT JOIN equipment e ON e.id = wo.equipment_id
-  LEFT JOIN production_lines l ON l.id = wo.line_id
-`;
+/// أنواع الأعمال الخطرة — نفس القيم بالضبط المستخدمة في عمود operation_types
+/// على السيرفر (راجع routes/safetyPermits.js، OPERATION_TYPES) والتسميات
+/// المعروضة في رسائل واتساب (services/notifications.js، OPERATION_TYPE_LABELS)
+/// — يجب أن يبقى المفتاح مطابقًا حرفيًا بين الطرفين.
+const Map<String, String> kOperationTypeLabels = {
+  'hot_work': 'أعمال حرارية/لحام',
+  'confined_space': 'أماكن مغلقة',
+  'height': 'العمل على مرتفعات',
+  'electrical': 'كهرباء',
+  'excavation': 'حفريات',
+  'lifting': 'أعمال رفع',
+  'other': 'أخرى',
+};
 
-// يجلب تصريحًا واحدًا بنفس الشكل أعلاه (بعد الإنشاء أو المراجعة) — يُستخدم لرد
-// الطلب وللويبهوك وإشعار واتساب، فيحمل التطبيق بيانات المهمة نفسها دائمًا.
-async function loadPermitWithTask(id) {
-  const { rows } = await pool.query(`${PERMIT_WITH_TASK_SELECT} WHERE sp.id = $1`, [id]);
-  return rows[0] || null;
+/// خيارات "خلو الموقع من التالي" — تُعبَّأ من قسم السلامة قبل القبول فقط،
+/// مطابقة تمامًا لاستمارة "إجراءات ومتطلبات السلامة لتصريح العمل" الورقية.
+/// يمكن اختيار أكثر من عنصر.
+const List<String> kSiteHazardOptions = [
+  'تتطلب مراجعة من قبل قسم السلامة',
+  'مواد قابلة للاشتعال',
+  'المنتجات',
+  'العاملين',
+  'الحواجز',
+  'انسكاب ماء/زيوت',
+  'معدات غير آمنة',
+  'الضوضاء',
+];
+
+/// خيارات "المخاطر المحتملة" — تُعبَّأ عند القبول فقط. يمكن اختيار أكثر من عنصر.
+const List<String> kPotentialRiskOptions = [
+  'سقوط معدات / عاملين',
+  'انزلاق / تعثر',
+  'خلل في التهوية / الإضاءة',
+  'خلل في المعدات',
+  'صعق كهربائي',
+  'حروق',
+];
+
+/// خيارات "معدات الوقاية الشخصية التي يجب توفرها" — تُعبَّأ عند القبول فقط.
+/// يمكن اختيار أكثر من عنصر، بالإضافة لخيار "أخرى" بنص حر في الشاشة.
+const List<String> kPpeOptions = [
+  'حذاء سلامة',
+  'نظارة عاكسة',
+  'خوذة رأس',
+  'بطانية حريق',
+  'بطانية لحام',
+  'سروال مقاوم للحريق',
+  'قفازات مقاومة',
+  'حزام الأمان',
+  'طفاية حريق',
+  'معدات ميكانيكية يوجد بها حماية',
+];
+
+/// بيانات المهمة (أمر العمل) المرتبطة بتصريح — تصل من السيرفر مع التصريح نفسه
+/// (أعمدة wo_* في GET/POST/PATCH /api/safety-permits، راجع PERMIT_WITH_TASK_SELECT
+/// في routes/safetyPermits.js) حتى يعرف مسؤول السلامة ما هي المهمة بالضبط عند
+/// المراجعة بدل رؤية عبارة "مرتبط ببلاغ صيانة" فقط.
+class PermitTask {
+  final String id;
+  final String kind; // emergency | preventive
+  final String description;
+  final String status; // new / pending_assignment / waiting_loto / in_progress / waiting_parts / completed / cancelled
+  final String? equipmentName;
+  final String? equipmentCode;
+  final String? facility;
+  final String? lineName;
+  final String? createdBy;
+  final DateTime? createdAt;
+  final String? technicianNames;
+
+  const PermitTask({
+    required this.id,
+    required this.kind,
+    required this.description,
+    required this.status,
+    this.equipmentName,
+    this.equipmentCode,
+    this.facility,
+    this.lineName,
+    this.createdBy,
+    this.createdAt,
+    this.technicianNames,
+  });
+
+  String get kindLabel => kind == 'preventive' ? 'صيانة وقائية' : 'بلاغ عطل طارئ';
+
+  String get statusLabel => switch (status) {
+        'new' => 'جديد',
+        'pending_assignment' => 'بانتظار تعيين فني',
+        'waiting_loto' => 'بانتظار عزل الطاقة / التصريح',
+        'in_progress' => 'قيد التنفيذ',
+        'waiting_parts' => 'بانتظار قطع غيار',
+        'completed' => 'منجزة',
+        'cancelled' => 'ملغاة',
+        _ => status,
+      };
+
+  /// "المصنع / الخط" بدون أي جزء ناقص.
+  String get locationLabel {
+    final parts = [facility, lineName].where((e) => e != null && e.trim().isNotEmpty).cast<String>().toList();
+    return parts.isEmpty ? '—' : parts.join(' / ');
+  }
+
+  String get equipmentLabel {
+    if (equipmentName == null || equipmentName!.trim().isEmpty) return '—';
+    final code = equipmentCode;
+    return (code == null || code.trim().isEmpty) ? equipmentName! : '$equipmentName ($code)';
+  }
 }
 
-// أنواع الأعمال الخطرة القابلة للاختيار في استمارة طلب التصريح (اختيار متعدد)
-// — مطابقة لقائمة الفحص في استمارة "تصريح عمل مصنع الماس الوطنية".
-const OPERATION_TYPES = ['hot_work', 'confined_space', 'height', 'electrical', 'excavation', 'lifting', 'other'];
+class SafetyPermit {
+  final String id;
+  final String? officeName;
+  final String location;
+  final String description;
+  final int workersCount;
+  final String? responsiblePhone;
+  final List<String> operationTypes;
+  final String? equipmentUsed;
 
-const UPLOAD_DIR = path.join(__dirname, '..', 'public', 'uploads', 'safety-permits');
+  /// مسار نسبي على السيرفر (مثال: /uploads/safety-permits/xxx.jpg) — يُبنى
+  /// الرابط الكامل للعرض بإضافة عنوان السيرفر الأساسي (راجع ApiClient.baseUrl).
+  final String? equipmentPhoto;
 
-// يحفظ صورة المعدات المُرسَلة كـ base64 (data URL) على القرص ضمن public/
-// ويعيد المسار النسبي لتخزينه في قاعدة البيانات — بديل بسيط عن رفع ملفات
-// multipart (غير موجود أصلًا في هذا الخادم الخفيف بدون حزم خارجية).
-function saveEquipmentPhoto(dataUrl) {
-  if (!dataUrl || typeof dataUrl !== 'string') return null;
-  const match = /^data:image\/(png|jpe?g|webp);base64,([a-zA-Z0-9+/=]+)$/i.exec(dataUrl.trim());
-  if (!match) return null;
-  const ext = match[1].toLowerCase() === 'jpg' ? 'jpeg' : match[1].toLowerCase();
-  const buf = Buffer.from(match[2], 'base64');
-  if (buf.length > 8 * 1024 * 1024) {
-    throw Object.assign(new Error('حجم صورة المعدات كبير جدًا (الحد الأقصى ٨ ميجابايت)'), { statusCode: 400 });
-  }
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-  const filename = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}.${ext}`;
-  fs.writeFileSync(path.join(UPLOAD_DIR, filename), buf);
-  return `/uploads/safety-permits/${filename}`;
+  final DateTime? startAt;
+  final DateTime? endAt;
+
+  final String requesterName; // من requested_by (اسم مقدّم الطلب وقت التقديم)
+
+  /// ربط اختياري ببلاغ/أمر عمل صيانة قائم — إن وُجد بلاغ عند طلب التصريح.
+  final String? relatedWorkOrderId;
+
+  /// تفاصيل المهمة المرتبطة (وصفها، موقعها، معدتها، حالتها، فنيوها) — null لو
+  /// التصريح غير مرتبط بأمر عمل، أو لو لم يحمل رد السيرفر هذه الأعمدة.
+  final PermitTask? relatedTask;
+
+  PermitStatus status;
+  String? reviewedBy; // من قسم السلامة فقط
+  DateTime? reviewedAt;
+
+  // ---------------------------------------------------------------------
+  // "قسم القبول" — تُعبَّأ فقط عند الموافقة على التصريح، مطابقة لاستمارة
+  // "إجراءات ومتطلبات السلامة لتصريح العمل" (نفس أسماء الحقول المستخدَمة في
+  // PATCH /safety-permits/:id/review على سيرفر صيانتي المحلي: siteHazards,
+  // potentialRisks, ppeRequired, precautions).
+  // ---------------------------------------------------------------------
+  List<String> siteHazards;
+  List<String> potentialRisks;
+  List<String> ppeRequired;
+  String? precautions; // الإجراءات الإلزامية للتصريح العمل
+
+  // ---------------------------------------------------------------------
+  // "قسم الرفض" — يُعبَّأ فقط عند رفض التصريح.
+  // ---------------------------------------------------------------------
+  String? rejectionReason;
+
+  final DateTime requestedAt;
+
+  SafetyPermit({
+    required this.id,
+    this.officeName,
+    required this.location,
+    required this.description,
+    required this.workersCount,
+    this.responsiblePhone,
+    this.operationTypes = const [],
+    this.equipmentUsed,
+    this.equipmentPhoto,
+    this.startAt,
+    this.endAt,
+    required this.requesterName,
+    this.relatedWorkOrderId,
+    this.relatedTask,
+    this.status = PermitStatus.pending,
+    this.reviewedBy,
+    this.reviewedAt,
+    this.siteHazards = const [],
+    this.potentialRisks = const [],
+    this.ppeRequired = const [],
+    this.precautions,
+    this.rejectionReason,
+    required this.requestedAt,
+  });
+
+  /// يبني تصريحًا من استجابة سيرفر صيانتي المحلي (حقل "permit" في ردود
+  /// GET/POST/PATCH /api/safety-permits) — الشكل: صفوف جدول safety_permits
+  /// كما هي (snake_case)، راجع routes/safetyPermits.js.
+  factory SafetyPermit.fromApi(Map<String, dynamic> d) => SafetyPermit(
+        id: d['id'].toString(),
+        officeName: d['office_name'] as String?,
+        location: (d['location'] as String?) ?? '',
+        description: (d['description'] as String?) ?? '',
+        workersCount: (d['workers_count'] as num?)?.toInt() ?? 1,
+        responsiblePhone: d['responsible_phone'] as String?,
+        operationTypes: (d['operation_types'] as List?)?.cast<String>() ?? const [],
+        equipmentUsed: d['equipment_used'] as String?,
+        equipmentPhoto: d['equipment_photo'] as String?,
+        startAt: d['start_at'] != null ? DateTime.tryParse(d['start_at'] as String) : null,
+        endAt: d['end_at'] != null ? DateTime.tryParse(d['end_at'] as String) : null,
+        requesterName: (d['requested_by'] as String?) ?? '',
+        relatedWorkOrderId: d['related_work_order_id']?.toString(),
+        relatedTask: d['related_work_order_id'] != null && d['wo_description'] != null
+            ? PermitTask(
+                id: d['related_work_order_id'].toString(),
+                kind: (d['wo_kind'] as String?) ?? 'emergency',
+                description: d['wo_description'] as String,
+                status: (d['wo_status'] as String?) ?? '',
+                equipmentName: d['wo_equipment_name'] as String?,
+                equipmentCode: d['wo_equipment_code'] as String?,
+                facility: d['wo_facility'] as String?,
+                lineName: d['wo_line_name'] as String?,
+                createdBy: d['wo_created_by'] as String?,
+                createdAt: d['wo_created_at'] != null ? DateTime.tryParse(d['wo_created_at'] as String) : null,
+                technicianNames: d['wo_technician_names'] as String?,
+              )
+            : null,
+        status: _statusFromApi(d['status'] as String?),
+        reviewedBy: d['reviewed_by'] as String?,
+        reviewedAt: d['reviewed_at'] != null ? DateTime.tryParse(d['reviewed_at'] as String) : null,
+        siteHazards: (d['site_hazards'] as List?)?.cast<String>() ?? const [],
+        potentialRisks: (d['potential_risks'] as List?)?.cast<String>() ?? const [],
+        ppeRequired: (d['ppe_required'] as List?)?.cast<String>() ?? const [],
+        precautions: d['precautions'] as String?,
+        rejectionReason: d['rejection_reason'] as String?,
+        requestedAt: DateTime.tryParse((d['requested_at'] as String?) ?? '') ?? DateTime.now(),
+      );
+
+  String get operationTypesLabel =>
+      operationTypes.isEmpty ? '—' : operationTypes.map((t) => kOperationTypeLabels[t] ?? t).join('، ');
 }
-
-// يُعيد القسم الذي يُقيَّد به مسؤول السلامة الحالي (أو null إن كان يرى كل
-// الأقسام بلا تقييد) — مدير النظام (admin) لا يتقيّد بهذا أبدًا. راجع عمود
-// safety_facility في جدول users (schema.sql) ولوحة الإدارة لتخصيصه. نفس
-// نمط userFacility في routes/production.js تمامًا، بعمود مستقل خاص بالسلامة.
-function userSafetyFacility(req) {
-  if (req.user.role === 'admin') return null;
-  return req.user.safety_facility || null;
-}
-
-// حقل location قد يكون قيمة القسم وحدها ("مصنع الرجال") أو مع تفاصيل إضافية
-// ("مصنع الرجال — خط ٩")، بالضبط بصيغة "$facility — $detail" التي يبنيها
-// تطبيق الجوال (راجع safety_permit_request_screen.dart). لذا يُطابَق المصنع
-// بالمساواة التامة أو بالبداية بنفس النص متبوعًا بـ" — ".
-function permitBelongsToFacility(location, facility) {
-  if (!location) return false;
-  return location === facility || location.startsWith(`${facility} — `);
-}
-
-// GET /api/safety-permits — مسؤول سلامة مقيَّد بقسم واحد يرى فقط تصاريح ذلك
-// القسم (بما فيها التي لم تُصنَّف "مصنع الرجال" ولا "مصنع النساء" لا تظهر له
-// إطلاقًا؛ راجع نقاش التقسيم — تصاريح "المستودع العام" تبقى ظاهرة فقط
-// لمسؤول سلامة غير مقيَّد أو لمدير النظام).
-router.get('/', async (req, res) => {
-  const facility = userSafetyFacility(req);
-  const { rows } = facility
-    ? await pool.query(
-        `${PERMIT_WITH_TASK_SELECT} WHERE sp.location = $1 OR sp.location LIKE $1 || ' — %' ORDER BY sp.requested_at DESC`,
-        [facility]
-      )
-    : await pool.query(`${PERMIT_WITH_TASK_SELECT} ORDER BY sp.requested_at DESC`);
-  res.json({ permits: rows });
-});
-
-// POST /api/safety-permits — طلب تصريح عمل (يقدّمه الفني أو المقاول، ويبقى
-// "بانتظار الاعتماد" حتى يراجعه قسم السلامة المهنية).
-router.post('/', async (req, res) => {
-  const {
-    officeName, location, description, startAt, endAt, workersCount,
-    responsiblePhone, operationTypes, equipmentUsed, equipmentPhoto, relatedWorkOrderId,
-  } = req.body;
-
-  if (!location || !description) {
-    return res.status(400).json({ error: 'الموقع ووصف العمل إلزاميان' });
-  }
-  const types = Array.isArray(operationTypes) ? operationTypes.filter((t) => OPERATION_TYPES.includes(t)) : [];
-  if (types.length === 0) {
-    return res.status(400).json({ error: 'اختر نوع عمل واحدًا على الأقل' });
-  }
-  if (!equipmentPhoto) {
-    return res.status(400).json({ error: 'صورة المعدات/الأدوات المستخدمة إلزامية' });
-  }
-
-  let photoPath;
-  try {
-    photoPath = saveEquipmentPhoto(equipmentPhoto);
-  } catch (err) {
-    return res.status(err.statusCode || 400).json({ error: err.message });
-  }
-  if (!photoPath) return res.status(400).json({ error: 'صيغة صورة المعدات غير صحيحة' });
-
-  const { rows } = await pool.query(
-    `INSERT INTO safety_permits
-       (office_name, location, description, requested_by, requested_by_user, start_at, end_at,
-        workers_count, responsible_phone, operation_types, equipment_used, equipment_photo, related_work_order_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
-    [
-      officeName ? String(officeName).trim() : null,
-      location.trim(),
-      description.trim(),
-      req.user.name,
-      req.user.id,
-      startAt || null,
-      endAt || null,
-      workersCount || 1,
-      responsiblePhone ? String(responsiblePhone).trim() : null,
-      types,
-      equipmentUsed ? String(equipmentUsed).trim() : null,
-      photoPath,
-      relatedWorkOrderId || null,
-    ]
-  );
-  if (relatedWorkOrderId) {
-    await pool.query("UPDATE work_orders SET status = 'waiting_loto' WHERE id = $1 AND requires_loto = true", [relatedWorkOrderId]);
-  }
-  // يُحمَّل بعد تحديث حالة أمر العمل أعلاه حتى تعكس wo_status آخر حالة فعلية.
-  const permit = (await loadPermitWithTask(rows[0].id)) || rows[0];
-  fireWebhook('safety_permit_requested', permit);
-  notifyEvent('safety_permit_requested', permit);
-  res.status(201).json({ permit });
-});
-
-// يتحقق أن مسؤول السلامة الحالي (لو كان مقيَّدًا بقسم واحد) يملك صلاحية
-// الوصول لتصريح معيّن قبل مراجعته أو حذفه — يُستخدم في PATCH /:id/review
-// وDELETE /:id أدناه. يُعيد التصريح إن كان الوصول مسموحًا، أو يرسل الاستجابة
-// المناسبة (404/403) ويُعيد null إن لم يكن.
-async function assertPermitAccess(req, res) {
-  const { rows } = await pool.query('SELECT id, location FROM safety_permits WHERE id = $1', [req.params.id]);
-  if (rows.length === 0) {
-    res.status(404).json({ error: 'التصريح غير موجود' });
-    return null;
-  }
-  const facility = userSafetyFacility(req);
-  if (facility && !permitBelongsToFacility(rows[0].location, facility)) {
-    res.status(403).json({ error: 'لا تملك صلاحية الوصول لتصاريح قسم آخر' });
-    return null;
-  }
-  return rows[0];
-}
-
-// PATCH /api/safety-permits/:id/review — اعتماد أو رفض (قسم السلامة فقط) —
-// يطابق استمارة "إجراءات ومتطلبات السلامة لتصريح العمل": عند القبول يُعبَّأ
-// قسم القبول (مخاطر الموقع، المخاطر المحتملة، معدات الحماية، الإجراءات
-// الاحترازية)، وعند الرفض يُذكر سبب الرفض فقط. مسؤول سلامة مقيَّد بقسم واحد
-// لا يقدر يراجع تصريحًا تابعًا لقسم آخر (403).
-router.patch('/:id/review', requireRole('safety'), async (req, res) => {
-  if (!(await assertPermitAccess(req, res))) return;
-  const { approve, siteHazards, potentialRisks, ppeRequired, precautions, rejectionReason } = req.body;
-
-  if (approve) {
-    const { rows } = await pool.query(
-      `UPDATE safety_permits SET
-         status = 'approved', reviewed_by = $1, reviewed_at = now(),
-         site_hazards = $2, potential_risks = $3, ppe_required = $4, precautions = $5,
-         rejection_reason = NULL
-       WHERE id = $6 RETURNING *`,
-      [
-        req.user.name,
-        Array.isArray(siteHazards) ? siteHazards : [],
-        Array.isArray(potentialRisks) ? potentialRisks : [],
-        Array.isArray(ppeRequired) ? ppeRequired : [],
-        precautions ? String(precautions).trim() : null,
-        req.params.id,
-      ]
-    );
-    if (rows.length === 0) return res.status(404).json({ error: 'التصريح غير موجود' });
-    const permit = (await loadPermitWithTask(rows[0].id)) || rows[0];
-    fireWebhook('safety_permit_reviewed', permit);
-    notifyEvent('safety_permit_reviewed', permit);
-    return res.json({ permit });
-  }
-
-  if (!rejectionReason) {
-    return res.status(400).json({ error: 'سبب الرفض إلزامي عند الرفض' });
-  }
-  const { rows } = await pool.query(
-    `UPDATE safety_permits SET
-       status = 'rejected', reviewed_by = $1, reviewed_at = now(), rejection_reason = $2
-     WHERE id = $3 RETURNING *`,
-    [req.user.name, rejectionReason.trim(), req.params.id]
-  );
-  if (rows.length === 0) return res.status(404).json({ error: 'التصريح غير موجود' });
-  const permit = (await loadPermitWithTask(rows[0].id)) || rows[0];
-  fireWebhook('safety_permit_reviewed', permit);
-  notifyEvent('safety_permit_reviewed', permit);
-  res.json({ permit });
-});
-
-// DELETE /api/safety-permits/:id — حذف طلب تصريح (قسم السلامة أو مدير النظام
-// فقط) — يُستخدم عادة لحذف طلب أُنشئ بالخطأ أو أصبح غير ذي صلة. requireRole
-// يسمح لمدير النظام دائمًا بالمرور بغض النظر عن الدور المذكور (راجع
-// middleware/auth.js). مسؤول سلامة مقيَّد بقسم واحد لا يقدر يحذف تصريحًا
-// تابعًا لقسم آخر (403).
-router.delete('/:id', requireRole('safety'), async (req, res) => {
-  if (!(await assertPermitAccess(req, res))) return;
-  const { rows } = await pool.query('DELETE FROM safety_permits WHERE id = $1 RETURNING id', [req.params.id]);
-  if (rows.length === 0) return res.status(404).json({ error: 'التصريح غير موجود' });
-  res.status(204).end();
-});
-
-// POST /api/safety-permits/reports/request — تقرير سلامة احترافي بمدة
-// مخصّصة، يُرسَل رابطه مباشرة عبر واتساب لرقم طالب التقرير نفسه فقط (وليس
-// لجروب) — بنفس نمط POST /api/work-orders/reports/request تمامًا (راجع
-// routes/workOrders.js وservices/safetyReport.js). مقيَّد بقسم السلامة (أو
-// مدير النظام)، ومُصفّى تلقائيًا بنفس قسم مسؤول السلامة المقيَّد به إن وُجد
-// (userSafetyFacility) — تمامًا كتقييد GET / أعلاه.
-router.post('/reports/request', requireRole('safety'), async (req, res) => {
-  const { from, to } = req.body;
-  if (!from || !to) return res.status(400).json({ error: 'تاريخ البداية والنهاية إلزاميان' });
-
-  try {
-    const facility = userSafetyFacility(req);
-    const report = await generateSafetyReport({ from, to, facility });
-
-    fireWebhook('safety_report_custom', {
-      from,
-      to,
-      facility,
-      report_url: report.absoluteUrl,
-      requested_by_phone: req.user.phone || null,
-      requested_by_name: req.user.name,
-      total_count: report.totalCount,
-    });
-
-    if (!req.user.phone) {
-      return res.status(201).json({
-        reportUrl: report.absoluteUrl,
-        whatsappSent: false,
-        warning: 'رقم جوالك غير مسجَّل في حسابك — لن يصلك التقرير على واتساب تلقائيًا، افتح الرابط مباشرة',
-      });
-    }
-
-    const message =
-      `تقرير سلامة — بمدة مخصّصة\n` +
-      `المدة: ${new Date(from).toLocaleDateString('ar-EG')} إلى ${new Date(to).toLocaleDateString('ar-EG')}\n` +
-      `إجمالي طلبات التصاريح: ${report.totalCount} — مقبولة: ${report.approvedCount} — مرفوضة: ${report.rejectedCount}\n` +
-      `رابط التقرير: ${report.absoluteUrl}`;
-    const sendResult = await sendWhatsappText(req.user.phone, message);
-
-    res.status(201).json({
-      reportUrl: report.absoluteUrl,
-      whatsappSent: sendResult.ok,
-      warning: sendResult.ok
-        ? null
-        : 'تعذّر إرسال رسالة واتساب تلقائيًا (تحقق من مفتاح TextMeBot في إعدادات الموقع) — يمكنك فتح رابط التقرير أدناه يدويًا',
-    });
-  } catch (err) {
-    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
-    console.error('تعذّر إنشاء تقرير السلامة المخصّص:', err);
-    res.status(500).json({ error: 'تعذّر إنشاء التقرير، حاول مرة أخرى' });
-  }
-});
-
-module.exports = router;
