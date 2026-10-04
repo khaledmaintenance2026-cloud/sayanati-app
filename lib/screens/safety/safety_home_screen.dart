@@ -215,9 +215,16 @@ class _PermitCard extends StatelessWidget {
             Text('مقدّم الطلب: ${permit.requesterName}', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
             Text('نوع العمل: ${permit.operationTypesLabel}', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
             if (permit.relatedWorkOrderId != null)
-              const Padding(
-                padding: EdgeInsets.only(top: 4),
-                child: Text('مرتبط ببلاغ صيانة قائم', style: TextStyle(fontSize: 11.5, color: AppColors.maintenance, fontWeight: FontWeight.w600)),
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  permit.relatedTask != null
+                      ? 'مرتبط بأمر عمل رقم ${permit.relatedTask!.id}: ${permit.relatedTask!.description}'
+                      : 'مرتبط بأمر عمل رقم ${permit.relatedWorkOrderId}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11.5, color: AppColors.maintenance, fontWeight: FontWeight.w600),
+                ),
               ),
             if (permit.status == PermitStatus.rejected && permit.rejectionReason != null)
               Padding(
