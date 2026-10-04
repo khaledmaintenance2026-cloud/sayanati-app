@@ -116,6 +116,14 @@ class _SafetyApprovalScreenState extends State<SafetyApprovalScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
+                  // المهمة (أمر العمل) المرتبطة بالتصريح — لازمة ليعرف مسؤول السلامة
+                  // ما هو العمل بالضبط فيحدّد الاحتياطات والمعدات المطلوبة.
+                  if (permit.relatedTask != null) ...[
+                    _LinkedTaskCard(task: permit.relatedTask!),
+                    const SizedBox(height: 16),
+                  ] else if (permit.relatedWorkOrderId != null) ...[
+                    _InfoRow(label: 'مهمة مرتبطة', value: 'أمر عمل رقم ${permit.relatedWorkOrderId} (تعذّر تحميل تفاصيله)'),
+                  ],
                   if (permit.officeName != null && permit.officeName!.isNotEmpty)
                     _InfoRow(label: 'الجهة الطالبة', value: permit.officeName!),
                   _InfoRow(label: 'مقدّم الطلب', value: permit.requesterName),
@@ -129,7 +137,6 @@ class _SafetyApprovalScreenState extends State<SafetyApprovalScreen> {
                     _InfoRow(label: 'بداية العمل', value: _formatDateTime(permit.startAt!)),
                   if (permit.endAt != null)
                     _InfoRow(label: 'نهاية العمل', value: _formatDateTime(permit.endAt!)),
-                  if (permit.relatedWorkOrderId != null) const _InfoRow(label: 'الحالة', value: 'مرتبط ببلاغ صيانة قائم'),
                   if (permit.equipmentPhoto != null) ...[
                     const SizedBox(height: 4),
                     const Align(
@@ -137,21 +144,9 @@ class _SafetyApprovalScreenState extends State<SafetyApprovalScreen> {
                       child: Text('صورة المعدات/موقع العمل', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
                     ),
                     const SizedBox(height: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: Image.network(
-                        '$kApiOrigin${permit.equipmentPhoto}',
-                        height: 180,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          height: 100,
-                          alignment: Alignment.center,
-                          color: AppColors.surface,
-                          child: const Text('تعذّر تحميل الصورة', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
-                        ),
-                      ),
-                    ),
+                    // الضغط على الصورة يفتحها بملء الشاشة (تكبير/تصغير) مع زر التنزيل —
+                    // نفس عارض صور بلاغات الأعطال (FullScreenPhotoViewer في common.dart).
+                    PhotoThumbnailButton(url: '$kApiOrigin${permit.equipmentPhoto}', height: 200),
                   ],
                   const SizedBox(height: 10),
                   const InfoNote(
@@ -266,6 +261,79 @@ class _SafetyApprovalScreenState extends State<SafetyApprovalScreen> {
   }
 }
 
+/// بطاقة "المهمة المرتبطة" — تعرض أمر العمل الذي يخصه التصريح بتفاصيله (نوعه،
+/// حالته، وصفه، موقعه، معدته، من رفعه ومتى، والفنيون المسؤولون عنه).
+class _LinkedTaskCard extends StatelessWidget {
+  final PermitTask task;
+  const _LinkedTaskCard({required this.task});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.maintenance.withOpacity(0.06),
+        border: Border.all(color: AppColors.maintenance.withOpacity(0.28)),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.build_circle_outlined, size: 18, color: AppColors.maintenance),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'المهمة المرتبطة — أمر عمل رقم ${task.id}',
+                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppColors.maintenance),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _TaskChip(task.kindLabel),
+              _TaskChip(task.statusLabel),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(task.description, style: const TextStyle(fontSize: 13.5, height: 1.6, color: Color(0xFF3A4250))),
+          const SizedBox(height: 12),
+          _InfoRow(label: 'موقع المهمة', value: task.locationLabel),
+          _InfoRow(label: 'المعدة', value: task.equipmentLabel),
+          if (task.technicianNames != null && task.technicianNames!.isNotEmpty)
+            _InfoRow(label: 'الفنيون المسؤولون', value: task.technicianNames!),
+          if (task.createdBy != null && task.createdBy!.isNotEmpty)
+            _InfoRow(label: 'رفع بواسطة', value: task.createdBy!),
+          if (task.createdAt != null)
+            _InfoRow(label: 'تاريخ المهمة', value: _formatDateTime(task.createdAt!.toLocal())),
+        ],
+      ),
+    );
+  }
+}
+
+class _TaskChip extends StatelessWidget {
+  final String label;
+  const _TaskChip(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.maintenance.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(label, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppColors.maintenance)),
+    );
+  }
+}
+
 class _SectionTitle extends StatelessWidget {
   final String text;
   const _SectionTitle(this.text);
@@ -368,7 +436,12 @@ class _InfoRow extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: const TextStyle(fontSize: 13, color: AppColors.textMuted)),
-          Text(value, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+          const SizedBox(width: 12),
+          // Flexible: القيم الطويلة (أسماء عدة فنيين، موقع مفصّل...) تلتفّ على
+          // سطرين بدل أن تتجاوز عرض الشاشة وتسبب خطأ تجاوز في العرض.
+          Flexible(
+            child: Text(value, textAlign: TextAlign.end, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+          ),
         ],
       ),
     );
