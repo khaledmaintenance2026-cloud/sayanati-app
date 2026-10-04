@@ -6,6 +6,7 @@ import 'firebase_options.dart';
 import 'services/app_state.dart';
 import 'services/auth_service.dart';
 import 'services/biometric_service.dart';
+import 'services/notification_router.dart';
 import 'services/push_notification_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/auth/login_screen.dart';
@@ -225,6 +226,28 @@ class RootNav extends StatefulWidget {
 
 class _RootNavState extends State<RootNav> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // الضغط على إشعار يطلب الانتقال لتبويب قسم (الصيانة/المخزون...) — راجع
+    // lib/services/notification_router.dart.
+    moduleRequest.addListener(_onModuleRequest);
+  }
+
+  @override
+  void dispose() {
+    moduleRequest.removeListener(_onModuleRequest);
+    super.dispose();
+  }
+
+  void _onModuleRequest() {
+    final key = moduleRequest.value;
+    if (key == null) return;
+    moduleRequest.value = null;
+    if (!mounted) return;
+    _goToModule(key);
+  }
 
   void _goToModule(String key) {
     final tabs = _buildKeys(context);
