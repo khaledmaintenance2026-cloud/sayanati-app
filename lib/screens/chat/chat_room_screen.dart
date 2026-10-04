@@ -112,15 +112,22 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     _polling = true;
     try {
       final lastId = _messages.isEmpty ? null : _messages.last.id;
+      final firstId = _messages.isEmpty ? null : _messages.first.id;
       final page = lastId == null
           ? await _chat.fetchMessages(widget.room.id)
-          : await _chat.fetchMessages(widget.room.id, afterId: lastId);
+          : await _chat.fetchMessages(widget.room.id, afterId: lastId, checkFrom: firstId);
       if (!mounted) return;
       final existing = _messages.map((m) => m.id).toSet();
       final fresh = page.messages.where((m) => !existing.contains(m.id)).toList();
-      if (fresh.isNotEmpty || page.readUpTo != _readUpTo) {
+      // رسائل حمّلناها سابقًا وحذفها صاحبها عند الجميع منذ ذلك الحين
+      final deleted = page.deletedIds.toSet();
+      final hasNewDeletions = deleted.isNotEmpty && _messages.any((m) => deleted.contains(m.id) && !m.isDeleted);
+      if (fresh.isNotEmpty || page.readUpTo != _readUpTo || hasNewDeletions) {
         setState(() {
-          _messages = [..._messages, ...fresh];
+          final base = hasNewDeletions
+              ? _messages.map((m) => deleted.contains(m.id) && !m.isDeleted ? m.markDeleted() : m).toList()
+              : _messages;
+          _messages = [...base, ...fresh];
           _readUpTo = page.readUpTo;
         });
       }
@@ -287,6 +294,92 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     }
   }
 
+  // ---------------------------------------------------------------- حذف/نسخ
+
+  void _showMessageActions(ChatMessage m) {
+    final copyText = m.isDeleted ? null : m.body;
+    final canDeleteForAll = m.isMine(_myUid) && !m.isDeleted && !m.isSystem;
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (copyText != null && copyText.isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.copy_outlined),
+                title: const Text('نسخ النص'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  Clipboard.setData(ClipboardData(text: copyText));
+                  _toast('تم نسخ النص');
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('حذف عندي'),
+              subtitle: const Text('تختفي من شاشتك فقط ويبقى الآخرون يرونها'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _deleteForMe(m);
+              },
+            ),
+            if (canDeleteForAll)
+              ListTile(
+                leading: const Icon(Icons.delete_forever_outlined, color: Color(0xFFB3261E)),
+                title: const Text('حذف عند الجميع', style: TextStyle(color: Color(0xFFB3261E))),
+                subtitle: const Text('تختفي من عند كل أعضاء المحادثة'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _confirmDeleteForEveryone(m);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deleteForMe(ChatMessage m) async {
+    try {
+      await _chat.deleteMessage(widget.room.id, m.id, forEveryone: false);
+      if (!mounted) return;
+      setState(() => _messages = _messages.where((x) => x.id != m.id).toList());
+    } on ApiException catch (e) {
+      _toast(e.message);
+    } catch (_) {
+      _toast('تعذّر حذف الرسالة');
+    }
+  }
+
+  Future<void> _confirmDeleteForEveryone(ChatMessage m) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حذف عند الجميع'),
+        content: const Text('ستختفي هذه الرسالة من عند كل أعضاء المحادثة ولا يمكن التراجع. هل أنت متأكد؟'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('إلغاء')),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB3261E), foregroundColor: Colors.white),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await _chat.deleteMessage(widget.room.id, m.id, forEveryone: true);
+      if (!mounted) return;
+      setState(() => _messages = _messages.map((x) => x.id == m.id ? x.markDeleted() : x).toList());
+    } on ApiException catch (e) {
+      _toast(e.message);
+    } catch (_) {
+      _toast('تعذّر حذف الرسالة');
+    }
+  }
+
   // ---------------------------------------------------------------- الواجهة
 
   Future<void> _openInfo() async {
@@ -351,6 +444,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                 isMine: msg.isMine(_myUid),
                 isGroup: widget.room.isGroup,
                 isRead: msg.id <= _readUpTo,
+                onLongPress: () => _showMessageActions(msg),
               ),
             ],
           );
@@ -468,12 +562,14 @@ class _MessageBubble extends StatelessWidget {
   final bool isMine;
   final bool isGroup;
   final bool isRead;
+  final VoidCallback onLongPress;
 
   const _MessageBubble({
     required this.message,
     required this.isMine,
     required this.isGroup,
     required this.isRead,
+    required this.onLongPress,
   });
 
   @override
@@ -482,13 +578,16 @@ class _MessageBubble extends StatelessWidget {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Center(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-            decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(12)),
-            child: Text(
-              message.body ?? '',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
+          child: GestureDetector(
+            onLongPress: onLongPress,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(12)),
+              child: Text(
+                message.body ?? '',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
+              ),
             ),
           ),
         ),
@@ -511,7 +610,19 @@ class _MessageBubble extends StatelessWidget {
       ));
     }
 
-    if (message.kind == 'image') {
+    if (message.isDeleted) {
+      children.add(Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.block, size: 15, color: metaColor),
+          const SizedBox(width: 6),
+          Text(
+            'تم حذف هذه الرسالة',
+            style: TextStyle(fontSize: 13.5, fontStyle: FontStyle.italic, color: metaColor),
+          ),
+        ],
+      ));
+    } else if (message.kind == 'image') {
       final url = message.mediaUrl;
       if (url != null) {
         children.add(GestureDetector(
@@ -549,13 +660,13 @@ class _MessageBubble extends StatelessWidget {
       if ((message.body ?? '').isNotEmpty) {
         children.add(Padding(
           padding: const EdgeInsets.only(top: 6),
-          child: SelectableText(message.body!, style: TextStyle(fontSize: 14.5, color: textColor, height: 1.35)),
+          child: Text(message.body!, style: TextStyle(fontSize: 14.5, color: textColor, height: 1.35)),
         ));
       }
     } else if (message.kind == 'audio') {
       children.add(_AudioTile(message: message, isMine: isMine));
     } else {
-      children.add(SelectableText(
+      children.add(Text(
         message.body ?? '',
         style: TextStyle(fontSize: 14.5, color: textColor, height: 1.35),
       ));
@@ -569,7 +680,7 @@ class _MessageBubble extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
           Text(time, style: TextStyle(fontSize: 10, color: metaColor)),
-          if (isMine) ...[
+          if (isMine && !message.isDeleted) ...[
             const SizedBox(width: 4),
             Icon(
               isRead ? Icons.done_all : Icons.done,
@@ -583,19 +694,22 @@ class _MessageBubble extends StatelessWidget {
 
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 3),
-        padding: const EdgeInsets.fromLTRB(11, 8, 11, 6),
-        constraints: BoxConstraints(maxWidth: maxWidth),
-        decoration: BoxDecoration(
-          color: isMine ? AppColors.maintenance : AppColors.surface,
-          border: isMine ? null : Border.all(color: AppColors.border),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: children,
+      child: GestureDetector(
+        onLongPress: onLongPress,
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 3),
+          padding: const EdgeInsets.fromLTRB(11, 8, 11, 6),
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          decoration: BoxDecoration(
+            color: isMine ? AppColors.maintenance : AppColors.surface,
+            border: isMine ? null : Border.all(color: AppColors.border),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: children,
+          ),
         ),
       ),
     );
