@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/app_notification.dart';
 import '../../services/app_state.dart';
 import '../../services/arabic_format.dart';
+import '../../services/notification_router.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
@@ -11,6 +12,10 @@ import '../../widgets/common.dart';
 /// تصريح سلامة يخصّه. راجع /api/notifications على السيرفر. لا توجد إشعارات
 /// نظام Push حقيقية بعد (تلك تحتاج ربط خدمة Firebase منفصلة)، لذا يستطلع
 /// التطبيق هذه القائمة دوريًا (راجع AppState.attachAuth) وعند فتح الشاشة.
+///
+/// الضغط على أي إشعار يضعه "مقروءًا" ثم يفتح الشاشة المرتبطة به مباشرة (أمر
+/// العمل، التصريح، تقرير الإصابة، أو تبويب القسم) — راجع
+/// lib/services/notification_router.dart.
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
 
@@ -79,7 +84,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       return _NotificationTile(
                         notification: n,
                         icon: _iconFor(n.eventType),
-                        onTap: () => state.markNotificationRead(n.id),
+                        onTap: () {
+                          state.markNotificationRead(n.id);
+                          openNotificationTarget(context, n);
+                        },
                       );
                     },
                   ),
@@ -150,6 +158,12 @@ class _NotificationTile extends StatelessWidget {
                 ],
               ),
             ),
+            // سهم صغير يدل على أن الضغط على الإشعار يفتح الشاشة المرتبطة به
+            if (notificationHasTarget(notification.eventType))
+              const Padding(
+                padding: EdgeInsets.only(right: 6, top: 8),
+                child: Icon(Icons.chevron_left, size: 20, color: AppColors.textFaint),
+              ),
           ],
         ),
       ),
