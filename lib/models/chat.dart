@@ -35,6 +35,7 @@ class ChatLastMessage {
   final int id;
   final String kind; // text | image | audio | system
   final String? body;
+  final bool deleted; // حُذفت عند الجميع
   final int? senderId;
   final String? senderName;
   final DateTime? createdAt;
@@ -43,6 +44,7 @@ class ChatLastMessage {
     required this.id,
     required this.kind,
     this.body,
+    this.deleted = false,
     this.senderId,
     this.senderName,
     this.createdAt,
@@ -52,6 +54,7 @@ class ChatLastMessage {
         id: _asInt(j['id']),
         kind: (j['kind'] ?? 'text') as String,
         body: j['body'] as String?,
+        deleted: j['deleted'] == true,
         senderId: j['sender_id'] == null ? null : _asInt(j['sender_id']),
         senderName: j['sender_name'] as String?,
         createdAt: _asDate(j['created_at']),
@@ -117,6 +120,7 @@ class ChatRoom {
   String get previewText {
     final m = lastMessage;
     if (m == null) return 'لا توجد رسائل بعد';
+    if (m.deleted) return 'تم حذف هذه الرسالة';
     String text;
     switch (m.kind) {
       case 'image':
@@ -148,6 +152,10 @@ class ChatMessage {
   final int? durationSec;
   final DateTime? createdAt;
 
+  /// وقت الحذف عند الجميع — لو غير null تُعرض الرسالة كأثر "تم حذف هذه الرسالة"
+  /// بلا محتواها (السيرفر يمسح النص/الصورة/الصوت عند الحذف).
+  final DateTime? deletedAt;
+
   const ChatMessage({
     required this.id,
     required this.roomId,
@@ -158,6 +166,7 @@ class ChatMessage {
     this.mediaPath,
     this.durationSec,
     this.createdAt,
+    this.deletedAt,
   });
 
   factory ChatMessage.fromApi(Map<String, dynamic> j) => ChatMessage(
@@ -170,9 +179,23 @@ class ChatMessage {
         mediaPath: j['media_path'] as String?,
         durationSec: j['duration_sec'] == null ? null : _asInt(j['duration_sec']),
         createdAt: _asDate(j['created_at']),
+        deletedAt: _asDate(j['deleted_at']),
       );
 
   bool get isSystem => kind == 'system';
+
+  bool get isDeleted => deletedAt != null;
+
+  /// نسخة من الرسالة بعد "حذف عند الجميع": يبقى المرسل والوقت فقط.
+  ChatMessage markDeleted() => ChatMessage(
+        id: id,
+        roomId: roomId,
+        senderId: senderId,
+        senderName: senderName,
+        kind: kind,
+        createdAt: createdAt,
+        deletedAt: DateTime.now(),
+      );
 
   /// رابط كامل لملف الصورة/الصوت المحفوظ على السيرفر (يُخزَّن كمسار نسبي).
   String? get mediaUrl {
@@ -207,7 +230,15 @@ class ChatMessagesPage {
   final bool hasMore;
   final int readUpTo;
 
-  const ChatMessagesPage({required this.messages, required this.hasMore, required this.readUpTo});
+  /// معرّفات رسائل حُذفت عند الجميع (تأتي مع الاستطلاع الدوري فقط).
+  final List<int> deletedIds;
+
+  const ChatMessagesPage({
+    required this.messages,
+    required this.hasMore,
+    required this.readUpTo,
+    this.deletedIds = const [],
+  });
 }
 
 /// تفاصيل غرفة مع قائمة أعضائها (شاشة معلومات المجموعة).
