@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 
 import '../../services/app_state.dart';
 import '../../services/auth_service.dart';
+import '../../services/chat_state.dart';
 import '../../theme/app_theme.dart';
 import '../auth/change_password_screen.dart';
+import '../chat/chat_list_screen.dart';
 import '../notifications/notifications_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -17,6 +19,7 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final auth = context.watch<AuthService>();
+    final chatUnread = context.select<ChatState, int>((c) => c.unreadTotal);
     final openReports = state.openEmergencyReports.length;
     final activeLines = state.productionLines.where((l) => l.activeToday).length;
     final pendingPermits = state.permits.where((p) => p.status.name == 'pending').length;
@@ -96,6 +99,46 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
+                // الدردشة الداخلية (محادثات خاصة + مجموعات) مع شارة غير المقروء
+                if (chatAvailableForRole(role)) ...[
+                  InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const ChatListScreen()),
+                    ),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        border: Border.all(color: AppColors.border),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          const Center(child: Icon(Icons.chat_bubble_outline, size: 19, color: AppColors.textSecondary)),
+                          if (chatUnread > 0)
+                            Positioned(
+                              top: -2,
+                              right: -2,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(color: const Color(0xFFB3261E), borderRadius: BorderRadius.circular(8)),
+                                constraints: const BoxConstraints(minWidth: 16),
+                                child: Text(
+                                  chatUnread > 9 ? '٩+' : '$chatUnread',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(fontSize: 9.5, color: Colors.white, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 InkWell(
                   borderRadius: BorderRadius.circular(12),
                   onTap: () => auth.signOut(),
@@ -110,14 +153,23 @@ class HomeScreen extends StatelessWidget {
                     child: const Icon(Icons.logout, size: 19, color: AppColors.textSecondary),
                   ),
                 ),
-                const Spacer(),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    const Text('مرحباً بك', style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
-                    Text(auth.currentUser?.name ?? '', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    Text(roleLabel(role), style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
-                  ],
+                // Expanded بدل Spacer: مع ٤ أزرار في الصف قد يضيق المكان على الشاشات
+                // الصغيرة، فنمنع تجاوز الاسم الطويل بالقطع بـ"..." بدل الخطأ.
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      const Text('مرحباً بك', style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+                      Text(
+                        auth.currentUser?.name ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      Text(roleLabel(role), style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+                    ],
+                  ),
                 ),
               ],
             ),
