@@ -6,6 +6,7 @@ import 'firebase_options.dart';
 import 'services/app_state.dart';
 import 'services/auth_service.dart';
 import 'services/biometric_service.dart';
+import 'services/chat_state.dart';
 import 'services/notification_router.dart';
 import 'services/push_notification_service.dart';
 import 'theme/app_theme.dart';
@@ -48,6 +49,7 @@ class SayanatiApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthService()),
         ChangeNotifierProvider(create: (_) => AppState()),
+        ChangeNotifierProvider(create: (_) => ChatState()),
       ],
       child: MaterialApp(
         title: 'صيانتي',
@@ -97,11 +99,17 @@ class _AuthGateState extends State<AuthGate> {
       _attached = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         context.read<AppState>().attachAuth();
+        // الدردشة الداخلية: استطلاع المحادثات وعدّاد غير المقروء (الشارة) —
+        // راجع lib/services/chat_state.dart.
+        if (chatAvailableForRole(context.read<AuthService>().currentUser?.role)) {
+          context.read<ChatState>().start();
+        }
       });
     } else if (auth.status != AuthStatus.signedIn && _attached) {
       _attached = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         context.read<AppState>().detachAuth();
+        context.read<ChatState>().stop();
       });
     }
 
