@@ -127,16 +127,23 @@ class ChatState extends ChangeNotifier {
 
   /// آخر ٥٠ رسالة، أو الأحدث من [afterId] (استطلاع دوري)، أو الأقدم من
   /// [beforeId] (تحميل المزيد عند التمرير للأعلى). مرتبة من الأقدم للأحدث.
-  Future<ChatMessagesPage> fetchMessages(int roomId, {int? afterId, int? beforeId}) async {
+  ///
+  /// [checkFrom] (مع [afterId]): اطلب أيضًا معرّفات الرسائل التي حُذفت عند
+  /// الجميع منذ هذا المعرّف فصاعدًا، ليحدّث التطبيق ما حمّله مسبقًا.
+  Future<ChatMessagesPage> fetchMessages(int roomId, {int? afterId, int? beforeId, int? checkFrom}) async {
     final query = <String, dynamic>{};
     if (afterId != null) query['afterId'] = afterId;
     if (beforeId != null) query['beforeId'] = beforeId;
+    if (checkFrom != null) query['checkFrom'] = checkFrom;
     final data = await _api.get('/chat/rooms/$roomId/messages', query: query);
     final list = (data['messages'] as List).cast<Map<String, dynamic>>();
     return ChatMessagesPage(
       messages: list.map(ChatMessage.fromApi).toList(),
       hasMore: data['has_more'] == true,
       readUpTo: (data['read_up_to'] is num) ? (data['read_up_to'] as num).toInt() : 0,
+      deletedIds: data['deleted_ids'] is List
+          ? (data['deleted_ids'] as List).whereType<num>().map((n) => n.toInt()).toList()
+          : <int>[],
     );
   }
 
@@ -169,6 +176,14 @@ class ChatState extends ChangeNotifier {
     // ignore: unawaited_futures
     refreshRooms();
     return ChatMessage.fromApi(data['message'] as Map<String, dynamic>);
+  }
+
+  /// حذف رسالة: [forEveryone] = false → "حذف عندي" (تختفي من شاشتك فقط)،
+  /// true → "حذف عند الجميع" (لصاحب الرسالة فقط، يمسح محتواها عند الكل).
+  Future<void> deleteMessage(int roomId, int messageId, {required bool forEveryone}) async {
+    await _api.delete('/chat/rooms/$roomId/messages/$messageId?scope=${forEveryone ? 'all' : 'me'}');
+    // ignore: unawaited_futures
+    refreshRooms();
   }
 
   /// يحدّد المحادثة كمقروءة حتى آخر رسالة، ويُحدّث العدّاد فورًا محليًا.
