@@ -279,7 +279,8 @@ class _RootNavState extends State<RootNav> {
     if (role == AppRole.admin || isMaintenanceRole(role) || isInventoryOnlyRole(role)) keys.add('inventory');
     if (role == AppRole.admin || isProductionRole(role)) keys.add('production');
     if (role == AppRole.admin || role == AppRole.safety) keys.add('safety');
-    if (role == AppRole.admin) keys.add('admin');
+    // مدير النظام ومسؤول الصيانة (قرار الإدارة 2026-10-04) — راجع canOpenAdminTab.
+    if (canOpenAdminTab(role)) keys.add('admin');
     return keys;
   }
 
