@@ -321,11 +321,11 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
                               return IncomingIncidentCard(
                                 incident: item,
                                 converting: _convertingIncidentIds.contains(item.id),
-                                // null لمسؤول المخزون/المصمم (قرار 2026-10-03: لا يقدران
-                                // ينشئا أمر عمل جديدًا بأي طريقة، ولو بالتحويل — نفس قيد
-                                // زر "+" أعلاه تمامًا ونفس السبب: POST /api/work-orders
-                                // على السيرفر لم يُفتح لهما عمدًا).
-                                onConvert: canCreateTask ? () => _convertIncident(item) : null,
+                                // التحويل لمسؤول الصيانة والمدير فقط (قرار 2026-10-05):
+                                // الفني (ومسؤول المخزون/المصمم) يرى البلاغ وصورته لكن
+                                // بلا زر "تحويل" (null يُخفيه). نفس القيد ملزم على
+                                // السيرفر: POST /api/work-orders مع incidentReportId.
+                                onConvert: canManage ? () => _convertIncident(item) : null,
                               );
                             }
                             final r = item as MaintenanceReport;
@@ -567,7 +567,7 @@ class MaintenanceReportCard extends StatelessWidget {
 class IncomingIncidentCard extends StatelessWidget {
   final Incident incident;
   final bool converting;
-  // null يعني "لا يقدر هذا المستخدم على التحويل" (مسؤول المخزون/المصمم —
+  // null يعني "لا يقدر هذا المستخدم على التحويل" (غير مسؤول الصيانة/المدير —
   // راجع التعليق عند موضع الاستدعاء) — يُخفي زر "تحويل" بالكامل بدل تعطيله
   // بصريًا فقط، فلا يصل المستخدم لخطأ 403 غير مفهوم من السيرفر.
   final VoidCallback? onConvert;
