@@ -214,10 +214,14 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
     //
     // تحديث 2026-10-05 (قرار صريح): إنشاء مهمة عمل جديدة (زر "+") صار لمسؤول
     // الصيانة والمدير فقط — الفني لا ينشئ أمر عمل أو مهمة بنفسه (POST
-    // /api/work-orders على السيرفر يرفضه 403). أما "التعيين" (canAssign) فيبقى
-    // لفريق الصيانة كما كان تمامًا (PATCH /:id/assign لم يتغيّر).
+    // /api/work-orders على السيرفر يرفضه 403).
+    //
+    // تحديث 2026-10-05 (قرار صريح ثانٍ): "التعيين" (canAssign) — تعيين فني أو
+    // إضافة فني لأي مهمة — صار أيضًا لمسؤول الصيانة والمدير فقط، فالفني لا
+    // يعيّن ولا يحذف ولا يعدّل أي مهمة إطلاقًا. يطابق تمامًا قيد
+    // PATCH /api/work-orders/:id/assign على السيرفر (maintenance_manager + admin).
     final canCreateTask = canManage;
-    final canAssign = role == AppRole.admin || isMaintenanceRole(role);
+    final canAssign = canManage;
     Widget? fab;
     if (tab == _DashTab.tasks && canCreateTask) {
       fab = FloatingActionButton(
@@ -417,10 +421,10 @@ class MaintenanceReportCard extends StatelessWidget {
   final MaintenanceReport report;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
-  // هل يظهر زر "إضافة فني آخر" (أيقونة person_add) على بلاغ قيد التنفيذ؟
-  // افتراضيًا true (أدوار الصيانة الأصلية، كما كان دائمًا) — يُمرَّر false
-  // صراحة لمسؤول المخزون/المصمم (قرار 2026-10-03: رفضتم إعطائهما هذه
-  // الصلاحية تحديدًا، خلافًا لاستلام/إنجاز المهمة التي تبقى متاحة لهما).
+  // هل يقدر المستخدم "تعيين" فنيين: فتح شاشة التعيين عند الضغط على بلاغ
+  // "بانتظار التعيين" + أيقونة "إضافة فني آخر" (person_add) على بلاغ قيد
+  // التنفيذ؟ افتراضيًا false (الأمان أولًا) — يُمرَّر true صراحة لمسؤول
+  // الصيانة والمدير فقط (قرار 2026-10-05: الفني لا يعيّن أحدًا إطلاقًا).
   final bool canAssign;
 
   const MaintenanceReportCard({
@@ -428,7 +432,7 @@ class MaintenanceReportCard extends StatelessWidget {
     required this.report,
     this.onEdit,
     this.onDelete,
-    this.canAssign = true,
+    this.canAssign = false,
   });
 
   @override
@@ -455,7 +459,15 @@ class MaintenanceReportCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       onTap: () {
         if (report.status == MaintenanceStatus.pendingAssignment) {
-          Navigator.of(context).push(MaterialPageRoute(builder: (_) => MaintenanceAssignScreen(report: report)));
+          // التعيين لمسؤول الصيانة والمدير فقط — الفني يرى البلاغ لكن لا
+          // تُفتح له شاشة التعيين (يصله بدل ذلك تنبيه بسيط).
+          if (canAssign) {
+            Navigator.of(context).push(MaterialPageRoute(builder: (_) => MaintenanceAssignScreen(report: report)));
+          } else {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(const SnackBar(content: Text('تعيين الفنيين يتم من مسؤول الصيانة فقط')));
+          }
         } else if (report.status == MaintenanceStatus.inProgress) {
           Navigator.of(context).push(MaterialPageRoute(builder: (_) => MaintenanceTaskCloseScreen(report: report)));
         } else if (report.status == MaintenanceStatus.completed) {
@@ -486,9 +498,9 @@ class MaintenanceReportCard extends StatelessWidget {
                 // إضافة فني إضافي لبلاغ قيد التنفيذ (سبق تعيين فني له) — بلا
                 // فتح شاشة "إغلاق البلاغ" كاملة؛ نفس شاشة التعيين تُستخدم هنا
                 // أيضًا وتضيف فقط بلا مساس بالفني/الفنيين المُسندين حاليًا.
-                // مقيّد بـcanAssign (أدوار الصيانة الأصلية فقط — راجع تعليق
-                // الحقل أعلى الكلاس) حتى لا يصل مسؤول المخزون/المصمم لخطأ
-                // 403 غير مفهوم من السيرفر لو ضغطا عليه.
+                // مقيّد بـcanAssign (مسؤول الصيانة والمدير فقط — راجع تعليق
+                // الحقل أعلى الكلاس) حتى لا يصل غيرهما لخطأ 403 غير مفهوم من
+                // السيرفر لو ضغط عليه.
                 if (report.status == MaintenanceStatus.inProgress && canAssign)
                   Padding(
                     padding: const EdgeInsets.only(left: 6),
