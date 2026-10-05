@@ -5,8 +5,10 @@ import '../../services/app_state.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_state.dart';
 import '../../theme/app_theme.dart';
+import '../admin/admin_home_screen.dart' show canOpenAdminTab;
 import '../auth/change_password_screen.dart';
 import '../chat/chat_list_screen.dart';
+import '../chat/chat_widgets.dart' show ChatUnreadBadge;
 import '../notifications/notifications_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -179,6 +181,27 @@ class HomeScreen extends StatelessWidget {
               child: Text('الأقسام', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
             ),
             const SizedBox(height: 12),
+            // البطاقات داخل قائمة قابلة للتمرير: مع بطاقة "الرسائل" صار لمدير
+            // النظام ست بطاقات، وقد لا تتسع كلها في شاشة قصيرة (كان Column ثابتًا).
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+            // الرسائل (دردشة داخلية: محادثات خاصة + مجموعات) — بطاقة رئيسية بعدّاد
+            // غير المقروء، لكل الأدوار عدا "القسم العام".
+            if (chatAvailableForRole(role)) ...[
+              _ModuleCard(
+                icon: Icons.chat_bubble_outline,
+                color: const Color(0xFF0E7490),
+                title: 'الرسائل',
+                subtitle: chatUnread > 0 ? '$chatUnread رسائل غير مقروءة' : 'محادثات خاصة ومجموعات',
+                badgeCount: chatUnread,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ChatListScreen()),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             if (showMaintenance) ...[
               _ModuleCard(
                 icon: Icons.build_outlined,
@@ -220,7 +243,7 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
             ],
-            if (role == AppRole.admin)
+            if (canOpenAdminTab(role))
               _ModuleCard(
                 icon: Icons.admin_panel_settings_outlined,
                 color: AppColors.textSecondary,
@@ -228,6 +251,9 @@ class HomeScreen extends StatelessWidget {
                 subtitle: 'الفنيون واعتماد المستخدمين',
                 onTap: () => onSelectModule?.call('admin'),
               ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -243,6 +269,9 @@ class _ModuleCard extends StatelessWidget {
   final String subtitle;
   final VoidCallback onTap;
 
+  /// عدّاد أحمر يظهر قبل السهم لو أكبر من صفر (مثل رسائل الدردشة غير المقروءة).
+  final int badgeCount;
+
   const _ModuleCard({
     required this.icon,
     required this.color,
@@ -250,6 +279,7 @@ class _ModuleCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.badgeCount = 0,
   });
 
   @override
@@ -284,6 +314,10 @@ class _ModuleCard extends StatelessWidget {
                 ],
               ),
             ),
+            if (badgeCount > 0) ...[
+              ChatUnreadBadge(count: badgeCount),
+              const SizedBox(width: 8),
+            ],
             const Icon(Icons.chevron_left, color: AppColors.textFaint),
           ],
         ),
