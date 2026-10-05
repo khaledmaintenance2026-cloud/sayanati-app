@@ -189,6 +189,15 @@ Future<void> _openWorkOrder(
     return;
   }
 
+  // التعيين (شاشة MaintenanceAssignScreen) لمسؤول الصيانة والمدير فقط (قرار
+  // 2026-10-05) — الفني يصله إشعار بلاغ بانتظار التعيين أحيانًا، فنعرض له
+  // ملخصًا للقراءة فقط بدل شاشة تعيين لا يملك صلاحيتها على السيرفر.
+  if (target.status == MaintenanceStatus.pendingAssignment && (role == null || !canManageMaintenance(role))) {
+    if (!context.mounted) return;
+    await _showWorkOrderSummary(context, target);
+    return;
+  }
+
   // نفس ما تفعله بطاقة أمر العمل في لوحة الصيانة عند الضغط عليها تمامًا.
   final Widget screen = switch (target.status) {
     MaintenanceStatus.pendingAssignment => MaintenanceAssignScreen(report: target),
