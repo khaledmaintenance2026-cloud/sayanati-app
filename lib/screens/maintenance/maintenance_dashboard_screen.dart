@@ -211,7 +211,13 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
     // السيرفر (POST /api/work-orders في routes/workOrders.js) بقي أيضًا
     // عمدًا بلا توسيع لهما — فإخفاء الزر هنا ضروري وليس مجرد تجميل، وإلا
     // سيضغطان عليه ليصلهما خطأ "403" غير مفهوم من السيرفر.
-    final canCreateTask = role == AppRole.admin || isMaintenanceRole(role);
+    //
+    // تحديث 2026-10-05 (قرار صريح): إنشاء مهمة عمل جديدة (زر "+") صار لمسؤول
+    // الصيانة والمدير فقط — الفني لا ينشئ أمر عمل أو مهمة بنفسه (POST
+    // /api/work-orders على السيرفر يرفضه 403). أما "التعيين" (canAssign) فيبقى
+    // لفريق الصيانة كما كان تمامًا (PATCH /:id/assign لم يتغيّر).
+    final canCreateTask = canManage;
+    final canAssign = role == AppRole.admin || isMaintenanceRole(role);
     Widget? fab;
     if (tab == _DashTab.tasks && canCreateTask) {
       fab = FloatingActionButton(
@@ -337,7 +343,7 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
                                       )
                                   : null,
                               onDelete: canManage ? () => _confirmDelete(r.id, '${r.equipment} — ${r.line}') : null,
-                              canAssign: canCreateTask,
+                              canAssign: canAssign,
                             );
                           },
                         ),
