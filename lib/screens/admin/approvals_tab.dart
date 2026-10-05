@@ -122,7 +122,12 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
 
-    final myUid = context.read<AuthService>().currentUser?.uid;
+    final me = context.read<AuthService>().currentUser;
+    final myUid = me?.uid;
+    // مسؤول الصيانة يفتح هذه الشاشة أيضًا (قرار الإدارة 2026-10-04) لكنه لا
+    // يمنح دور "مدير النظام" ولا يعدّل حسابات المدير — السيرفر يفرض ذلك فعليًا
+    // (routes/users.js)، وهنا نُخفي الخيارات فقط كي لا تظهر أزرار سترفضها.
+    final viewerIsAdmin = me?.role == AppRole.admin;
     final pending = _users.where((u) => u['status'] != 'approved').toList();
     final approved = _users.where((u) => u['status'] == 'approved').toList();
 
@@ -143,6 +148,7 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
           else
             ...pending.map((u) => _PendingCard(
                   user: u,
+                  viewerIsAdmin: viewerIsAdmin,
                   onApprove: (role, facility) => _approve(u['id'].toString(), role, facility),
                   onReject: () => _reject(u['id'].toString()),
                 )),
@@ -152,6 +158,7 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
           const SizedBox(height: 10),
           ...approved.map((u) => _ApprovedCard(
                 user: u,
+                viewerIsAdmin: viewerIsAdmin,
                 isSelf: u['id'].toString() == myUid,
                 onChangeRole: (role) => _setRole(u['id'].toString(), role),
                 onChangeFacility: (facility) => _setFacility(u['id'].toString(), facility),
@@ -168,10 +175,13 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
 
 class _PendingCard extends StatefulWidget {
   final Map<String, dynamic> user;
+
+  /// مدير النظام فقط يرى خيار "مدير النظام" في قائمة الصلاحيات.
+  final bool viewerIsAdmin;
   final void Function(AppRole role, String? facility) onApprove;
   final VoidCallback onReject;
 
-  const _PendingCard({required this.user, required this.onApprove, required this.onReject});
+  const _PendingCard({required this.user, required this.viewerIsAdmin, required this.onApprove, required this.onReject});
 
   @override
   State<_PendingCard> createState() => _PendingCardState();
@@ -214,6 +224,7 @@ class _PendingCardState extends State<_PendingCard> {
                     border: OutlineInputBorder(),
                   ),
                   items: AppRole.values
+                      .where((r) => widget.viewerIsAdmin || r != AppRole.admin)
                       .map((r) => DropdownMenuItem(value: r, child: Text(roleLabel(r), style: const TextStyle(fontSize: 12.5))))
                       .toList(),
                   onChanged: (v) => setState(() => _role = v ?? _role),
@@ -325,6 +336,10 @@ class _PendingCardState extends State<_PendingCard> {
 
 class _ApprovedCard extends StatelessWidget {
   final Map<String, dynamic> user;
+
+  /// مدير النظام وحده يعدّل حسابات المدير ويمنح دوره — لغيره (مسؤول الصيانة)
+  /// تظهر بطاقة حساب المدير للعرض فقط بلا أي أزرار.
+  final bool viewerIsAdmin;
   final bool isSelf;
   final void Function(AppRole role) onChangeRole;
   final void Function(String? facility) onChangeFacility;
@@ -335,6 +350,7 @@ class _ApprovedCard extends StatelessWidget {
 
   const _ApprovedCard({
     required this.user,
+    required this.viewerIsAdmin,
     required this.isSelf,
     required this.onChangeRole,
     required this.onChangeFacility,
@@ -372,6 +388,7 @@ class _ApprovedCard extends StatelessWidget {
     final safetyFacility = user['safety_facility'] as String?;
     final generalFacility = user['general_facility'] as String?;
     final phone = user['phone'] as String?;
+    final locked = !viewerIsAdmin && role == AppRole.admin;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -388,7 +405,7 @@ class _ApprovedCard extends StatelessWidget {
                     Text((user['name'] as String?) ?? '', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                     Text((user['email'] as String?) ?? '', style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
                     InkWell(
-                      onTap: () => _editPhone(context),
+                      onTap: locked ? null : () => _editPhone(context),
                       child: Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Row(
@@ -409,11 +426,14 @@ class _ApprovedCard extends StatelessWidget {
               ),
               if (isSelf)
                 const StatusPill(label: 'أنت', color: AppColors.maintenance, background: Color(0x1F2B3487))
+              else if (locked)
+                const StatusPill(label: 'مدير النظام', color: AppColors.textSecondary, background: AppColors.background)
               else ...[
                 DropdownButton<AppRole>(
                   value: role,
                   underline: const SizedBox(),
                   items: AppRole.values
+                      .where((r) => viewerIsAdmin || r != AppRole.admin)
                       .map((r) => DropdownMenuItem(value: r, child: Text(roleLabel(r), style: const TextStyle(fontSize: 12.5))))
                       .toList(),
                   onChanged: (v) => v == null ? null : onChangeRole(v),
