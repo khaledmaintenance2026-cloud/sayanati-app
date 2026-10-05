@@ -21,6 +21,11 @@ import 'chat_widgets.dart';
 /// غرفة محادثة (خاصة أو مجموعة): الرسائل (نص، صور، صوت)، الإرسال، وعلامات
 /// الإرسال/القراءة. تستطلع (Poll) الرسائل الجديدة كل ٣ ثوانٍ طالما الشاشة
 /// مفتوحة، وتحدّد المحادثة كمقروءة تلقائيًا.
+///
+/// الإرسال فوري في الواجهة: تظهر رسالتك في المحادثة لحظة الضغط على "إرسال"
+/// (بعلامة ساعة "جارٍ الإرسال") ثم تتحوّل لرسالة عادية بعلامة ✓ عند ردّ
+/// السيرفر؛ لو فشل الإرسال تبقى ظاهرة بعلامة حمراء مع "اضغط لإعادة المحاولة".
+/// الرسائل المتتالية تُرسل بالترتيب نفسه (طابور واحد) حتى لا تتبدّل أماكنها.
 class ChatRoomScreen extends StatefulWidget {
   final ChatRoom room;
 
@@ -34,6 +39,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   final _textCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   late final ChatState _chat;
+  late final int _roomId; // نحتفظ به لإكمال إرسال رسائل الطابور حتى لو غادر المستخدم الشاشة
   late final String _myUid;
   late String _roomName;
 
@@ -44,9 +50,19 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   bool _hasMore = false;
   bool _loadingMore = false;
   int _readUpTo = 0;
-  bool _sending = false;
+
+  // آخر معرّف رسالة وصل من السيرفر (يتقدّم من الجلب والاستطلاع فقط، لا من
+  // رسائلي المؤكَّدة) — لو استخدمنا آخر عنصر في القائمة لتخطّى الاستطلاع رسالة
+  // وصلت من غيري بين آخر استطلاع ورسالتي (id أصغر من id رسالتي).
+  int _cursor = 0;
   bool _polling = false;
   Timer? _timer;
+
+  // رسائل قيد الإرسال أو فشل إرسالها (تُعرض أسفل المحادثة قبل أن يردّ السيرفر)
+  List<_PendingSend> _pending = [];
+  int _inFlight = 0;
+  bool _picking = false;
+  Future<void> _sendQueue = Future<void>.value();
 
   @override
   void initState() {
@@ -54,6 +70,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     _chat = context.read<ChatState>();
     _myUid = context.read<AuthService>().currentUser?.uid ?? '';
     _roomName = widget.room.name;
+    _roomId = widget.room.id;
     _chat.openRoomId = widget.room.id;
     _scrollCtrl.addListener(_onScroll);
     _loadInitial();
@@ -86,6 +103,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       if (!mounted) return;
       setState(() {
         _messages = page.messages;
+        _cursor = page.messages.isEmpty ? 0 : page.messages.last.id;
         _hasMore = page.hasMore;
         _readUpTo = page.readUpTo;
         _loading = false;
@@ -108,15 +126,19 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   }
 
   Future<void> _poll() async {
-    if (_polling || _loading || _error != null || !mounted) return;
+    // لا نستطلع أثناء إرسال رسالة: يمنع ظهور رسالتك مرتين لحظة وصولها
+    if (_polling || _inFlight > 0 || _loading || _error != null || !mounted) return;
     _polling = true;
     try {
-      final lastId = _messages.isEmpty ? null : _messages.last.id;
+      final lastId = _cursor == 0 ? null : _cursor;
       final firstId = _messages.isEmpty ? null : _messages.first.id;
       final page = lastId == null
           ? await _chat.fetchMessages(widget.room.id)
           : await _chat.fetchMessages(widget.room.id, afterId: lastId, checkFrom: firstId);
-      if (!mounted) return;
+      // أُرسلت رسالة أثناء هذا الاستطلاع: نتجاهل نتيجته (قد تحوي نسخة رسالتي من
+      // السيرفر قبل ردّ الإرسال فتظهر مرتين) — الاستطلاع التالي يجلبها بلا ضياع.
+      if (!mounted || _inFlight > 0) return;
+      if (page.messages.isNotEmpty && page.messages.last.id > _cursor) _cursor = page.messages.last.id;
       final existing = _messages.map((m) => m.id).toSet();
       final fresh = page.messages.where((m) => !existing.contains(m.id)).toList();
       // رسائل حمّلناها سابقًا وحذفها صاحبها عند الجميع منذ ذلك الحين
@@ -127,7 +149,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           final base = hasNewDeletions
               ? _messages.map((m) => deleted.contains(m.id) && !m.isDeleted ? m.markDeleted() : m).toList()
               : _messages;
-          _messages = [...base, ...fresh];
+          // مرتبة بالمعرّف: رسالة وصلت من غيري تقع قبل رسالتي المؤكَّدة لو سبقتها
+          _messages = [...base, ...fresh]..sort((a, b) => a.id.compareTo(b.id));
           _readUpTo = page.readUpTo;
         });
       }
@@ -167,31 +190,112 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     }
   }
 
-  void _appendMine(ChatMessage msg) {
-    if (!mounted) return;
-    setState(() {
-      if (!_messages.any((m) => m.id == msg.id)) _messages = [..._messages, msg];
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollCtrl.hasClients) return;
+      _scrollCtrl.animateTo(0, duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
     });
-    if (_scrollCtrl.hasClients) {
-      _scrollCtrl.animateTo(0, duration: const Duration(milliseconds: 220), curve: Curves.easeOut);
+  }
+
+  /// تُظهر الرسالة فورًا في المحادثة ثم تُرسلها للسيرفر بالترتيب.
+  void _enqueue(_PendingSend p) {
+    setState(() => _pending = [..._pending, p]);
+    _scrollToBottom();
+    _queueDelivery(p);
+  }
+
+  void _queueDelivery(_PendingSend p) {
+    _inFlight++;
+    _sendQueue = _sendQueue.then((_) => _deliver(p)).whenComplete(() => _inFlight--);
+  }
+
+  /// لا ترمي أي استثناء (تلتقط كل الأخطاء) كي لا ينكسر الطابور.
+  Future<void> _deliver(_PendingSend p) async {
+    // حذف المستخدم الرسالة الفاشلة قبل إعادة المحاولة. لا نتحقق من mounted هنا
+    // عمدًا: لو غادر المستخدم الشاشة تُكمل الرسائل المنتظرة إرسالها (لا تضيع).
+    if (!_pending.contains(p)) return;
+    try {
+      final ChatMessage msg;
+      if (p.kind == 'image') {
+        final bytes = p.imageBytes!;
+        final dataUrl = 'data:image/${_detectImageExt(bytes)};base64,${base64Encode(bytes)}';
+        msg = await _chat.sendImage(_roomId, dataUrl, caption: p.caption);
+      } else {
+        msg = await _chat.sendText(_roomId, p.text!);
+      }
+      if (!mounted) return;
+      setState(() {
+        _pending = _pending.where((x) => !identical(x, p)).toList();
+        if (!_messages.any((m) => m.id == msg.id)) {
+          _messages = [..._messages, msg]..sort((a, b) => a.id.compareTo(b.id));
+        }
+      });
+    } on ApiException catch (e) {
+      _markFailed(p, e.message);
+    } catch (_) {
+      _markFailed(p, null);
     }
   }
 
-  Future<void> _sendText() async {
+  void _markFailed(_PendingSend p, String? error) {
+    if (!mounted || !_pending.contains(p)) return;
+    setState(() {
+      p.failed = true;
+      p.error = error;
+    });
+    _toast(error ?? (p.kind == 'image' ? 'تعذّر إرسال الصورة' : 'تعذّر إرسال الرسالة'));
+  }
+
+  void _retry(_PendingSend p) {
+    if (!p.failed || !_pending.contains(p)) return;
+    setState(() {
+      p.failed = false;
+      p.error = null;
+    });
+    _queueDelivery(p);
+  }
+
+  void _discardPending(_PendingSend p) {
+    setState(() => _pending = _pending.where((x) => !identical(x, p)).toList());
+  }
+
+  /// قائمة الرسالة الفاشلة: إعادة المحاولة أو حذفها.
+  void _showPendingActions(_PendingSend p) {
+    if (!p.failed) return;
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.refresh),
+              title: const Text('إعادة المحاولة'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _retry(p);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Color(0xFFB3261E)),
+              title: const Text('حذف الرسالة', style: TextStyle(color: Color(0xFFB3261E))),
+              subtitle: const Text('لم تُرسل أصلًا — تُزال من شاشتك فقط'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _discardPending(p);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _sendText() {
     final text = _textCtrl.text.trim();
-    if (text.isEmpty || _sending) return;
-    setState(() => _sending = true);
-    try {
-      final msg = await _chat.sendText(widget.room.id, text);
-      _textCtrl.clear();
-      _appendMine(msg);
-    } on ApiException catch (e) {
-      _toast(e.message);
-    } catch (_) {
-      _toast('تعذّر إرسال الرسالة');
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
+    if (text.isEmpty) return;
+    _textCtrl.clear();
+    _enqueue(_PendingSend.text(text));
   }
 
   // ---------------------------------------------------------------- الصور
@@ -273,7 +377,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   }
 
   Future<void> _pickAndSendImage(ImageSource source) async {
-    if (_sending) return;
+    if (_picking) return;
+    _picking = true;
     try {
       final picked = await ImagePicker().pickImage(source: source, maxWidth: 1600, imageQuality: 80);
       if (picked == null) return;
@@ -281,16 +386,12 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       if (!mounted) return;
       final caption = await _askCaption(bytes);
       if (caption == null || !mounted) return;
-      setState(() => _sending = true);
-      final dataUrl = 'data:image/${_detectImageExt(bytes)};base64,${base64Encode(bytes)}';
-      final msg = await _chat.sendImage(widget.room.id, dataUrl, caption: caption);
-      _appendMine(msg);
-    } on ApiException catch (e) {
-      _toast(e.message);
-    } catch (e) {
-      _toast('تعذّر إرسال الصورة');
+      // تظهر الصورة فورًا (بمؤشر "جارٍ الإرسال") ثم تُرفع في الخلفية
+      _enqueue(_PendingSend.image(bytes, caption.trim()));
+    } catch (_) {
+      _toast('تعذّر اختيار الصورة');
     } finally {
-      if (mounted) setState(() => _sending = false);
+      _picking = false;
     }
   }
 
@@ -415,24 +516,47 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           ),
         ),
       );
-    } else if (_messages.isEmpty) {
+    } else if (_messages.isEmpty && _pending.isEmpty) {
       body = const Center(
         child: Text('ابدأ المحادثة بإرسال أول رسالة', style: TextStyle(color: AppColors.textMuted)),
       );
     } else {
+      // القائمة معكوسة (الأحدث أسفل): أول العناصر هي الرسائل قيد الإرسال ثم
+      // الرسائل المؤكَّدة من السيرفر ثم مؤشر "تحميل الأقدم" في أعلى القائمة.
+      final pendingCount = _pending.length;
       body = ListView.builder(
         reverse: true,
         controller: _scrollCtrl,
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        itemCount: _messages.length + (_loadingMore ? 1 : 0),
+        itemCount: pendingCount + _messages.length + (_loadingMore ? 1 : 0),
         itemBuilder: (context, i) {
-          if (i == _messages.length) {
+          if (i < pendingCount) {
+            final p = _pending[pendingCount - 1 - i];
+            return _MessageBubble(
+              message: ChatMessage(
+                id: 0,
+                roomId: widget.room.id,
+                kind: p.kind,
+                body: p.kind == 'text' ? p.text : p.caption,
+                createdAt: p.createdAt,
+              ),
+              isMine: true,
+              isGroup: widget.room.isGroup,
+              isRead: false,
+              sendState: p.failed ? _SendState.failed : _SendState.sending,
+              localImage: p.imageBytes,
+              onTap: p.failed ? () => _showPendingActions(p) : null,
+              onLongPress: () => _showPendingActions(p),
+            );
+          }
+          final mi = i - pendingCount;
+          if (mi == _messages.length) {
             return const Padding(
               padding: EdgeInsets.all(12),
               child: Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))),
             );
           }
-          final idx = _messages.length - 1 - i;
+          final idx = _messages.length - 1 - mi;
           final msg = _messages[idx];
           final older = idx > 0 ? _messages[idx - 1] : null;
           final showDay = msg.createdAt != null && (older == null ? !_hasMore : !chatSameDay(older.createdAt, msg.createdAt));
@@ -489,7 +613,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             IconButton(
               icon: const Icon(Icons.add_photo_alternate_outlined, color: AppColors.textSecondary),
               tooltip: 'إرسال صورة',
-              onPressed: _sending ? null : _showImageSourceSheet,
+              onPressed: _showImageSourceSheet,
             ),
             Expanded(
               child: TextField(
@@ -514,12 +638,12 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
               height: 44,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: hasText && !_sending ? AppColors.maintenance : AppColors.textFaint,
+                color: hasText ? AppColors.maintenance : AppColors.textFaint,
               ),
               child: IconButton(
                 icon: const Icon(Icons.send, size: 20, color: Colors.white),
                 tooltip: 'إرسال',
-                onPressed: hasText && !_sending ? _sendText : null,
+                onPressed: hasText ? _sendText : null,
               ),
             ),
           ],
@@ -528,6 +652,30 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     );
   }
 }
+
+/// رسالة قيد الإرسال أو فشل إرسالها — تُعرض فورًا قبل ردّ السيرفر.
+class _PendingSend {
+  final String kind; // text | image
+  final String? text;
+  final Uint8List? imageBytes;
+  final String caption;
+  final DateTime createdAt = DateTime.now();
+  bool failed = false;
+  String? error;
+
+  _PendingSend.text(String t)
+      : kind = 'text',
+        text = t,
+        imageBytes = null,
+        caption = '';
+
+  _PendingSend.image(Uint8List bytes, this.caption)
+      : kind = 'image',
+        text = null,
+        imageBytes = bytes;
+}
+
+enum _SendState { sending, failed }
 
 /// فاصل اليوم بين الرسائل ("اليوم"، "أمس"، أو التاريخ).
 class _DayChip extends StatelessWidget {
@@ -564,12 +712,22 @@ class _MessageBubble extends StatelessWidget {
   final bool isRead;
   final VoidCallback onLongPress;
 
+  /// null = رسالة مؤكَّدة من السيرفر. غير ذلك = رسالة محلية قيد الإرسال/فاشلة.
+  final _SendState? sendState;
+
+  /// بايتات الصورة المحلية (لمعاينتها فورًا قبل رفعها).
+  final Uint8List? localImage;
+  final VoidCallback? onTap;
+
   const _MessageBubble({
     required this.message,
     required this.isMine,
     required this.isGroup,
     required this.isRead,
     required this.onLongPress,
+    this.sendState,
+    this.localImage,
+    this.onTap,
   });
 
   @override
@@ -594,7 +752,8 @@ class _MessageBubble extends StatelessWidget {
       );
     }
 
-    final maxWidth = MediaQuery.of(context).size.width * 0.78;
+    // 78% من العرض، بحدّ أقصى 560 كي لا تمتد الفقاعة على شاشة الكمبيوتر العريضة
+    final maxWidth = (MediaQuery.of(context).size.width * 0.78).clamp(0.0, 560.0).toDouble();
     final textColor = isMine ? Colors.white : AppColors.textPrimary;
     final metaColor = isMine ? Colors.white70 : AppColors.textMuted;
     final senderColor = _senderColors[(message.senderId ?? 0).abs() % _senderColors.length];
@@ -624,7 +783,29 @@ class _MessageBubble extends StatelessWidget {
       ));
     } else if (message.kind == 'image') {
       final url = message.mediaUrl;
-      if (url != null) {
+      if (localImage != null) {
+        children.add(ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Image.memory(localImage!, width: 230, height: 230, fit: BoxFit.cover),
+              if (sendState == _SendState.sending)
+                Container(
+                  width: 230,
+                  height: 230,
+                  color: Colors.black26,
+                  alignment: Alignment.center,
+                  child: const SizedBox(
+                    width: 26,
+                    height: 26,
+                    child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                  ),
+                ),
+            ],
+          ),
+        ));
+      } else if (url != null) {
         children.add(GestureDetector(
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(fullscreenDialog: true, builder: (_) => FullScreenPhotoViewer(url: url)),
@@ -679,14 +860,25 @@ class _MessageBubble extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Text(time, style: TextStyle(fontSize: 10, color: metaColor)),
+          Text(
+            sendState == _SendState.failed ? 'فشل الإرسال — اضغط لإعادة المحاولة' : time,
+            style: TextStyle(
+              fontSize: 10,
+              color: sendState == _SendState.failed ? const Color(0xFFFFB4AB) : metaColor,
+            ),
+          ),
           if (isMine && !message.isDeleted) ...[
             const SizedBox(width: 4),
-            Icon(
-              isRead ? Icons.done_all : Icons.done,
-              size: 14,
-              color: isRead ? const Color(0xFF8FD3FF) : Colors.white70,
-            ),
+            if (sendState == _SendState.sending)
+              const Icon(Icons.schedule, size: 13, color: Colors.white70)
+            else if (sendState == _SendState.failed)
+              const Icon(Icons.error_outline, size: 14, color: Color(0xFFFFB4AB))
+            else
+              Icon(
+                isRead ? Icons.done_all : Icons.done,
+                size: 14,
+                color: isRead ? const Color(0xFF8FD3FF) : Colors.white70,
+              ),
           ],
         ],
       ),
@@ -695,6 +887,7 @@ class _MessageBubble extends StatelessWidget {
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
+        onTap: onTap,
         onLongPress: onLongPress,
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 3),
