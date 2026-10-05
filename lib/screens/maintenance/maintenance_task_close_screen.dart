@@ -82,9 +82,10 @@ class _MaintenanceTaskCloseScreenState extends State<MaintenanceTaskCloseScreen>
     // مسؤول المخزون تحديدًا (قرار 2026-10-03) — لا المصمم.
     final canRequestParts = role == AppRole.admin || isMaintenanceRole(role) || role == AppRole.inventoryManager;
     // زر "إضافة فني" يجب أن يطابق تمامًا من يقدر فعليًا على PATCH /:id/assign
-    // على السيرفر: أدوار الصيانة الأصلية فقط — عمدًا بلا مسؤول المخزون أو
-    // المصمم (قرار صريح 2026-10-03: رفضتم إعطائهما هذه الصلاحية تحديدًا).
-    final canAssignTechnician = role == AppRole.admin || isMaintenanceRole(role);
+    // على السيرفر: مسؤول الصيانة والمدير فقط (قرار صريح 2026-10-05: الفني
+    // العادي لا يعيّن ولا يضيف فنيًا لأي مهمة إطلاقًا — وقبله 2026-10-03:
+    // مسؤول المخزون والمصمم أيضًا ممنوعان).
+    final canAssignTechnician = canManageMaintenance(role);
     return Scaffold(
       appBar: ScreenTopBar(
         title: 'إغلاق البلاغ',
