@@ -1,342 +1,316 @@
-import 'package:flutter/material.dart';
+import '../models/overtime.dart';
+import 'arabic_format.dart';
 
-import '../../models/overtime.dart';
-import '../../services/overtime_service.dart';
-import '../../theme/app_theme.dart';
-import '../../widgets/common.dart';
-import 'overtime_report_print_screen.dart';
-import 'overtime_widgets.dart';
-
-/// كشف فرد واحد: تختار الفرد المسجَّل فتظهر لك الأيام التي شارك فيها في العمل
-/// الإضافي، وساعاته في كل يوم والأعمال التي نفّذها، مع إجمالي مرّاته وأيامه
-/// وساعاته — لشهر أو لسنة كاملة، ومعها كشف PDF للطباعة.
-class OvertimePersonScreen extends StatefulWidget {
-  final OvertimeEmployee employee;
-
-  /// الشهر الذي يفتح عليه الكشف (يُؤخذ منه الشهر والسنة فقط).
-  final DateTime initialMonth;
-
-  const OvertimePersonScreen({super.key, required this.employee, required this.initialMonth});
-
-  @override
-  State<OvertimePersonScreen> createState() => _OvertimePersonScreenState();
+/// يبني تقرير "العمل الإضافي" كـ HTML بمقاس A4 — يوميًا (يوم واحد، بجدول توقيع
+/// لكل عمل) أو شهريًا/لمدة (ملخص الأفراد + تفاصيل الأعمال) — بنفس هوية تقارير
+/// صيانتي، ثم يتحول لملف PDF عبر حزمة printing (أندرويد) أو يُفتح في تبويب
+/// متصفح للطباعة (ويب). راجع overtime_report_print_screen.dart.
+///
+/// كل نص يكتبه المستخدم (العمل، السبب، الموقع، أسماء الموظفين…) يمرّ عبر
+/// [_esc] حتى لا يكسر رموز مثل < و & شكل التقرير.
+String buildOvertimeReportHtml(OvertimeReport report) {
+  final body = report.mode == 'day' ? _dayBody(report) : _periodBody(report);
+  return _wrap(body);
 }
 
-class _OvertimePersonScreenState extends State<OvertimePersonScreen> {
-  bool _yearMode = false;
-  late DateTime _month;
-  OvertimePersonReport? _report;
-  bool _loading = true;
-  String? _error;
-  int _requestId = 0;
+// ---------------------------------------------------------------------------
+// أدوات صغيرة
+// ---------------------------------------------------------------------------
 
-  @override
-  void initState() {
-    super.initState();
-    _month = DateTime(widget.initialMonth.year, widget.initialMonth.month, 1);
-    _load();
+String _esc(String s) => s
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+
+/// نص متعدد الأسطر (السبب مثلًا): نهرّبه ثم نحوّل كل سطر جديد إلى <br>.
+String _escMl(String s) => _esc(s).replaceAll('\r\n', '\n').replaceAll('\n', '<br>');
+
+String _ar(Object v) => ArabicFormat.toEasternDigits(v);
+
+const String _brand = 'صيانتي — إدارة الصيانة والإنتاج والسلامة';
+
+// ---------------------------------------------------------------------------
+// التنسيق (CSS) — مُعاينة بصريًا في Chromium بمقاس A4 قبل النقل إلى دارت.
+// نص خام (r'''...''') كي لا يفسّر دارت أي رمز داخله.
+// ---------------------------------------------------------------------------
+
+const String _css = r'''
+  @page { size: A4; margin: 12mm 10mm; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
+  body { margin: 0; background: #FFFFFF; }
+  .page { width: 100%; max-width: 794px; margin: 0 auto; padding: 10px 8px 14px; font-family: 'IBM Plex Sans Arabic','Segoe UI',Tahoma,sans-serif; color: #1A2129; font-size: 13px; line-height: 1.55; }
+  .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 2px solid #2B3487; }
+  .title { font-size: 21px; font-weight: 700; color: #2B3487; }
+  .sub { font-size: 14px; color: #5C6673; margin-top: 3px; }
+  .brand { font-size: 11.5px; color: #8892A0; text-align: left; white-space: nowrap; }
+  .kpis { display: flex; gap: 10px; margin: 14px 0 6px; }
+  .kpi { flex: 1; background: #F5F6F8; border-radius: 10px; padding: 10px 12px; }
+  .kpi .k { font-size: 11.5px; color: #5C6673; }
+  .kpi .v { font-size: 17px; font-weight: 700; color: #2B3487; margin-top: 2px; }
+  .kpi .v.amber { color: #B45309; }
+  .rec { border: 1px solid #D9DDE3; border-radius: 12px; padding: 12px 14px 12px; margin-top: 14px; break-inside: avoid; page-break-inside: avoid; }
+  .rec.long { break-inside: auto; page-break-inside: auto; }
+  .rec-head { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
+  .badge { flex: none; width: 24px; height: 24px; line-height: 24px; text-align: center; border-radius: 50%; background: #2B3487; color: #FFFFFF; font-size: 12.5px; font-weight: 700; }
+  .rec-title { font-size: 15px; font-weight: 700; }
+  .grid { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-bottom: 8px; }
+  .cell { background: #F5F6F8; border-radius: 8px; padding: 5px 10px; font-size: 12px; }
+  .cell span { color: #5C6673; margin-left: 5px; }
+  .cell b { color: #1A2129; }
+  .box { background: #FFF8E6; border-radius: 8px; padding: 7px 11px; margin-bottom: 8px; font-size: 12.5px; }
+  .box .lbl { font-weight: 700; color: #B45309; margin-bottom: 1px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  thead { display: table-header-group; }
+  th { background: #2B3487; color: #FFFFFF; font-size: 12px; padding: 6px 8px; border: 1px solid #2B3487; text-align: right; }
+  td { border: 1px solid #C9CFD8; padding: 0 8px; height: 34px; font-size: 12.5px; vertical-align: middle; }
+  tr { break-inside: avoid; page-break-inside: avoid; }
+  td.n { width: 38px; text-align: center; color: #5C6673; }
+  td.num { width: 120px; text-align: center; }
+  td.sign { width: 190px; }
+  td.c { text-align: center; white-space: nowrap; }
+  td.empty { height: 38px; text-align: center; color: #8892A0; }
+  td.days { font-size: 11.5px; line-height: 1.5; padding-top: 4px; padding-bottom: 4px; }
+  tfoot td { font-weight: 700; background: #F5F6F8; }
+  .sec { font-size: 14.5px; font-weight: 700; margin: 18px 0 6px; color: #1A2129; }
+  .note { font-size: 11.5px; color: #8892A0; margin-top: 8px; }
+  .approve { margin-top: 26px; display: flex; gap: 40px; font-size: 12.5px; color: #3A4250; break-inside: avoid; }
+  .approve div { flex: 1; border-top: 1px solid #8892A0; padding-top: 5px; text-align: center; }
+  .foot { margin-top: 22px; padding-top: 10px; border-top: 1px solid #EDEFF2; font-size: 10.5px; color: #B4BAC2; display: flex; justify-content: space-between; }
+''';
+
+String _wrap(String body) {
+  final generated = ArabicFormat.dateTime(DateTime.now());
+  return '''<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<style>$_css</style>
+</head>
+<body>
+<div class="page" dir="rtl">
+$body
+  <div class="foot"><span>تم إنشاء هذا التقرير تلقائيًا من تطبيق صيانتي</span><span>$generated</span></div>
+</div>
+</body>
+</html>''';
+}
+
+String _head(String title, String sub, {String? sub2}) =>
+    '''  <div class="head"><div><div class="title">${_esc(title)}</div><div class="sub">${_esc(sub)}</div>${sub2 == null ? '' : '<div class="sub">${_esc(sub2)}</div>'}</div><div class="brand">$_brand</div></div>''';
+
+String _kpi(String label, String value, {bool amber = false}) =>
+    '<div class="kpi"><div class="k">${_esc(label)}</div><div class="v${amber ? ' amber' : ''}">${_esc(value)}</div></div>';
+
+String _cell(String label, String value) => '<div class="cell"><span>${_esc(label)}</span><b>${_esc(value)}</b></div>';
+
+String _numberOrDash(String? employeeNumber) =>
+    (employeeNumber == null || employeeNumber.isEmpty) ? '—' : _esc(_ar(employeeNumber));
+
+const String _approveBlock = '  <div class="approve"><div>اعتماد المسؤول</div><div>التوقيع</div></div>';
+
+// ---------------------------------------------------------------------------
+// تقرير يوم واحد
+// ---------------------------------------------------------------------------
+
+String _recordBlock(int index, OvertimeRecord r) {
+  final cells = StringBuffer();
+  if (r.location != null) cells.write(_cell('الموقع', r.location!));
+  if (r.lines != null) cells.write(_cell('الخطوط', r.lines!));
+  if (r.product != null) cells.write(_cell('المنتج', r.product!));
+  if (r.batch != null) cells.write(_cell('الباتش', r.batch!));
+  final count = (r.workersCount != null && r.workersCount! > 0) ? r.workersCount! : r.employeesCount;
+  if (count > 0) cells.write(_cell('عدد العمال', _ar(count)));
+  if (r.startTime != null && r.endTime != null) {
+    cells.write(_cell('الوقت', 'من ${_ar(r.startTime!)} إلى ${_ar(r.endTime!)}'));
+    if (r.hours != null) cells.write(_cell('المدة', overtimeHoursLabel(r.hours!)));
   }
+  final grid = cells.isEmpty ? '' : '<div class="grid">$cells</div>';
 
-  Future<void> _load() async {
-    final id = ++_requestId;
-    if (mounted) setState(() => _error = null);
-    try {
-      final report = _yearMode
-          ? await OvertimeService.fetchPersonReport(widget.employee.id, year: _month.year.toString())
-          : await OvertimeService.fetchPersonReport(widget.employee.id, month: overtimeIsoMonth(_month));
-      if (!mounted || id != _requestId) return;
-      setState(() {
-        _report = report;
-        _loading = false;
-      });
-    } catch (e) {
-      if (!mounted || id != _requestId) return;
-      setState(() {
-        _error = overtimeErrorText(e);
-        _loading = false;
-      });
+  final reason = r.reason == null
+      ? ''
+      : '<div class="box"><div class="lbl">سبب العمل الإضافي</div>${_escMl(r.reason!)}</div>';
+
+  final rows = StringBuffer();
+  if (r.entries.isEmpty) {
+    rows.write('<tr><td class="empty" colspan="4">لم يُحدَّد أفراد لهذا العمل</td></tr>');
+  } else {
+    for (var k = 0; k < r.entries.length; k++) {
+      final e = r.entries[k];
+      rows.write('<tr><td class="n">${_ar(k + 1)}</td><td>${_esc(e.name)}</td>'
+          '<td class="num">${_numberOrDash(e.employeeNumber)}</td><td class="sign"></td></tr>');
     }
   }
 
-  void _reload() {
-    setState(() {
-      _report = null;
-      _loading = true;
-    });
-    _load();
+  final longClass = r.entries.length > 12 ? ' long' : '';
+  return '''  <div class="rec$longClass">
+    <div class="rec-head"><span class="badge">${_ar(index + 1)}</span><span class="rec-title">${_esc(r.workDescription)}</span></div>
+    $grid
+    $reason
+    <table>
+      <thead><tr><th>م</th><th>اسم الموظف</th><th>الرقم الوظيفي</th><th>التوقيع</th></tr></thead>
+      <tbody>$rows</tbody>
+    </table>
+  </div>''';
+}
+
+String _dayBody(OvertimeReport report) {
+  final s = report.summary;
+  final date = overtimeParseDate(report.from);
+  final sub = date == null
+      ? overtimeDateLabel(report.from)
+      : '${overtimeWeekdayName(date)} ${overtimeDateLabel(report.from)}';
+
+  final kpis = StringBuffer()
+    ..write(_kpi('عدد الأعمال', _ar(s.recordsCount)))
+    ..write(_kpi('عدد الأفراد', _ar(s.employeesCount)));
+  if (s.totalHours > 0) {
+    final label = s.personHours > 0 ? 'إجمالي ساعات الأفراد' : 'إجمالي الساعات';
+    final value = s.personHours > 0 ? s.personHours : s.totalHours;
+    kpis.write(_kpi(label, overtimeHoursLabel(value), amber: true));
   }
 
-  void _setMode(bool year) {
-    if (_yearMode == year) return;
-    setState(() => _yearMode = year);
-    _reload();
+  final recs = StringBuffer();
+  for (var i = 0; i < report.records.length; i++) {
+    if (i > 0) recs.write('\n');
+    recs.write(_recordBlock(i, report.records[i]));
   }
 
-  void _shift(int step) {
-    setState(() {
-      _month = _yearMode ? DateTime(_month.year + step, _month.month, 1) : DateTime(_month.year, _month.month + step, 1);
-    });
-    _reload();
+  return '''${_head('تقرير العمل الإضافي اليومي', sub)}
+  <div class="kpis">$kpis</div>
+$recs
+$_approveBlock''';
+}
+
+// ---------------------------------------------------------------------------
+// تقرير شهر أو مدة
+// ---------------------------------------------------------------------------
+
+String _periodBody(OvertimeReport report) {
+  final s = report.summary;
+
+  late final String title;
+  late final String sub;
+  if (report.mode == 'month') {
+    final monthPart = report.from.length >= 7 ? report.from.substring(0, 7) : report.from;
+    final d = overtimeParseDate('$monthPart-01');
+    title = 'تقرير العمل الإضافي الشهري';
+    sub = d == null ? overtimeDateLabel(report.from) : 'شهر ${overtimeMonthName(d.month)} ${_ar(d.year)}';
+  } else {
+    title = 'تقرير العمل الإضافي';
+    sub = 'من ${overtimeDateLabel(report.from)} إلى ${overtimeDateLabel(report.to)}';
   }
 
-  Future<void> _pickMonth() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _month,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
-      helpText: 'اختر أي يوم من الشهر المطلوب',
-    );
-    if (picked == null) return;
-    setState(() => _month = DateTime(picked.year, picked.month, 1));
-    _reload();
+  final kpis = StringBuffer()
+    ..write(_kpi('عدد الأعمال', _ar(s.recordsCount)))
+    ..write(_kpi('أيام العمل الإضافي', _ar(s.daysCount)))
+    ..write(_kpi('عدد الأفراد', _ar(s.employeesCount)));
+  if (s.personHours > 0) {
+    kpis.write(_kpi('إجمالي ساعات الأفراد', overtimeHoursLabel(s.personHours), amber: true));
   }
 
-  void _openPdf(OvertimePersonReport report) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => OvertimeReportPrintScreen.person(person: report)),
-    );
-  }
-
-  // ---------------------------------- الواجهة ----------------------------------
-
-  Widget _identityCard() {
-    final e = widget.employee;
-    final number = e.employeeNumber;
-    final n = e.name.trim();
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 22,
-            backgroundColor: kOvertimeColor.withOpacity(0.1),
-            child: Text(
-              n.isEmpty ? '؟' : n.substring(0, 1),
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: kOvertimeColor),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(e.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 2),
-                Text(
-                  number == null ? 'بدون رقم وظيفي' : 'الرقم الوظيفي: ${overtimeNumberLabel(number)}',
-                  style: const TextStyle(fontSize: 12.5, color: AppColors.textMuted),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _modeChip(String label, bool year) {
-    final selected = _yearMode == year;
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      showCheckmark: false,
-      selectedColor: kOvertimeColor.withOpacity(0.15),
-      backgroundColor: AppColors.surface,
-      side: BorderSide(color: selected ? kOvertimeColor : AppColors.border),
-      labelStyle: TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w700,
-        color: selected ? kOvertimeColor : AppColors.textSecondary,
-      ),
-      onSelected: (_) => _setMode(year),
-    );
-  }
-
-  Widget _recordLine(OvertimeRecord r) {
-    final parts = <String>[];
-    if (r.startTime != null && r.endTime != null) {
-      parts.add('من ${overtimeTimeLabel(r.startTime!)} إلى ${overtimeTimeLabel(r.endTime!)}');
-      if (r.hours != null) parts.add(overtimeHoursLabel(r.hours!));
+  var people = '';
+  if (s.employees.isNotEmpty) {
+    final prow = StringBuffer();
+    for (var k = 0; k < s.employees.length; k++) {
+      final p = s.employees[k];
+      final daysLine = overtimeDaysLine(p.days, monthMode: report.mode == 'month', withHours: true);
+      prow.write('<tr><td class="n">${_ar(k + 1)}</td><td>${_esc(p.name)}</td>'
+          '<td class="num">${_numberOrDash(p.employeeNumber)}</td>'
+          '<td class="c">${_ar(p.recordsCount)}</td><td class="c">${_ar(p.daysCount)}</td>'
+          '<td class="days">${daysLine.isEmpty ? '—' : _esc(daysLine)}</td>'
+          '<td class="c">${p.hours > 0 ? overtimeHoursLabel(p.hours) : '—'}</td></tr>');
     }
-    if (r.location != null) parts.add(r.location!);
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.only(top: 7),
-            child: Icon(Icons.circle, size: 6, color: kOvertimeColor),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(r.workDescription, style: const TextStyle(fontSize: 13, height: 1.5)),
-                if (parts.isNotEmpty)
-                  Text(parts.join(' — '), style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+    people = '''<div class="sec">ملخص الأفراد</div>
+  <table><thead><tr><th>م</th><th>اسم الموظف</th><th>الرقم الوظيفي</th><th>عدد المرات</th><th>عدد الأيام</th><th>الأيام</th><th>إجمالي الساعات</th></tr></thead><tbody>$prow</tbody></table>''';
   }
 
-  Widget _dayCard(OvertimePersonReport report, OvertimeDayStat d) {
-    final date = overtimeParseDate(d.date);
-    final weekday = date == null ? '' : overtimeWeekdayName(date);
-    final recs = report.recordsOn(d.date);
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(overtimeDateLabel(d.date), style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 2),
-                    Text(
-                      '$weekday — ${overtimeCount(d.recordsCount)} ${d.recordsCount == 1 ? 'عمل' : 'أعمال'}',
-                      style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
-                    ),
-                  ],
-                ),
-              ),
-              if (d.hours > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(color: kOvertimeColor.withOpacity(0.1), borderRadius: BorderRadius.circular(999)),
-                  child: Text(
-                    overtimeHoursLabel(d.hours),
-                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: kOvertimeColor),
-                  ),
-                )
-              else
-                const Text('بلا وقت محدد', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
-            ],
-          ),
-          for (final r in recs) _recordLine(r),
-        ],
-      ),
-    );
+  final drow = StringBuffer();
+  for (final r in report.records) {
+    drow.write('<tr><td class="num">${overtimeDateLabel(r.workDate)}</td><td>${_esc(r.workDescription)}</td>'
+        '<td>${r.reason == null ? '—' : _esc(r.reason!)}</td>'
+        '<td>${r.location == null ? '—' : _esc(r.location!)}</td>'
+        '<td class="c">${_ar(r.employeesCount)}</td>'
+        '<td class="c">${(r.hours != null && r.hours! > 0) ? overtimeHoursLabel(r.hours!) : '—'}</td></tr>');
   }
+  final detail = '''<div class="sec">تفاصيل الأعمال</div>
+  <table><thead><tr><th>التاريخ</th><th>العمل</th><th>السبب</th><th>الموقع</th><th>الأفراد</th><th>المدة</th></tr></thead><tbody>$drow</tbody></table>''';
 
-  List<Widget> _reportBody(OvertimePersonReport report) {
-    final out = <Widget>[
-      Row(
-        children: [
-          KpiCard(value: overtimeCount(report.recordsCount), label: 'مرات الإضافي', valueColor: AppColors.maintenance),
-          const SizedBox(width: 10),
-          KpiCard(value: overtimeCount(report.daysCount), label: 'عدد الأيام', valueColor: AppColors.maintenance),
-          if (report.hours > 0) ...[
-            const SizedBox(width: 10),
-            KpiCard(
-              value: overtimeHoursLabel(report.hours).replaceAll(' ساعة', ' س'),
-              label: 'إجمالي الساعات',
-              valueColor: kOvertimeColor,
-            ),
-          ],
-        ],
-      ),
-      const SizedBox(height: 12),
-      PrimaryButton(
-        label: 'كشف الفرد PDF للطباعة',
-        color: kOvertimeColor,
-        icon: Icons.picture_as_pdf_outlined,
-        onPressed: () => _openPdf(report),
-      ),
-    ];
+  final note = s.recordsWithoutHours > 0
+      ? '<div class="note">ملاحظة: ${_ar(s.recordsWithoutHours)} من الأعمال بلا وقت محدد، لذلك لا تدخل ساعاتها في الإجماليات.</div>'
+      : '';
+
+  return '''${_head(title, sub)}
+  <div class="kpis">$kpis</div>
+  $people
+  $detail
+  $note
+$_approveBlock''';
+}
+
+// ---------------------------------------------------------------------------
+// كشف فرد واحد (شهر أو سنة): أيامه وساعات كل يوم + تفاصيل الأعمال
+// ---------------------------------------------------------------------------
+
+/// يبني كشف العمل الإضافي لفرد واحد كـ HTML بمقاس A4 — راجع
+/// [OvertimePersonReport]. يُطبع ويُوقَّع من المسؤول والموظف.
+String buildOvertimePersonReportHtml(OvertimePersonReport report) {
+  final e = report.employee;
+  final number = e.employeeNumber;
+  final who = number == null ? e.name : '${e.name} — الرقم الوظيفي: ${_ar(number)}';
+
+  final kpis = StringBuffer()
+    ..write(_kpi('عدد مرات الإضافي', _ar(report.recordsCount)))
+    ..write(_kpi('عدد الأيام', _ar(report.daysCount)));
+  if (report.hours > 0) kpis.write(_kpi('إجمالي الساعات', overtimeHoursLabel(report.hours), amber: true));
+
+  final body = StringBuffer();
+  body.write(_head('كشف العمل الإضافي للموظف', who, sub2: overtimePeriodLabel(report.mode, report.from, report.to)));
+  body.write('\n  <div class="kpis">$kpis</div>');
+
+  if (report.records.isEmpty) {
+    body.write('\n  <div class="note">لا يوجد عمل إضافي مسجَّل لهذا الفرد في هذه الفترة.</div>');
+  } else {
+    final drow = StringBuffer();
+    var totalCount = 0;
+    var totalHours = 0.0;
+    for (var k = 0; k < report.days.length; k++) {
+      final d = report.days[k];
+      totalCount += d.recordsCount;
+      totalHours += d.hours;
+      final date = overtimeParseDate(d.date);
+      drow.write('<tr><td class="n">${_ar(k + 1)}</td><td class="num">${overtimeDateLabel(d.date)}</td>'
+          '<td>${date == null ? '' : overtimeWeekdayName(date)}</td>'
+          '<td class="c">${_ar(d.recordsCount)}</td>'
+          '<td class="c">${d.hours > 0 ? overtimeHoursLabel(d.hours) : '—'}</td></tr>');
+    }
+    body.write('''
+  <div class="sec">الأيام</div>
+  <table><thead><tr><th>م</th><th>التاريخ</th><th>اليوم</th><th>عدد الأعمال</th><th>الساعات</th></tr></thead><tbody>$drow</tbody>
+  <tfoot><tr><td colspan="3">الإجمالي (${_ar(report.days.length)} يوم)</td><td class="c">${_ar(totalCount)}</td><td class="c">${totalHours > 0 ? overtimeHoursLabel(totalHours) : '—'}</td></tr></tfoot></table>''');
+
+    final rrow = StringBuffer();
+    for (final r in report.records) {
+      final time = (r.startTime != null && r.endTime != null)
+          ? 'من ${_ar(r.startTime!)} إلى ${_ar(r.endTime!)}'
+          : '—';
+      rrow.write('<tr><td class="num">${overtimeDateLabel(r.workDate)}</td><td>${_esc(r.workDescription)}</td>'
+          '<td>${r.reason == null ? '—' : _esc(r.reason!)}</td>'
+          '<td>${r.location == null ? '—' : _esc(r.location!)}</td>'
+          '<td class="c">$time</td>'
+          '<td class="c">${(r.hours != null && r.hours! > 0) ? overtimeHoursLabel(r.hours!) : '—'}</td></tr>');
+    }
+    body.write('''
+  <div class="sec">تفاصيل الأعمال</div>
+  <table><thead><tr><th>التاريخ</th><th>العمل</th><th>السبب</th><th>الموقع</th><th>الوقت</th><th>المدة</th></tr></thead><tbody>$rrow</tbody></table>''');
 
     if (report.recordsWithoutHours > 0) {
-      out.add(const SizedBox(height: 10));
-      out.add(InfoNote(
-        text: '${overtimeCount(report.recordsWithoutHours)} من الأعمال بلا وقت محدد، فلا تدخل ساعاتها في الإجماليات.',
-        color: kOvertimeColor,
-        icon: Icons.info_outline,
-      ));
+      body.write(
+          '\n  <div class="note">ملاحظة: ${_ar(report.recordsWithoutHours)} من الأعمال بلا وقت محدد، لذلك لا تدخل ساعاتها في الإجماليات.</div>');
     }
-
-    out.add(const SizedBox(height: 16));
-    out.add(const OvertimeSectionTitle('الأيام وساعات كل يوم'));
-    for (final d in report.days) {
-      out.add(_dayCard(report, d));
-      out.add(const SizedBox(height: 10));
-    }
-    return out;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final String title = _yearMode
-        ? overtimeCount(_month.year)
-        : '${overtimeMonthName(_month.month)} ${overtimeCount(_month.year)}';
-
-    final children = <Widget>[
-      _identityCard(),
-      const SizedBox(height: 12),
-      Row(
-        children: [
-          _modeChip('شهر', false),
-          const SizedBox(width: 8),
-          _modeChip('سنة كاملة', true),
-        ],
-      ),
-      const SizedBox(height: 12),
-      OvertimePeriodBar(
-        title: title,
-        onPrevious: () => _shift(-1),
-        onNext: () => _shift(1),
-        onTap: _yearMode ? null : _pickMonth,
-      ),
-      const SizedBox(height: 14),
-    ];
-
-    final report = _report;
-    if (_loading) {
-      children.add(const Padding(
-        padding: EdgeInsets.symmetric(vertical: 48),
-        child: Center(child: CircularProgressIndicator(color: kOvertimeColor)),
-      ));
-    } else if (_error != null) {
-      children.add(OvertimeErrorView(message: _error!, onRetry: _reload));
-    } else if (report == null || report.records.isEmpty) {
-      children.add(OvertimeEmptyState(
-        icon: Icons.event_busy_outlined,
-        text: _yearMode ? 'لم يشارك هذا الفرد في عمل إضافي خلال هذه السنة.' : 'لم يشارك هذا الفرد في عمل إضافي خلال هذا الشهر.',
-      ));
-    } else {
-      children.addAll(_reportBody(report));
-    }
-
-    return Scaffold(
-      appBar: const ScreenTopBar(title: 'كشف الفرد'),
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _load,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-            children: children,
-          ),
-        ),
-      ),
-    );
-  }
+  body.write('\n  <div class="approve"><div>توقيع الموظف</div><div>اعتماد المسؤول</div></div>');
+  return _wrap(body.toString());
 }
