@@ -357,11 +357,14 @@ String overtimeDayNumber(String iso) {
 }
 
 /// أيام فرد في سطر واحد: في تقرير الشهر أرقام الأيام فقط ('٦، ١٣، ٢٠')، وفي
-/// غيره شهر/يوم ('١٠/٠٦، ١٠/١٣').
-String overtimeDaysLine(List<OvertimeDayStat> days, {required bool monthMode}) {
-  return days
-      .map((d) => monthMode ? overtimeDayNumber(d.date) : overtimeDateLabel(d.date).substring(5))
-      .join('، ');
+/// غيره شهر/يوم ('١٠/٠٦، ١٠/١٣'). مع [withHours] تُضاف ساعات كل يوم بين قوسين:
+/// '٦ (٤٫٥ س)، ١٣ (٣ س)' (اليوم بلا ساعات يظهر بدون قوسين).
+String overtimeDaysLine(List<OvertimeDayStat> days, {required bool monthMode, bool withHours = false}) {
+  return days.map((d) {
+    final label = monthMode ? overtimeDayNumber(d.date) : overtimeDateLabel(d.date).substring(5);
+    if (!withHours || d.hours <= 0) return label;
+    return '$label (${overtimeHoursLabel(d.hours).replaceAll(' ساعة', ' س')})';
+  }).join('، ');
 }
 
 /// وصف فترة كشف/تقرير: 'شهر أكتوبر ٢٠٢٦' أو 'سنة ٢٠٢٦' أو 'من … إلى …'.
