@@ -259,6 +259,11 @@ class _MaintenanceEditScreenState extends State<MaintenanceEditScreen> {
             const Divider(),
             const SizedBox(height: 12),
             const Text('الفنيون المُسنَدون', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+            if (widget.report.assignedByDisplay != null) ...[
+              const SizedBox(height: 4),
+              Text('عيّنهم: ${widget.report.assignedByDisplay}',
+                  style: const TextStyle(fontSize: 12.5, color: AppColors.textMuted)),
+            ],
             const SizedBox(height: 10),
             if (_loadingTechnicians)
               const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
