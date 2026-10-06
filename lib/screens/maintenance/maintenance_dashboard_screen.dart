@@ -551,6 +551,12 @@ class MaintenanceReportCard extends StatelessWidget {
               const SizedBox(height: 4),
               Text('الفنيون: ${report.technicianDisplayNames}',
                   style: const TextStyle(fontSize: 12, color: AppColors.textMuted, fontWeight: FontWeight.w600)),
+              // طلب 2026-10-06: عند التعيين يظهر أيضًا من الشخص الذي قام به.
+              if (report.assignedByDisplay != null) ...[
+                const SizedBox(height: 2),
+                Text('عيّنه: ${report.assignedByDisplay}',
+                    style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+              ],
             ],
             const SizedBox(height: 6),
             Row(
