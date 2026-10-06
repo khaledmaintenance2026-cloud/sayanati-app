@@ -238,6 +238,7 @@ Future<void> _showWorkOrderSummary(BuildContext context, MaintenanceReport r) {
             if (techs != '—') ...[
               const SizedBox(height: 4),
               Text('الفنيون: $techs'),
+              if (r.assignedByDisplay != null) Text('عيّنه: ${r.assignedByDisplay}'),
             ],
             if (closeText.isNotEmpty) ...[
               const SizedBox(height: 10),
