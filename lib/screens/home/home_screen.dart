@@ -243,6 +243,17 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
             ],
+            // العمل الإضافي — للإداريين فقط (نفس شرط تبويب الإدارة).
+            if (canOpenAdminTab(role)) ...[
+              _ModuleCard(
+                icon: Icons.more_time_outlined,
+                color: AppColors.warningText,
+                title: 'العمل الإضافي',
+                subtitle: 'تسجيل الأفراد وتقارير اليوم والشهر',
+                onTap: () => onSelectModule?.call('overtime'),
+              ),
+              const SizedBox(height: 12),
+            ],
             if (canOpenAdminTab(role))
               _ModuleCard(
                 icon: Icons.admin_panel_settings_outlined,
