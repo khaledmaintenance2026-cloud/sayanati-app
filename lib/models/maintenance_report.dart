@@ -46,6 +46,10 @@ class MaintenanceReport {
   /// السيرفر). يُستخدم للعرض بدل [technicianName] حين يتوفر.
   String? technicianNames;
 
+  /// اسم الشخص الذي قام بتعيين الفني/الفنيين (آخر من عيّن) — يصل من السيرفر
+  /// (عمود assigned_by). فارغ للأوامر التي عُيّن لها فنيون قبل إضافة هذه الميزة.
+  String? assignedBy;
+
   String? closeDescription;
 
   /// ملاحظات اختيارية منفصلة عن "بيان العمل المنجز" — يعبّئها الفني عند
@@ -86,6 +90,7 @@ class MaintenanceReport {
     this.assignedAt,
     this.technicianName,
     this.technicianNames,
+    this.assignedBy,
     this.closeDescription,
     this.closeNotes,
     this.partsUsed,
@@ -113,6 +118,7 @@ class MaintenanceReport {
         assignedAt: d['assigned_at'] == null ? null : DateTime.tryParse(d['assigned_at'].toString()),
         technicianName: d['technician_name'] as String?,
         technicianNames: d['technician_names'] as String?,
+        assignedBy: d['assigned_by'] as String?,
         closeDescription: d['close_description'] as String?,
         closeNotes: d['close_notes'] as String?,
         closedAt: d['completed_at'] == null ? null : DateTime.tryParse(d['completed_at'].toString()),
@@ -125,6 +131,12 @@ class MaintenanceReport {
   /// اسم/أسماء الفني(ين) الجاهزة للعرض — تُفضّل قائمة الفنيين المتعددين
   /// [technicianNames] إن توفرت، وإلا تعود لاسم الفني الأساسي وحده.
   String get technicianDisplayNames => technicianNames ?? technicianName ?? '—';
+
+  /// اسم من قام بالتعيين جاهزًا للعرض، أو null لو غير معروف (لا نعرض شيئًا).
+  String? get assignedByDisplay {
+    final v = assignedBy?.trim();
+    return (v == null || v.isEmpty) ? null : v;
+  }
 
   /// المدة الزمنية من لحظة رفع البلاغ إلى لحظة إغلاقه — يحسبها التطبيق تلقائيًا،
   /// وليس على الفني إدخالها يدويًا.
