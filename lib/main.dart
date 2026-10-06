@@ -280,10 +280,10 @@ class _RootNavState extends State<RootNav> {
     if (role == AppRole.admin || isMaintenanceRole(role) || isInventoryOnlyRole(role)) keys.add('inventory');
     if (role == AppRole.admin || isProductionRole(role)) keys.add('production');
     if (role == AppRole.admin || role == AppRole.safety) keys.add('safety');
-    // تبويب "الإضافي" (ساعات العمل الإضافي) — للإداريين فقط بقرار الإدارة
-    // 2026-10-06 (نفس شرط تبويب الإدارة)، لا يظهر للفنيين ولا للأقسام العادية.
-    // القيد الملزم على السيرفر (routes/overtime.js).
-    if (canOpenAdminTab(role)) keys.add('overtime');
+    // تبويب "الإضافي" (ساعات العمل الإضافي) — للمسؤولين فقط بقرار الإدارة
+    // 2026-10-06: مدير النظام ومسؤول الصيانة ومسؤول الإنتاج ومسؤول السلامة
+    // (راجع canOpenOvertimeTab). القيد الملزم على السيرفر (routes/overtime.js).
+    if (canOpenOvertimeTab(role)) keys.add('overtime');
     // مدير النظام ومسؤول الصيانة (قرار الإدارة 2026-10-04) — راجع canOpenAdminTab.
     if (canOpenAdminTab(role)) keys.add('admin');
     return keys;

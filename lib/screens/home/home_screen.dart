@@ -10,6 +10,7 @@ import '../auth/change_password_screen.dart';
 import '../chat/chat_list_screen.dart';
 import '../chat/chat_widgets.dart' show ChatUnreadBadge;
 import '../notifications/notifications_screen.dart';
+import '../overtime/overtime_home_screen.dart' show canOpenOvertimeTab;
 
 class HomeScreen extends StatelessWidget {
   final AppRole role;
@@ -243,8 +244,8 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
             ],
-            // العمل الإضافي — للإداريين فقط (نفس شرط تبويب الإدارة).
-            if (canOpenAdminTab(role)) ...[
+            // العمل الإضافي — للمسؤولين فقط (راجع canOpenOvertimeTab).
+            if (canOpenOvertimeTab(role)) ...[
               _ModuleCard(
                 icon: Icons.more_time_outlined,
                 color: AppColors.warningText,
