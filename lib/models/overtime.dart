@@ -114,7 +114,28 @@ class OvertimeRecord {
   double? get personHours => hours == null ? null : hours! * entries.length;
 }
 
-/// ملخص فرد واحد ضمن تقرير (يوم/شهر).
+/// يوم واحد شارك فيه فرد: عدد الأعمال في ذلك اليوم وإجمالي ساعاتها.
+class OvertimeDayStat {
+  /// التاريخ بصيغة YYYY-MM-DD.
+  final String date;
+  final int recordsCount;
+  final double hours;
+
+  const OvertimeDayStat({required this.date, required this.recordsCount, required this.hours});
+
+  factory OvertimeDayStat.fromApi(Map<String, dynamic> d) => OvertimeDayStat(
+        date: (d['date'] as String?) ?? '',
+        recordsCount: (d['records_count'] as num?)?.round() ?? 0,
+        hours: (d['hours'] as num?)?.toDouble() ?? 0,
+      );
+}
+
+List<OvertimeDayStat> _parseDays(Object? raw) {
+  if (raw is! List) return const [];
+  return raw.map((e) => OvertimeDayStat.fromApi(e as Map<String, dynamic>)).toList();
+}
+
+/// ملخص فرد واحد ضمن تقرير (يوم/شهر): عدد مرّاته وأيامه (مع ساعات كل يوم).
 class OvertimePersonSummary {
   final String? employeeId;
   final String name;
@@ -122,6 +143,7 @@ class OvertimePersonSummary {
   final int recordsCount;
   final int daysCount;
   final double hours;
+  final List<OvertimeDayStat> days;
 
   const OvertimePersonSummary({
     this.employeeId,
@@ -130,6 +152,7 @@ class OvertimePersonSummary {
     required this.recordsCount,
     required this.daysCount,
     required this.hours,
+    this.days = const [],
   });
 
   factory OvertimePersonSummary.fromApi(Map<String, dynamic> d) => OvertimePersonSummary(
@@ -139,6 +162,7 @@ class OvertimePersonSummary {
         recordsCount: (d['records_count'] as num?)?.round() ?? 0,
         daysCount: (d['days_count'] as num?)?.round() ?? 0,
         hours: (d['hours'] as num?)?.toDouble() ?? 0,
+        days: _parseDays(d['days']),
       );
 }
 
@@ -202,6 +226,54 @@ class OvertimeReport {
       summary: OvertimeSummary.fromApi((d['summary'] as Map<String, dynamic>?) ?? const <String, dynamic>{}),
     );
   }
+}
+
+/// كشف فرد واحد لشهر ('month') أو سنة ('year'): أيام مشاركته في العمل الإضافي
+/// وساعات كل يوم، وإجمالي مرّاته وساعاته، والأعمال التي شارك فيها.
+class OvertimePersonReport {
+  final OvertimeEmployee employee;
+  final String mode;
+  final String from;
+  final String to;
+  final List<OvertimeRecord> records;
+  final int recordsCount;
+  final int daysCount;
+  final double hours;
+  final int recordsWithoutHours;
+  final List<OvertimeDayStat> days;
+
+  const OvertimePersonReport({
+    required this.employee,
+    required this.mode,
+    required this.from,
+    required this.to,
+    required this.records,
+    required this.recordsCount,
+    required this.daysCount,
+    required this.hours,
+    required this.recordsWithoutHours,
+    required this.days,
+  });
+
+  factory OvertimePersonReport.fromApi(Map<String, dynamic> d) {
+    final rawRecords = (d['records'] as List?) ?? const [];
+    final summary = (d['summary'] as Map<String, dynamic>?) ?? const <String, dynamic>{};
+    return OvertimePersonReport(
+      employee: OvertimeEmployee.fromApi((d['employee'] as Map<String, dynamic>?) ?? const <String, dynamic>{'id': ''}),
+      mode: (d['mode'] as String?) ?? 'month',
+      from: (d['from'] as String?) ?? '',
+      to: (d['to'] as String?) ?? '',
+      records: rawRecords.map((e) => OvertimeRecord.fromApi(e as Map<String, dynamic>)).toList(),
+      recordsCount: (summary['records_count'] as num?)?.round() ?? 0,
+      daysCount: (summary['days_count'] as num?)?.round() ?? 0,
+      hours: (summary['hours'] as num?)?.toDouble() ?? 0,
+      recordsWithoutHours: (summary['records_without_hours'] as num?)?.round() ?? 0,
+      days: _parseDays(summary['days']),
+    );
+  }
+
+  /// أعمال يوم معيّن ('YYYY-MM-DD') من هذا الكشف.
+  List<OvertimeRecord> recordsOn(String date) => records.where((r) => r.workDate == date).toList();
 }
 
 // ---------------------------------------------------------------------------
@@ -276,4 +348,26 @@ double? overtimeHoursBetween(String? start, String? end) {
   var minutes = eh * 60 + em - (sh * 60 + sm);
   if (minutes <= 0) minutes += 1440;
   return (minutes / 60 * 100).round() / 100;
+}
+
+/// رقم اليوم في الشهر بأرقام هندية: '2026-10-06' → '٦'.
+String overtimeDayNumber(String iso) {
+  final d = overtimeParseDate(iso);
+  return d == null ? iso : ArabicFormat.toEasternDigits(d.day);
+}
+
+/// أيام فرد في سطر واحد: في تقرير الشهر أرقام الأيام فقط ('٦، ١٣، ٢٠')، وفي
+/// غيره شهر/يوم ('١٠/٠٦، ١٠/١٣').
+String overtimeDaysLine(List<OvertimeDayStat> days, {required bool monthMode}) {
+  return days
+      .map((d) => monthMode ? overtimeDayNumber(d.date) : overtimeDateLabel(d.date).substring(5))
+      .join('، ');
+}
+
+/// وصف فترة كشف/تقرير: 'شهر أكتوبر ٢٠٢٦' أو 'سنة ٢٠٢٦' أو 'من … إلى …'.
+String overtimePeriodLabel(String mode, String from, String to) {
+  final d = overtimeParseDate(from);
+  if (mode == 'month' && d != null) return 'شهر ${overtimeMonthName(d.month)} ${overtimeCount(d.year)}';
+  if (mode == 'year' && d != null) return 'سنة ${overtimeCount(d.year)}';
+  return 'من ${overtimeDateLabel(from)} إلى ${overtimeDateLabel(to)}';
 }
