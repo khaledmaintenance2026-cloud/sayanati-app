@@ -20,6 +20,7 @@ import 'screens/maintenance/maintenance_dashboard_screen.dart';
 import 'screens/production/production_lines_screen.dart';
 import 'screens/safety/safety_home_screen.dart';
 import 'screens/admin/admin_home_screen.dart';
+import 'screens/overtime/overtime_home_screen.dart';
 import 'screens/general/general_report_screen.dart';
 Future<void> main() async {
   print('DIAG_TEST_9182');
@@ -279,6 +280,10 @@ class _RootNavState extends State<RootNav> {
     if (role == AppRole.admin || isMaintenanceRole(role) || isInventoryOnlyRole(role)) keys.add('inventory');
     if (role == AppRole.admin || isProductionRole(role)) keys.add('production');
     if (role == AppRole.admin || role == AppRole.safety) keys.add('safety');
+    // تبويب "الإضافي" (ساعات العمل الإضافي) — للإداريين فقط بقرار الإدارة
+    // 2026-10-06 (نفس شرط تبويب الإدارة)، لا يظهر للفنيين ولا للأقسام العادية.
+    // القيد الملزم على السيرفر (routes/overtime.js).
+    if (canOpenAdminTab(role)) keys.add('overtime');
     // مدير النظام ومسؤول الصيانة (قرار الإدارة 2026-10-04) — راجع canOpenAdminTab.
     if (canOpenAdminTab(role)) keys.add('admin');
     return keys;
@@ -295,6 +300,7 @@ class _RootNavState extends State<RootNav> {
       'inventory': const InventoryDashboardScreen(),
       'production': const ProductionLinesScreen(),
       'safety': const SafetyHomeScreen(),
+      'overtime': const OvertimeHomeScreen(),
       'admin': const AdminHomeScreen(),
     };
     final items = <String, BottomNavigationBarItem>{
@@ -303,6 +309,7 @@ class _RootNavState extends State<RootNav> {
       'inventory': const BottomNavigationBarItem(icon: Icon(Icons.inventory_2_outlined), label: 'المخزون'),
       'production': const BottomNavigationBarItem(icon: Icon(Icons.factory_outlined), label: 'الإنتاج'),
       'safety': const BottomNavigationBarItem(icon: Icon(Icons.shield_outlined), label: 'السلامة'),
+      'overtime': const BottomNavigationBarItem(icon: Icon(Icons.more_time_outlined), label: 'الإضافي'),
       'admin': const BottomNavigationBarItem(icon: Icon(Icons.admin_panel_settings_outlined), label: 'الإدارة'),
     };
 
