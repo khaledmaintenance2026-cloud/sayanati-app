@@ -161,6 +161,16 @@ class OvertimeService {
     return OvertimeReport.fromApi(data as Map<String, dynamic>);
   }
 
+  /// كشف فرد واحد: أيام مشاركته وساعات كل يوم — لشهر ('YYYY-MM') أو لسنة
+  /// ('YYYY'): مرّر واحدًا منهما فقط.
+  static Future<OvertimePersonReport> fetchPersonReport(String employeeId, {String? month, String? year}) async {
+    final query = <String, dynamic>{};
+    if (month != null) query['month'] = month;
+    if (year != null) query['year'] = year;
+    final data = await _api.get('/overtime/employees/$employeeId/report', query: query);
+    return OvertimePersonReport.fromApi(data as Map<String, dynamic>);
+  }
+
   /// يرسل ملخص التقرير على واتساب: [toGroup] = false لجوال الطالب نفسه،
   /// true لجروب العمل الإضافي/الصيانة.
   static Future<void> sendReportWhatsapp({String? date, String? month, required bool toGroup}) async {

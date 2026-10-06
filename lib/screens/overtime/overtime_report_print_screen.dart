@@ -21,8 +21,19 @@ import 'overtime_widgets.dart';
 /// • ويب: convertHtml غير مدعوم، فنفتح التقرير في تبويب متصفح جديد ليطبعه
 ///   المستخدم أو يحفظه PDF بخاصية الطباعة في المتصفح (Ctrl+P).
 class OvertimeReportPrintScreen extends StatefulWidget {
-  final OvertimeReport report;
-  const OvertimeReportPrintScreen({super.key, required this.report});
+  /// تقرير يوم/شهر/مدة — أو null لو كان المطلوب كشف فرد واحد ([person]).
+  final OvertimeReport? report;
+
+  /// كشف فرد واحد (أيامه وساعات كل يوم) — أو null لو كان المطلوب [report].
+  final OvertimePersonReport? person;
+
+  const OvertimeReportPrintScreen({super.key, required OvertimeReport report})
+      : report = report,
+        person = null;
+
+  const OvertimeReportPrintScreen.person({super.key, required OvertimePersonReport person})
+      : person = person,
+        report = null;
 
   @override
   State<OvertimeReportPrintScreen> createState() => _OvertimeReportPrintScreenState();
@@ -31,10 +42,18 @@ class OvertimeReportPrintScreen extends StatefulWidget {
 class _OvertimeReportPrintScreenState extends State<OvertimeReportPrintScreen> {
   bool _timedOut = false;
   int _attempt = 0;
-  late final String _html = buildOvertimeReportHtml(widget.report);
+  late final String _html = _buildHtml();
+
+  String _buildHtml() {
+    final person = widget.person;
+    if (person != null) return buildOvertimePersonReportHtml(person);
+    return buildOvertimeReportHtml(widget.report!);
+  }
 
   String get _fileName {
-    final r = widget.report;
+    final person = widget.person;
+    if (person != null) return 'overtime_person_${person.employee.id}_${person.from}_to_${person.to}.pdf';
+    final r = widget.report!;
     return r.mode == 'day' ? 'overtime_${r.from}.pdf' : 'overtime_${r.from}_to_${r.to}.pdf';
   }
 
@@ -63,7 +82,7 @@ class _OvertimeReportPrintScreenState extends State<OvertimeReportPrintScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const ScreenTopBar(title: 'تقرير العمل الإضافي'),
+      appBar: ScreenTopBar(title: widget.person != null ? 'كشف الفرد' : 'تقرير العمل الإضافي'),
       body: kIsWeb
           ? _WebPrintView(onOpen: _openOnWeb)
           : (_timedOut

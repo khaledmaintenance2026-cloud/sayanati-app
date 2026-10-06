@@ -1,16 +1,23 @@
 import 'package:flutter/material.dart';
 
+import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
+import '../admin/admin_home_screen.dart' show canOpenAdminTab;
 import 'overtime_daily_tab.dart';
 import 'overtime_employees_tab.dart';
 import 'overtime_reports_tab.dart';
 import 'overtime_widgets.dart';
 
-/// شاشة "العمل الإضافي" — تبويب سفلي مخصّص للإداريين فقط (مدير النظام ومسؤول
-/// الصيانة، أي نفس شرط canOpenAdminTab في admin_home_screen.dart)؛ لا يظهر
-/// للفنيين ولا للأقسام العادية. القيد الملزم فعليًا على السيرفر
-/// (routes/overtime.js تطلب دور مسؤول الصيانة فما فوق)، وإخفاء التبويب هنا
-/// للواجهة فقط.
+/// من يرى تبويب "الإضافي"؟ مدير النظام ومسؤول الصيانة (نفس شرط تبويب الإدارة)
+/// + مسؤول الإنتاج + مسؤول السلامة (قرار الإدارة 2026-10-06). الفني العادي
+/// وموظف الإنتاج العادي والمخزون والمصمم والقسم العام لا يرونه. هذه الدالة
+/// تُخفي التبويب في الواجهة فقط؛ القيد الملزم فعليًا على السيرفر في
+/// routes/overtime.js (OVERTIME_ROLES) — يجب أن تبقى القائمتان متطابقتين.
+bool canOpenOvertimeTab(AppRole role) =>
+    canOpenAdminTab(role) || role == AppRole.productionManager || role == AppRole.safety;
+
+/// شاشة "العمل الإضافي" — تبويب سفلي مخصّص للمسؤولين فقط (راجع
+/// [canOpenOvertimeTab])؛ لا يظهر للفنيين ولا للأقسام العادية.
 ///
 /// ثلاثة تبويبات داخلية: السجل اليومي (تسجيل الأعمال والأفراد المشاركين)،
 /// التقارير (يوم/شهر: عرض وPDF وواتساب)، والأفراد (القائمة الدائمة).

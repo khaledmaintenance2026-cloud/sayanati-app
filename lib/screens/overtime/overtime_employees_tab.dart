@@ -4,6 +4,7 @@ import '../../models/overtime.dart';
 import '../../services/overtime_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import 'overtime_person_screen.dart';
 import 'overtime_widgets.dart';
 
 /// تبويب "الأفراد": القائمة الدائمة لمن يعملون عملًا إضافيًا (اسم + رقم
@@ -64,6 +65,16 @@ class _OvertimeEmployeesTabState extends State<OvertimeEmployeesTab> {
       notifyOvertimeChanged();
       await _load();
     }
+  }
+
+  /// كشف الفرد: أيام مشاركته وساعات كل يوم (الشهر الحالي أولًا).
+  void _openPerson(OvertimeEmployee e) {
+    final now = DateTime.now();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => OvertimePersonScreen(employee: e, initialMonth: DateTime(now.year, now.month, 1)),
+      ),
+    );
   }
 
   Future<void> _confirmDelete(OvertimeEmployee e) async {
@@ -129,6 +140,7 @@ class _OvertimeEmployeesTabState extends State<OvertimeEmployeesTab> {
         separatorBuilder: (_, __) => const SizedBox(height: 10),
         itemBuilder: (context, i) => _EmployeeTile(
           employee: items[i],
+          onOpen: () => _openPerson(items[i]),
           onEdit: () => _openForm(existing: items[i]),
           onDelete: () => _confirmDelete(items[i]),
         ),
@@ -185,10 +197,11 @@ class _OvertimeEmployeesTabState extends State<OvertimeEmployeesTab> {
 
 class _EmployeeTile extends StatelessWidget {
   final OvertimeEmployee employee;
+  final VoidCallback onOpen;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
-  const _EmployeeTile({required this.employee, required this.onEdit, required this.onDelete});
+  const _EmployeeTile({required this.employee, required this.onOpen, required this.onEdit, required this.onDelete});
 
   String get _initial {
     final n = employee.name.trim();
@@ -198,45 +211,57 @@ class _EmployeeTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final number = employee.employeeNumber;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border.all(color: AppColors.border),
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
         borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: kOvertimeColor.withOpacity(0.1),
-            child: Text(_initial, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: kOvertimeColor)),
+        onTap: onOpen,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.border),
+            borderRadius: BorderRadius.circular(16),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(employee.name, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 2),
-                Text(
-                  number == null ? 'بدون رقم وظيفي' : 'الرقم الوظيفي: ${overtimeNumberLabel(number)}',
-                  style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: kOvertimeColor.withOpacity(0.1),
+                child: Text(_initial, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: kOvertimeColor)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(employee.name, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 2),
+                    Text(
+                      number == null ? 'بدون رقم وظيفي' : 'الرقم الوظيفي: ${overtimeNumberLabel(number)}',
+                      style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'اضغط لعرض أيام الإضافي وساعاته',
+                      style: TextStyle(fontSize: 11.5, color: kOvertimeColor),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              IconButton(
+                tooltip: 'تعديل',
+                icon: const Icon(Icons.edit_outlined, size: 20, color: AppColors.textMuted),
+                onPressed: onEdit,
+              ),
+              IconButton(
+                tooltip: 'حذف',
+                icon: const Icon(Icons.delete_outline, size: 20, color: kOvertimeDanger),
+                onPressed: onDelete,
+              ),
+            ],
           ),
-          IconButton(
-            tooltip: 'تعديل',
-            icon: const Icon(Icons.edit_outlined, size: 20, color: AppColors.textMuted),
-            onPressed: onEdit,
-          ),
-          IconButton(
-            tooltip: 'حذف',
-            icon: const Icon(Icons.delete_outline, size: 20, color: kOvertimeDanger),
-            onPressed: onDelete,
-          ),
-        ],
+        ),
       ),
     );
   }
