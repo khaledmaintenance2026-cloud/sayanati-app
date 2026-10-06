@@ -4,6 +4,8 @@ import '../../models/overtime.dart';
 import '../../services/overtime_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import 'overtime_person_picker.dart';
+import 'overtime_person_screen.dart';
 import 'overtime_report_print_screen.dart';
 import 'overtime_widgets.dart';
 
@@ -192,16 +194,98 @@ class _OvertimeReportsTabState extends State<OvertimeReportsTab> {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows);
   }
 
+  /// اختيار فرد من القائمة ثم فتح كشفه (أيامه وساعات كل يوم، لشهر أو سنة).
+  Future<void> _pickPerson() async {
+    final employee = await pickOvertimeEmployee(context);
+    if (employee == null || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => OvertimePersonScreen(employee: employee, initialMonth: _monthMode ? _month : _day),
+      ),
+    );
+  }
+
+  Widget _personPickerCard() {
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: _pickPerson,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: kOvertimeColor.withOpacity(0.5)),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(color: kOvertimeColor.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.person_search_outlined, color: kOvertimeColor),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('كشف فرد واحد', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold)),
+                    SizedBox(height: 2),
+                    Text(
+                      'اختر فردًا لتعرف أيام مشاركته في الإضافي وساعاته في كل يوم',
+                      style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// فتح كشف الفرد (أيامه وساعات كل يوم) — لأفراد القائمة الحاليين فقط (من
+  /// حُذف من القائمة يبقى اسمه في التقرير بلا كشف مستقل).
+  void _openPerson(OvertimePersonSummary p) {
+    final id = p.employeeId;
+    if (id == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => OvertimePersonScreen(
+          employee: OvertimeEmployee(id: id, name: p.name, employeeNumber: p.employeeNumber),
+          initialMonth: _month,
+        ),
+      ),
+    );
+  }
+
   Widget _personTile(int index, OvertimePersonSummary p) {
     final number = p.employeeNumber;
+    final daysLine = overtimeDaysLine(p.days, monthMode: true, withHours: true);
+    final canOpen = p.employeeId != null;
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: canOpen ? () => _openPerson(p) : null,
+        child: _personTileBody(index, p, number, daysLine, canOpen),
+      ),
+    );
+  }
+
+  Widget _personTileBody(int index, OvertimePersonSummary p, String? number, String daysLine, bool canOpen) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: AppColors.surface,
         border: Border.all(color: AppColors.border),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           CircleAvatar(
             radius: 13,
@@ -219,6 +303,19 @@ class _OvertimeReportsTabState extends State<OvertimeReportsTab> {
                 Text(p.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                 if (number != null)
                   Text('الرقم الوظيفي: ${overtimeNumberLabel(number)}', style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+                if (daysLine.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'الأيام (وساعات كل يوم): $daysLine',
+                      style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary, height: 1.5),
+                    ),
+                  ),
+                if (canOpen)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 3),
+                    child: Text('اضغط لعرض ساعاته في كل يوم', style: TextStyle(fontSize: 11, color: kOvertimeColor)),
+                  ),
               ],
             ),
           ),
@@ -306,6 +403,8 @@ class _OvertimeReportsTabState extends State<OvertimeReportsTab> {
     }
 
     final children = <Widget>[
+      _personPickerCard(),
+      const SizedBox(height: 14),
       Row(
         children: [
           _modeChip('تقرير يوم', false),
