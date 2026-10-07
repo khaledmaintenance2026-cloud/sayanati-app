@@ -19,6 +19,7 @@ import 'maintenance_report_print_screen.dart';
 import 'maintenance_reports_screen.dart';
 import 'maintenance_task_close_screen.dart';
 import 'maintenance_work_order_screen.dart';
+import 'work_order_notes_sheet.dart';
 
 /// تبويبا لوحة الصيانة — "المخزون والقطع" كان تبويبًا ثالثًا هنا لفترة، ثم
 /// فُصل ليصير تبويبًا مستقلاً بالتنقل السفلي (راجع inventory_dashboard_screen.dart
@@ -558,6 +559,17 @@ class MaintenanceReportCard extends StatelessWidget {
                     style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
               ],
             ],
+            // ملاحظات المشرف (طلب 2026-10-07): على أي مهمة مُسنَدة لفني — قيد
+            // التنفيذ أو منجزة. المشرف (مسؤول الصيانة/المدير) يرى دائمًا
+            // "إضافة ملاحظة" أو عدد الملاحظات الحالية؛ والفني يرى الشريحة فقط
+            // لو وُجدت ملاحظات (للقراءة). مهمة "بانتظار التعيين" بلا شريحة.
+            if (report.status != MaintenanceStatus.pendingAssignment && (_canAddNotes(context) || report.notesCount > 0)) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: WorkOrderNotesChip(report: report, canAdd: _canAddNotes(context)),
+              ),
+            ],
             const SizedBox(height: 6),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -570,6 +582,15 @@ class MaintenanceReportCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// هل يقدر المستخدم الحالي كتابة ملاحظات على المهام؟ مسؤول الصيانة والمدير
+  /// فقط — يطابق قيد POST /api/work-orders/:id/notes على السيرفر. تُقرأ من
+  /// الدور مباشرة (بدل وسيط جديد) حتى تعمل كل الشاشات التي تستخدم هذه البطاقة
+  /// (لوحة العمل اليومية، الأعمال المنجزة) بلا تعديل أي منها.
+  bool _canAddNotes(BuildContext context) {
+    final role = context.read<AuthService>().currentUser?.role;
+    return role != null && canManageMaintenance(role);
   }
 
   String _timeAgo(DateTime dt) {

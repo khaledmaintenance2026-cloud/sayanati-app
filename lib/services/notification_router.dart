@@ -7,6 +7,7 @@ import '../models/safety_permit.dart';
 import '../screens/maintenance/maintenance_assign_screen.dart';
 import '../screens/maintenance/maintenance_report_print_screen.dart';
 import '../screens/maintenance/maintenance_task_close_screen.dart';
+import '../screens/maintenance/work_order_notes_sheet.dart';
 import '../screens/safety/injury_report_detail_screen.dart';
 import '../screens/safety/safety_approval_screen.dart';
 import '../screens/safety/safety_permit_print_screen.dart';
@@ -26,6 +27,7 @@ const Set<String> _workOrderEvents = {
   'work_order_assigned',
   'work_order_completed',
   'work_order_updated',
+  'work_order_note_added',
 };
 const Set<String> _permitEvents = {
   'safety_permit_requested',
@@ -105,7 +107,7 @@ Future<void> openNotificationTarget(BuildContext context, AppNotification n) asy
   }
 
   if (_workOrderEvents.contains(type)) {
-    await _openWorkOrder(context, navigator, state, role, refId, say);
+    await _openWorkOrder(context, navigator, state, role, refId, say, openNotes: type == 'work_order_note_added');
     return;
   }
 }
@@ -161,8 +163,9 @@ Future<void> _openWorkOrder(
   AppState state,
   AppRole? role,
   String refId,
-  void Function(String) say,
-) async {
+  void Function(String) say, {
+  bool openNotes = false,
+}) async {
   MaintenanceReport? report = _findReport(state, refId);
   if (report == null) {
     try {
@@ -186,6 +189,19 @@ Future<void> _openWorkOrder(
     // له شاشات التعيين/الإنجاز، بل ملخصًا للقراءة فقط.
     if (!context.mounted) return;
     await _showWorkOrderSummary(context, target);
+    return;
+  }
+
+  // إشعار "ملاحظة من المشرف": نفتح نافذة الملاحظات نفسها مباشرة (للفني قراءة
+  // فقط، وللمشرف مع مربع الكتابة) بدل شاشة الإنجاز/التقرير، حتى لو كانت
+  // المهمة منجزة (الفني لا يملك شاشة تقرير المهمة المنجزة أصلًا).
+  if (openNotes) {
+    if (!context.mounted) return;
+    await showWorkOrderNotesSheet(
+      context,
+      target,
+      canAdd: role != null && canManageMaintenance(role),
+    );
     return;
   }
 

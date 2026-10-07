@@ -76,6 +76,11 @@ class MaintenanceReport {
   /// الربط الفعلي يحدث تلقائيًا على السيرفر (راجع findAutoLinkWorkOrder).
   final String? expectedBatchNumber;
 
+  /// عدد ملاحظات المشرف على هذه المهمة (يصل من السيرفر في قائمة المهام:
+  /// notes_count). غير نهائي عمدًا: تحدّثه نافذة الملاحظات
+  /// (work_order_notes_sheet.dart) فور تحميلها أو إضافة ملاحظة جديدة.
+  int notesCount;
+
   MaintenanceReport({
     required this.id,
     required this.equipment,
@@ -99,6 +104,7 @@ class MaintenanceReport {
     this.isTask = false,
     this.taskScope,
     this.expectedBatchNumber,
+    this.notesCount = 0,
   }) : assignedTechnicianIds = assignedTechnicianIds ?? [];
 
   /// يبني بلاغ/أمر عمل صيانة من استجابة سيرفر صيانتي المحلي (جدول
@@ -126,6 +132,7 @@ class MaintenanceReport {
         isTask: (d['is_task'] as bool?) ?? false,
         taskScope: d['task_scope'] as String?,
         expectedBatchNumber: d['expected_batch_number'] as String?,
+        notesCount: (d['notes_count'] as num?)?.round() ?? 0,
       );
 
   /// اسم/أسماء الفني(ين) الجاهزة للعرض — تُفضّل قائمة الفنيين المتعددين

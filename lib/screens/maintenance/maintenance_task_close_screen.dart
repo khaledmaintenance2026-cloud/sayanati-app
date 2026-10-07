@@ -10,6 +10,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import 'maintenance_assign_screen.dart';
 import 'inventory_screen.dart';
+import 'work_order_notes_sheet.dart';
 
 class MaintenanceTaskCloseScreen extends StatefulWidget {
   final MaintenanceReport report;
@@ -149,6 +150,16 @@ class _MaintenanceTaskCloseScreenState extends State<MaintenanceTaskCloseScreen>
                             style: TextStyle(fontSize: 11.5, color: AppColors.textFaint)),
                       ],
                     ),
+                  ),
+                  // ملاحظات المشرف على هذه المهمة (طلب 2026-10-07): الفني يراها
+                  // هنا فور فتح مهمته (آخر ٣ مع "عرض الكل")، والمشرف يراها
+                  // ويضيف ملاحظة جديدة. تختفي كليًا عن الفني لو لا توجد ملاحظات.
+                  WorkOrderNotesPanel(
+                    report: widget.report,
+                    canAdd: canAssignTechnician,
+                    maxVisible: 3,
+                    hideWhenEmpty: true,
+                    topGap: 14,
                   ),
                   const SizedBox(height: 18),
                   Row(

@@ -39,6 +39,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         return Icons.build_outlined;
       case 'work_order_completed':
         return Icons.check_circle_outline;
+      case 'work_order_note_added':
+        return Icons.note_alt_outlined;
       case 'safety_permit_requested':
         return Icons.assignment_outlined;
       case 'safety_permit_reviewed':
