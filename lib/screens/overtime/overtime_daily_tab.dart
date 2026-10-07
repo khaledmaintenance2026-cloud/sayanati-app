@@ -151,13 +151,15 @@ class _OvertimeDailyTabState extends State<OvertimeDailyTab> with AutomaticKeepA
     final keys = <String>{};
     for (final r in _records) {
       for (final e in r.entries) {
-        keys.add(e.employeeId ?? 'n:${e.name}');
+        keys.add(overtimePersonKey(e));
       }
     }
     return keys.length;
   }
 
-  double get _personHours => _records.fold<double>(0, (sum, r) => sum + (r.personHours ?? 0));
+  /// ساعات الأفراد: الفرد الذي تتداخل أوقات أعماله في اليوم تُحسب له الساعات
+  /// المتداخلة مرة واحدة (نفس حساب السيرفر).
+  double get _personHours => overtimePersonHoursOf(_records);
 
   @override
   Widget build(BuildContext context) {

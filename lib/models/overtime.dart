@@ -356,6 +356,79 @@ String overtimeDayNumber(String iso) {
   return d == null ? iso : ArabicFormat.toEasternDigits(d.day);
 }
 
+/// مفتاح الفرد لعدّه مرة واحدة مهما تكرر في أعمال متعددة (نفس مفتاح السيرفر في
+/// summarize).
+String overtimePersonKey(OvertimeEntry e) =>
+    e.employeeId != null ? 'id:${e.employeeId}' : 'n:${e.name.toLowerCase()}|${e.employeeNumber ?? ''}';
+
+int? _hhmmToMinutes(String? v) {
+  if (v == null) return null;
+  final parts = v.split(':');
+  if (parts.length < 2) return null;
+  final h = int.tryParse(parts[0]);
+  final m = int.tryParse(parts[1]);
+  if (h == null || m == null) return null;
+  return h * 60 + m;
+}
+
+/// فترة السجل بالدقائق من منتصف ليل تاريخه (٢٢:٠٠ → ٠٢:٠٠ تصير ١٣٢٠ → ١٥٦٠)، أو
+/// null لو لا وقت محدد.
+List<int>? _overtimeInterval(OvertimeRecord r) {
+  final s = _hhmmToMinutes(r.startTime);
+  final e = _hhmmToMinutes(r.endTime);
+  if (s == null || e == null) return null;
+  return [s, e <= s ? e + 1440 : e];
+}
+
+/// مجموع الدقائق بعد دمج الفترات المتداخلة.
+int _mergedMinutes(List<List<int>> intervals) {
+  final sorted = List<List<int>>.from(intervals)
+    ..sort((a, b) => a[0] != b[0] ? a[0].compareTo(b[0]) : a[1].compareTo(b[1]));
+  var total = 0;
+  var started = false;
+  var curS = 0;
+  var curE = 0;
+  for (final iv in sorted) {
+    final s = iv[0];
+    final e = iv[1];
+    if (!started) {
+      started = true;
+      curS = s;
+      curE = e;
+    } else if (s > curE) {
+      total += curE - curS;
+      curS = s;
+      curE = e;
+    } else if (e > curE) {
+      curE = e;
+    }
+  }
+  if (started) total += curE - curS;
+  return total;
+}
+
+/// إجمالي ساعات الأفراد لمجموعة سجلات: لكل فرد تُدمج الأوقات المتداخلة في اليوم
+/// الواحد فلا تُحسب مرتين (الفرد لا يعمل عملين في الساعة نفسها) — نفس حساب
+/// السيرفر في summarize.
+double overtimePersonHoursOf(List<OvertimeRecord> records) {
+  final byPerson = <String, Map<String, List<List<int>>>>{};
+  for (final r in records) {
+    final iv = _overtimeInterval(r);
+    if (iv == null) continue;
+    for (final e in r.entries) {
+      final days = byPerson.putIfAbsent(overtimePersonKey(e), () => <String, List<List<int>>>{});
+      days.putIfAbsent(r.workDate, () => <List<int>>[]).add(iv);
+    }
+  }
+  var minutes = 0;
+  for (final days in byPerson.values) {
+    for (final list in days.values) {
+      minutes += _mergedMinutes(list);
+    }
+  }
+  return minutes / 60;
+}
+
 /// أيام فرد في سطر واحد: في تقرير الشهر أرقام الأيام فقط ('٦، ١٣، ٢٠')، وفي
 /// غيره شهر/يوم ('١٠/٠٦، ١٠/١٣'). مع [withHours] تُضاف ساعات كل يوم بين قوسين:
 /// '٦ (٤٫٥ س)، ١٣ (٣ س)' (اليوم بلا ساعات يظهر بدون قوسين).

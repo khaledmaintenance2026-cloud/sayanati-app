@@ -9,6 +9,7 @@ import '../admin/admin_home_screen.dart' show canOpenAdminTab;
 import '../auth/change_password_screen.dart';
 import '../chat/chat_list_screen.dart';
 import '../chat/chat_widgets.dart' show ChatUnreadBadge;
+import '../mamoul/mamoul_home_screen.dart' show canOpenMamoulMonitor;
 import '../notifications/notifications_screen.dart';
 import '../overtime/overtime_home_screen.dart' show canOpenOvertimeTab;
 
@@ -230,6 +231,18 @@ class HomeScreen extends StatelessWidget {
                 title: 'الإنتاج',
                 subtitle: '$activeLines خطوط إنتاج نشطة',
                 onTap: () => onSelectModule?.call('production'),
+              ),
+              const SizedBox(height: 12),
+            ],
+            // مراقبة المعمول (مكائن البخور) — فريق الصيانة + إنتاج مصنع النساء
+            // (راجع canOpenMamoulMonitor).
+            if (canOpenMamoulMonitor(auth.currentUser)) ...[
+              _ModuleCard(
+                icon: Icons.precision_manufacturing_outlined,
+                color: const Color(0xFF7A4B2A),
+                title: 'المعمول',
+                subtitle: 'مراقبة المكائن: الأوزان والسرعات والأعطال',
+                onTap: () => onSelectModule?.call('mamoul'),
               ),
               const SizedBox(height: 12),
             ],

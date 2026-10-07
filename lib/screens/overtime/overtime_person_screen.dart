@@ -194,6 +194,9 @@ class _OvertimePersonScreenState extends State<OvertimePersonScreen> {
     final date = overtimeParseDate(d.date);
     final weekday = date == null ? '' : overtimeWeekdayName(date);
     final recs = report.recordsOn(d.date);
+    // لو تداخلت أوقات عملين في اليوم فمجموع مددهما أكبر من ساعات اليوم المحسوبة.
+    final worksHours = recs.fold<double>(0, (sum, r) => sum + (r.hours ?? 0));
+    final overlapped = d.hours > 0 && worksHours > d.hours + 0.009;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
@@ -232,6 +235,14 @@ class _OvertimePersonScreenState extends State<OvertimePersonScreen> {
                 const Text('بلا وقت محدد', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
             ],
           ),
+          if (overlapped)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text(
+                'تداخلت أوقات بعض الأعمال في هذا اليوم — حُسب الوقت المتداخل مرة واحدة',
+                style: TextStyle(fontSize: 11.5, color: AppColors.textMuted),
+              ),
+            ),
           for (final r in recs) _recordLine(r),
         ],
       ),

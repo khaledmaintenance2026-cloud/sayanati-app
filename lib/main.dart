@@ -21,6 +21,7 @@ import 'screens/production/production_lines_screen.dart';
 import 'screens/safety/safety_home_screen.dart';
 import 'screens/admin/admin_home_screen.dart';
 import 'screens/overtime/overtime_home_screen.dart';
+import 'screens/mamoul/mamoul_home_screen.dart';
 import 'screens/general/general_report_screen.dart';
 Future<void> main() async {
   print('DIAG_TEST_9182');
@@ -279,6 +280,10 @@ class _RootNavState extends State<RootNav> {
     // home_screen.dart.
     if (role == AppRole.admin || isMaintenanceRole(role) || isInventoryOnlyRole(role)) keys.add('inventory');
     if (role == AppRole.admin || isProductionRole(role)) keys.add('production');
+    // تبويب "المعمول" (مراقبة مكائن البخور: أوزان وسرعات وأعطال) — فريق الصيانة
+    // كله + إنتاج مصنع النساء (أو غير المقيَّد بمصنع). قرار الإدارة 2026-10-07
+    // (راجع canOpenMamoulMonitor). القيد الملزم على السيرفر (routes/mamoulMonitor.js).
+    if (canOpenMamoulMonitor(context.read<AuthService>().currentUser)) keys.add('mamoul');
     if (role == AppRole.admin || role == AppRole.safety) keys.add('safety');
     // تبويب "الإضافي" (ساعات العمل الإضافي) — للمسؤولين فقط بقرار الإدارة
     // 2026-10-06: مدير النظام ومسؤول الصيانة ومسؤول الإنتاج ومسؤول السلامة
@@ -299,6 +304,7 @@ class _RootNavState extends State<RootNav> {
       'maintenance': const MaintenanceDashboardScreen(),
       'inventory': const InventoryDashboardScreen(),
       'production': const ProductionLinesScreen(),
+      'mamoul': const MamoulHomeScreen(),
       'safety': const SafetyHomeScreen(),
       'overtime': const OvertimeHomeScreen(),
       'admin': const AdminHomeScreen(),
@@ -308,6 +314,7 @@ class _RootNavState extends State<RootNav> {
       'maintenance': const BottomNavigationBarItem(icon: Icon(Icons.build_outlined), label: 'الصيانة'),
       'inventory': const BottomNavigationBarItem(icon: Icon(Icons.inventory_2_outlined), label: 'المخزون'),
       'production': const BottomNavigationBarItem(icon: Icon(Icons.factory_outlined), label: 'الإنتاج'),
+      'mamoul': const BottomNavigationBarItem(icon: Icon(Icons.precision_manufacturing_outlined), label: 'المعمول'),
       'safety': const BottomNavigationBarItem(icon: Icon(Icons.shield_outlined), label: 'السلامة'),
       'overtime': const BottomNavigationBarItem(icon: Icon(Icons.more_time_outlined), label: 'الإضافي'),
       'admin': const BottomNavigationBarItem(icon: Icon(Icons.admin_panel_settings_outlined), label: 'الإدارة'),
@@ -323,7 +330,8 @@ class _RootNavState extends State<RootNav> {
         type: BottomNavigationBarType.fixed,
         selectedItemColor: AppColors.maintenance,
         unselectedItemColor: AppColors.textFaint,
-        showUnselectedLabels: true,
+        // مع ٨ تبويبات (مدير النظام) تضيق الشاشة فنُخفي أسماء غير المختارة.
+        showUnselectedLabels: keys.length <= 7,
         items: keys.map((k) => items[k]!).toList(),
       ),
     );
