@@ -18,6 +18,17 @@ class WorkOrderNotesService {
     return WorkOrderNote.listFromApi(data);
   }
 
+  /// تعيين فني/فنيين مع ملاحظة المشرف في نفس الطلب (PATCH /work-orders/:id/assign).
+  /// السيرفر يحفظ الملاحظة في سجل المهمة ويدمجها في رسالة التعيين نفسها
+  /// (جروب الصيانة + واتساب الفني + الإشعار داخل التطبيق) — لا رسالة منفصلة.
+  /// بعدها يلزم إعادة تحميل قائمة المهام والفنيين (يفعلها المستدعي عبر AppState).
+  static Future<void> assignWithNote(String workOrderId, List<String> technicianIds, String note) async {
+    await _api.patch('/work-orders/$workOrderId/assign', {
+      'technicianIds': technicianIds,
+      'note': note,
+    });
+  }
+
   /// يضيف ملاحظة جديدة؛ السيرفر نفسه يرسلها للجروب وللفنيين بعد الحفظ.
   static Future<WorkOrderNoteAddResult> add(String workOrderId, String note) async {
     final data = await _api.post('/work-orders/$workOrderId/notes', {'note': note});

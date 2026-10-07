@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/maintenance_report.dart';
 import '../../models/technician.dart';
 import '../../services/app_state.dart';
+import '../../services/work_order_notes_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
@@ -30,12 +32,34 @@ class _MaintenanceAssignScreenState extends State<MaintenanceAssignScreen> {
   final Set<String> _selectedIds = {};
   bool _submitting = false;
 
+  /// ملاحظة المشرف الاختيارية للفني (طلب 2026-10-07: "من المفروض كتابة
+  /// الملاحظات أثناء التعيين وتندمج مع رسالة الواتساب والخاص في التعيين").
+  /// تُرسَل مع طلب التعيين نفسه فتصل ضمن رسالة التعيين لجروب الصيانة
+  /// وللفني، وتُحفظ في سجل ملاحظات المهمة.
+  final TextEditingController _noteCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
   bool get _isAdding => widget.report.technicianDisplayNames != '—';
 
   Future<void> _assign() async {
+    final note = _noteCtrl.text.trim();
+    final state = context.read<AppState>();
     setState(() => _submitting = true);
     try {
-      await context.read<AppState>().assignTechnicians(widget.report.id, _selectedIds.toList());
+      if (note.isEmpty) {
+        // بلا ملاحظة: المسار القديم نفسه تمامًا (بلا أي تغيير في السلوك).
+        await state.assignTechnicians(widget.report.id, _selectedIds.toList());
+      } else {
+        await WorkOrderNotesService.assignWithNote(widget.report.id, _selectedIds.toList(), note);
+        // التعيين تمّ على السيرفر — نحدّث قائمة المهام والفنيين محليًا (يتولى
+        // كل منهما التقاط أخطائه الداخلية بنفسه فلا يرميان هنا).
+        await Future.wait([state.reloadWorkOrders(), state.reloadTechnicians()]);
+      }
       if (!mounted) return;
       Navigator.of(context).pop();
     } catch (e) {
@@ -50,6 +74,7 @@ class _MaintenanceAssignScreenState extends State<MaintenanceAssignScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
     final selectedNames = state.technicians
         .where((t) => _selectedIds.contains(t.id))
         .map((t) => t.name)
@@ -62,44 +87,48 @@ class _MaintenanceAssignScreenState extends State<MaintenanceAssignScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.maintenance.withOpacity(0.06),
-                border: Border.all(color: AppColors.maintenance.withOpacity(0.16)),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text('${widget.report.equipment} — ${widget.report.line}',
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.maintenance)),
-                      ),
-                      const StatusPill(label: 'بلاغ طارئ', color: AppColors.warningText, background: AppColors.warningBg),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(widget.report.description, style: const TextStyle(fontSize: 13.5, height: 1.5, color: Color(0xFF3A4250))),
-                  const SizedBox(height: 6),
-                  Text('رُفع بواسطة ${widget.report.reportedBy}', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
-                  if (_isAdding) ...[
+            // عند ظهور لوحة المفاتيح (كتابة ملاحظة) نُخفي بطاقة البلاغ وعنوان القائمة
+            // مؤقتًا لتبقى مساحة كافية للقائمة ومربع الكتابة على الشاشات الصغيرة.
+            if (!keyboardOpen) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.maintenance.withOpacity(0.06),
+                  border: Border.all(color: AppColors.maintenance.withOpacity(0.16)),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text('${widget.report.equipment} — ${widget.report.line}',
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.maintenance)),
+                        ),
+                        const StatusPill(label: 'بلاغ طارئ', color: AppColors.warningText, background: AppColors.warningBg),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(widget.report.description, style: const TextStyle(fontSize: 13.5, height: 1.5, color: Color(0xFF3A4250))),
                     const SizedBox(height: 6),
-                    Text('مُسنَد حاليًا إلى: ${widget.report.technicianDisplayNames}',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.maintenance)),
+                    Text('رُفع بواسطة ${widget.report.reportedBy}', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                    if (_isAdding) ...[
+                      const SizedBox(height: 6),
+                      Text('مُسنَد حاليًا إلى: ${widget.report.technicianDisplayNames}',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.maintenance)),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-            const SizedBox(height: 18),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Text(_isAdding ? 'اختر فنيًا إضافيًا واحدًا أو أكثر متاحًا' : 'اختر فنيًا واحدًا أو أكثر متاحًا',
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-            ),
-            const SizedBox(height: 10),
+              const SizedBox(height: 18),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(_isAdding ? 'اختر فنيًا إضافيًا واحدًا أو أكثر متاحًا' : 'اختر فنيًا واحدًا أو أكثر متاحًا',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              ),
+              const SizedBox(height: 10),
+            ],
             Expanded(
               child: ListView.separated(
                 itemCount: state.technicians.length,
@@ -121,6 +150,27 @@ class _MaintenanceAssignScreenState extends State<MaintenanceAssignScreen> {
                         : null,
                   );
                 },
+              ),
+            ),
+            const SizedBox(height: 10),
+            // ملاحظات للفني (اختياري) — تصل مع رسالة التعيين.
+            TextField(
+              controller: _noteCtrl,
+              enabled: !_submitting,
+              minLines: 1,
+              maxLines: 3,
+              inputFormatters: [LengthLimitingTextInputFormatter(1000)],
+              textInputAction: TextInputAction.newline,
+              decoration: InputDecoration(
+                labelText: 'ملاحظات للفني (اختياري)',
+                hintText: 'مثال: ركّز على فحص الحزام قبل التشغيل',
+                helperText: 'تصل مع رسالة التعيين لجروب الصيانة ولواتساب الفني',
+                prefixIcon: const Icon(Icons.note_alt_outlined, size: 20, color: AppColors.maintenance),
+                filled: true,
+                fillColor: AppColors.surface,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(13), borderSide: const BorderSide(color: AppColors.border)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(13), borderSide: const BorderSide(color: AppColors.border)),
               ),
             ),
             const SizedBox(height: 10),
