@@ -12,7 +12,8 @@ import 'mamoul_run_sheets.dart';
 import 'mamoul_widgets.dart';
 
 /// شاشة تشغيلة معمول واحدة: بياناتها، السرعات الحالية وسجل تغييرها، عيّنات
-/// الأوزان وحكمها، العيوب، وأعطال هذه التشغيلة. لا تُضاف بيانات لتشغيلة مغلقة
+/// الأوزان وحكمها (مع القطع/دقيقة وضغط اليد وحرارة العجينة)، العيوب،
+/// التدخل البشري، وأعطال هذه التشغيلة. لا تُضاف بيانات لتشغيلة مغلقة
 /// (أعد فتحها أولًا). حذف التشغيلة لمسؤول الصيانة ومدير النظام فقط.
 class MamoulRunScreen extends StatefulWidget {
   final String runId;
@@ -84,7 +85,7 @@ class _MamoulRunScreenState extends State<MamoulRunScreen> {
     final ok = await confirmMamoul(
       context,
       title: 'حذف التشغيلة؟',
-      message: 'ستُحذف التشغيلة بكل عيّناتها وعيوبها وسجل سرعاتها نهائيًا. هذا لا يمكن التراجع عنه.',
+      message: 'ستُحذف التشغيلة بكل عيّناتها وعيوبها وتدخلاتها وسجل سرعاتها نهائيًا. هذا لا يمكن التراجع عنه.',
     );
     if (!ok || !mounted) return;
     setState(() => _busy = true);
@@ -160,6 +161,27 @@ class _MamoulRunScreenState extends State<MamoulRunScreen> {
     if (!ok || !mounted) return;
     try {
       await MamoulMonitorService.deleteDefect(d.id);
+      notifyMamoulChanged();
+    } catch (e) {
+      if (!mounted) return;
+      showMamoulSnack(context, mamoulErrorText(e), error: true);
+    }
+  }
+
+  Future<void> _addIntervention(MamoulRun run) async {
+    final done = await showMamoulSheet<bool>(context, (ctx) => MamoulInterventionSheet(run: run));
+    if (done == true && mounted) showMamoulSnack(context, 'سُجّل التدخل');
+  }
+
+  Future<void> _deleteIntervention(MamoulIntervention x) async {
+    final ok = await confirmMamoul(
+      context,
+      title: 'حذف التدخل؟',
+      message: 'سيُحذف تسجيل «${x.label}» الساعة ${mamoulTimeLabel(x.time)}.',
+    );
+    if (!ok || !mounted) return;
+    try {
+      await MamoulMonitorService.deleteIntervention(x.id);
       notifyMamoulChanged();
     } catch (e) {
       if (!mounted) return;
@@ -273,6 +295,7 @@ class _MamoulRunScreenState extends State<MamoulRunScreen> {
                   value: stats.outCount == 0 ? '٠' : '${mamoulCount(stats.outCount)} (${mamoulPct(stats.outPct)})',
                   color: stats.outCount == 0 ? AppColors.successText : kMamoulDanger,
                 ),
+                if (s.avgPiecesPerMin != null) MamoulStat(label: 'متوسط القطع/دقيقة', value: mamoulNum(s.avgPiecesPerMin, decimals: 1)),
               ],
             ),
             if (lastHint != null) ...[
@@ -342,6 +365,23 @@ class _MamoulRunScreenState extends State<MamoulRunScreen> {
                   MamoulStat(label: 'خارج النطاق', value: mamoulCount(s.stats.outCount), color: kMamoulDanger),
               ],
             ),
+            if (s.piecesPerMin != null || s.pressureLevel != null || s.doughTemp != null) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 22,
+                runSpacing: 6,
+                children: [
+                  if (s.piecesPerMin != null) MamoulStat(label: 'القطع/دقيقة', value: mamoulNum(s.piecesPerMin, decimals: 1)),
+                  if (s.pressureLevel != null)
+                    MamoulStat(
+                      label: 'ضغط اليد',
+                      value: s.pressureLevel == 'none' ? 'بدون' : mamoulPressureLabel(s.pressureLevel),
+                      color: (s.pressureLevel == 'none') ? null : AppColors.warningText,
+                    ),
+                  if (s.doughTemp != null) MamoulStat(label: 'حرارة العجينة', value: mamoulTemp(s.doughTemp)),
+                ],
+              ),
+            ],
             if (speedsKnown) ...[
               const SizedBox(height: 8),
               Text(
@@ -460,6 +500,67 @@ class _MamoulRunScreenState extends State<MamoulRunScreen> {
                     IconButton(
                       tooltip: 'حذف',
                       onPressed: () => _deleteDefect(d),
+                      icon: const Icon(Icons.delete_outline, size: 20),
+                      color: kMamoulDanger,
+                    ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _interventionsSection(MamoulRun run, List<MamoulIntervention> entries) {
+    final s = run.summary;
+    final summaryText = entries.isEmpty
+        ? 'لم يُسجَّل أي تدخل. سجّل كل مرة يضغط فيها العامل على المكينة أو يتدخل يدويًا، فهذا يُظهر هل المكينة تعطي الوزن وحدها.'
+        : (s.interventionsMinutes > 0
+            ? 'عدد التدخلات: ${mamoulCount(s.interventionsCount)} — مجموع المدة: ${mamoulDuration(s.interventionsMinutes)}'
+            : 'عدد التدخلات: ${mamoulCount(s.interventionsCount)}');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        MamoulSectionTitle('التدخل البشري (${mamoulCount(entries.length)})'),
+        const SizedBox(height: 10),
+        MamoulCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                summaryText,
+                style: const TextStyle(fontSize: 12.5, color: AppColors.textMuted, height: 1.5),
+              ),
+              if (run.isOpen) ...[
+                const SizedBox(height: 12),
+                MamoulOutlineButton(label: 'تسجيل تدخل بشري', icon: Icons.pan_tool_outlined, onPressed: () => _addIntervention(run)),
+              ],
+            ],
+          ),
+        ),
+        for (final x in entries.reversed)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: MamoulCard(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                children: [
+                  Text(mamoulTimeLabel(x.time), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      [
+                        x.label,
+                        if (x.minutes != null && x.minutes! > 0) mamoulDuration(x.minutes),
+                        if (x.note != null) '— ${x.note}',
+                      ].join('  '),
+                      style: const TextStyle(fontSize: 12.5, color: AppColors.textSecondary, height: 1.5),
+                    ),
+                  ),
+                  if (run.isOpen)
+                    IconButton(
+                      tooltip: 'حذف',
+                      onPressed: () => _deleteIntervention(x),
                       icon: const Icon(Icons.delete_outline, size: 20),
                       color: kMamoulDanger,
                     ),
@@ -604,6 +705,8 @@ class _MamoulRunScreenState extends State<MamoulRunScreen> {
           _samplesSection(r, detail.samples),
           const SizedBox(height: 18),
           _defectsSection(r, detail.defects),
+          const SizedBox(height: 18),
+          _interventionsSection(r, detail.interventions),
           const SizedBox(height: 18),
           _faultsSection(r, detail.faults),
           if (detail.speedChanges.isNotEmpty) ...[

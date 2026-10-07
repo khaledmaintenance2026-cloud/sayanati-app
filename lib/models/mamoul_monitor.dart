@@ -19,6 +19,12 @@ int _int(Object? v) {
   return int.tryParse(v.toString()) ?? 0;
 }
 
+Map<String, int> _intMap(Object? raw) {
+  final out = <String, int>{};
+  if (raw is Map) raw.forEach((k, v) => out[k.toString()] = _int(v));
+  return out;
+}
+
 String? _txt(Object? v) {
   if (v == null) return null;
   final s = v.toString().trim();
@@ -55,9 +61,41 @@ const Map<String, String> kMamoulComponentLabels = {
 
 const List<String> kMamoulShifts = ['صباحي', 'مسائي', 'ليلي'];
 
+/// ضغط يد العامل على المكينة وقت أخذ العيّنة (يزيد الضغط عند خروج المعمول فيخرج أسرع).
+/// لا يمكن التحكم فيه ولا قياسه، لذلك لا تدخل العيّنات التي فيها ضغط يد في التوصيات.
+const List<String> kMamoulPressureLevels = ['none', 'light', 'medium', 'strong'];
+
+const Map<String, String> kMamoulPressureLabels = {
+  'none': 'بدون',
+  'light': 'خفيف',
+  'medium': 'متوسط',
+  'strong': 'قوي',
+};
+
+/// أنواع التدخل البشري على المكينة أثناء التشغيل.
+const List<String> kMamoulInterventionKinds = ['pressure', 'twins', 'dough', 'clean', 'adjust', 'other'];
+
+const Map<String, String> kMamoulInterventionLabels = {
+  'pressure': 'ضغط يدوي على المكينة',
+  'twins': 'فك توائم',
+  'dough': 'تعديل العجينة',
+  'clean': 'تنظيف',
+  'adjust': 'ضبط يدوي',
+  'other': 'أخرى',
+};
+
 String mamoulUnitLabel(String unit) => kMamoulUnitLabels[unit] ?? unit;
 String mamoulMoistureLabel(String? level) => level == null ? '—' : (kMamoulMoistureLabels[level] ?? level);
 String mamoulComponentLabel(String component) => kMamoulComponentLabels[component] ?? component;
+String mamoulPressureLabel(String? level) => level == null ? '—' : (kMamoulPressureLabels[level] ?? level);
+/// 'none' → 'بدون ضغط يد'، وغيره → 'ضغط يد خفيف/متوسط/قوي'، null → '—'.
+String mamoulPressureFull(String? level) {
+  if (level == null) return '—';
+  if (level == 'none') return 'بدون ضغط يد';
+  return 'ضغط يد ${mamoulPressureLabel(level)}';
+}
+
+String mamoulInterventionLabel(String kind) => kMamoulInterventionLabels[kind] ?? kind;
 
 // ---------------------------------------------------------------------------
 // تنسيق التاريخ والأرقام (بأرقام هندية، مثل باقي التطبيق)
@@ -114,6 +152,12 @@ String mamoulWeight(double? v) {
 
 /// نسبة مئوية: 12.5 → '١٢٫٥٪'، null → '—'.
 String mamoulPct(double? v) => v == null ? '—' : '${mamoulNum(v, decimals: 1)}٪';
+
+/// قطع في الدقيقة: 125.9 → '١٢٥٫٩ قطعة/د'، null → '—'.
+String mamoulPpm(double? v) => v == null ? '—' : '${mamoulNum(v, decimals: 1)} قطعة/د';
+
+/// حرارة العجينة: 28.5 → '٢٨٫٥°م'.
+String mamoulTemp(double? v) => v == null ? '—' : '${mamoulNum(v, decimals: 1)}°م';
 
 /// سرعة مع وحدتها: (35, 'Hz') → '٣٥ هرتز'.
 String mamoulSpeed(double? v, String unit) => v == null ? '—' : '${mamoulNum(v)} ${mamoulUnitLabel(unit)}';
@@ -302,6 +346,15 @@ class MamoulSample {
   final double? speedBelt;
   final double? speedPush;
   final double? speedRotary;
+
+  /// عدد القطع في الدقيقة وقت العيّنة (اختياري).
+  final double? piecesPerMin;
+
+  /// 'none' | 'light' | 'medium' | 'strong' | null (لم يُسجَّل).
+  final String? pressureLevel;
+
+  /// حرارة العجينة °م (اختياري).
+  final double? doughTemp;
   final String? note;
   final List<double> weights;
   final WeightStats stats;
@@ -313,6 +366,9 @@ class MamoulSample {
     this.speedBelt,
     this.speedPush,
     this.speedRotary,
+    this.piecesPerMin,
+    this.pressureLevel,
+    this.doughTemp,
     this.note,
     required this.weights,
     required this.stats,
@@ -334,6 +390,9 @@ class MamoulSample {
       speedBelt: _dbl(d['speed_belt']),
       speedPush: _dbl(d['speed_push']),
       speedRotary: _dbl(d['speed_rotary']),
+      piecesPerMin: _dbl(d['pieces_per_min']),
+      pressureLevel: _txt(d['pressure_level']),
+      doughTemp: _dbl(d['dough_temp']),
       note: _txt(d['note']),
       weights: weights,
       stats: WeightStats.fromApi(d['stats']),
@@ -396,6 +455,33 @@ class MamoulDefectTotals {
       pctOfProduced: _dbl(d['pct_of_produced']),
     );
   }
+}
+
+/// تدخل بشري على المكينة أثناء التشغيلة (ضغط يدوي، فك توائم، تعديل العجينة…).
+class MamoulIntervention {
+  final String id;
+  final String time;
+  final String kind;
+  final int? minutes;
+  final String? note;
+
+  const MamoulIntervention({
+    required this.id,
+    required this.time,
+    required this.kind,
+    this.minutes,
+    this.note,
+  });
+
+  factory MamoulIntervention.fromApi(Map<String, dynamic> d) => MamoulIntervention(
+        id: d['id'].toString(),
+        time: (d['event_time'] as String?) ?? '',
+        kind: (d['kind'] as String?) ?? 'other',
+        minutes: d['minutes'] == null ? null : _int(d['minutes']),
+        note: _txt(d['note']),
+      );
+
+  String get label => mamoulInterventionLabel(kind);
 }
 
 class MamoulSpeedChange {
@@ -519,9 +605,17 @@ class MamoulRunSummary {
   final int faultsTotal;
   final int faultsOpen;
 
+  /// متوسط القطع في الدقيقة للعيّنات المسجَّل فيها (null لو لا شيء).
+  final double? avgPiecesPerMin;
+  final int interventionsCount;
+  final int interventionsMinutes;
+
   const MamoulRunSummary({
     this.samplesCount = 0,
     this.piecesCount = 0,
+    this.avgPiecesPerMin,
+    this.interventionsCount = 0,
+    this.interventionsMinutes = 0,
     this.stats = WeightStats.empty,
     this.lastSampleLevel,
     this.lastSampleAvg,
@@ -544,6 +638,9 @@ class MamoulRunSummary {
       defects: MamoulDefectTotals.fromApi(d['defects']),
       faultsTotal: _int(d['faults_total']),
       faultsOpen: _int(d['faults_open']),
+      avgPiecesPerMin: _dbl(d['avg_pieces_per_min']),
+      interventionsCount: _int(d['interventions_count']),
+      interventionsMinutes: _int(d['interventions_minutes']),
     );
   }
 }
@@ -643,6 +740,7 @@ class MamoulRunDetail {
   final MamoulRun run;
   final List<MamoulSample> samples;
   final List<MamoulDefectEntry> defects;
+  final List<MamoulIntervention> interventions;
   final List<MamoulFault> faults;
   final List<MamoulSpeedChange> speedChanges;
 
@@ -650,6 +748,7 @@ class MamoulRunDetail {
     required this.run,
     required this.samples,
     required this.defects,
+    required this.interventions,
     required this.faults,
     required this.speedChanges,
   });
@@ -665,6 +764,7 @@ class MamoulRunDetail {
       run: MamoulRun.fromApi(Map<String, dynamic>.from(d['run'] as Map)),
       samples: _list(d['samples'], MamoulSample.fromApi),
       defects: _list(d['defects'], MamoulDefectEntry.fromApi),
+      interventions: _list(d['interventions'], MamoulIntervention.fromApi),
       faults: _list(d['faults'], MamoulFault.fromApi),
       speedChanges: _list(d['speed_changes'], MamoulSpeedChange.fromApi),
     );
@@ -684,8 +784,14 @@ class MamoulTotals {
   final MamoulDefectTotals defects;
   final int faultsTotal;
   final int faultsOpen;
+  final double? avgPiecesPerMin;
+  final int interventionsCount;
+  final int interventionsMinutes;
 
   const MamoulTotals({
+    this.avgPiecesPerMin,
+    this.interventionsCount = 0,
+    this.interventionsMinutes = 0,
     this.runsCount = 0,
     this.openRunsCount = 0,
     this.samplesCount = 0,
@@ -714,6 +820,9 @@ class MamoulTotals {
       defects: MamoulDefectTotals.fromApi(d['defects']),
       faultsTotal: _int(d['faults_total']),
       faultsOpen: _int(d['faults_open']),
+      avgPiecesPerMin: _dbl(d['avg_pieces_per_min']),
+      interventionsCount: _int(d['interventions_count']),
+      interventionsMinutes: _int(d['interventions_minutes']),
     );
   }
 }
@@ -758,7 +867,19 @@ class MamoulSpeedGroup {
   final double deviation;
   final bool enoughData;
 
+  /// متوسط القطع في الدقيقة لعيّنات هذه التركيبة (null لو لم تُسجَّل).
+  final double? avgPpm;
+
+  /// عدد العيّنات لكل مستوى ضغط (none/light/medium/strong/unknown).
+  final Map<String, int> pressureCounts;
+
+  /// مستوى الضغط الأكثر تكرارًا بين العيّنات المسجَّل ضغطها، أو null.
+  final String? mainPressure;
+
   const MamoulSpeedGroup({
+    this.avgPpm,
+    this.pressureCounts = const {},
+    this.mainPressure,
     this.machineId,
     this.machineName,
     required this.speedUnit,
@@ -796,6 +917,9 @@ class MamoulSpeedGroup {
         outPct: _dbl(d['out_pct']) ?? 0,
         deviation: _dbl(d['deviation']) ?? 0,
         enoughData: d['enough_data'] == true,
+        avgPpm: _dbl(d['avg_ppm']),
+        pressureCounts: _intMap(d['pressure_counts']),
+        mainPressure: _txt(d['main_pressure']),
       );
 }
 
@@ -808,8 +932,10 @@ class MamoulGroupStat {
   final double avg;
   final double std;
   final double outPct;
+  final double? avgPpm;
 
   const MamoulGroupStat({
+    this.avgPpm,
     required this.label,
     required this.runsCount,
     required this.samplesCount,
@@ -827,7 +953,25 @@ class MamoulGroupStat {
         avg: _dbl(d['avg']) ?? 0,
         std: _dbl(d['std']) ?? 0,
         outPct: _dbl(d['out_pct']) ?? 0,
+        avgPpm: _dbl(d['avg_ppm']),
       );
+
+  /// شريحة حرارة العجينة: 'temp_from' و'temp_to' → '٢٥–٣٠°م'.
+  factory MamoulGroupStat.fromTemp(Map<String, dynamic> d) {
+    final from = _dbl(d['temp_from']);
+    final to = _dbl(d['temp_to']);
+    final label = (from == null || to == null) ? '—' : '${mamoulNum(from, decimals: 0)}–${mamoulNum(to, decimals: 0)}°م';
+    return MamoulGroupStat(
+      label: label,
+      runsCount: _int(d['runs_count']),
+      samplesCount: _int(d['samples_count']),
+      pieces: _int(d['pieces']),
+      avg: _dbl(d['avg']) ?? 0,
+      std: _dbl(d['std']) ?? 0,
+      outPct: _dbl(d['out_pct']) ?? 0,
+      avgPpm: _dbl(d['avg_ppm']),
+    );
+  }
 }
 
 /// صف مقارنة بين المكائن: جودة الوزن والعيوب والأعطال لكل مكينة في المدة المختارة.
@@ -847,8 +991,22 @@ class MamoulMachineComparison {
   final int faultsTotal;
   final int faultsOpen;
   final int downtimeMinutes;
+  final double? avgPpm;
+
+  /// عدد العيّنات التي فيها ضغط يد (خفيف/متوسط/قوي) من عيّنات المكينة.
+  final int assistedSamples;
+  final int interventionsCount;
+  final int interventionsMinutes;
+
+  /// عدد التدخلات لكل نوع (pressure/twins/dough/clean/adjust/other).
+  final Map<String, int> interventionsByKind;
 
   const MamoulMachineComparison({
+    this.avgPpm,
+    this.assistedSamples = 0,
+    this.interventionsCount = 0,
+    this.interventionsMinutes = 0,
+    this.interventionsByKind = const {},
     required this.machineId,
     required this.machineName,
     required this.active,
@@ -882,27 +1040,50 @@ class MamoulMachineComparison {
         faultsTotal: _int(d['faults_total']),
         faultsOpen: _int(d['faults_open']),
         downtimeMinutes: _int(d['downtime_minutes']),
+        avgPpm: _dbl(d['avg_ppm']),
+        assistedSamples: _int(d['assisted_samples']),
+        interventionsCount: d['interventions'] is Map ? _int((d['interventions'] as Map)['total']) : 0,
+        interventionsMinutes: d['interventions'] is Map ? _int((d['interventions'] as Map)['minutes']) : 0,
+        interventionsByKind: d['interventions'] is Map ? _intMap((d['interventions'] as Map)['by_kind']) : const {},
       );
 }
 
 class MamoulAnalysis {
   final int samplesCount;
 
+  /// العيّنات التي بدون ضغط يد (تُبنى عليها التوصيات) والتي فيها ضغط يد (تُستبعد منها).
+  final int cleanSamplesCount;
+  final int assistedSamplesCount;
+
   /// المكينة التي حُصر التحليل عليها (null = كل المكائن).
   final String? machineId;
   final List<MamoulSpeedGroup> speeds;
+
+  /// تركيبات السرعات المبنية من العيّنات التي فيها ضغط يد: تُعرض للاطلاع ولا تُوصى.
+  final List<MamoulSpeedGroup> assistedSpeeds;
   final List<MamoulSpeedGroup> recommended;
+
+  /// الأسرع داخل النطاق: أعلى قطع/دقيقة بين التركيبات التي قطعها كلها داخل الحدّين.
+  final List<MamoulSpeedGroup> fastest;
   final List<MamoulGroupStat> byBatch;
   final List<MamoulGroupStat> byMoisture;
+  final List<MamoulGroupStat> byPressure;
+  final List<MamoulGroupStat> byDoughTemp;
   final List<MamoulMachineComparison> machines;
 
   const MamoulAnalysis({
     required this.samplesCount,
+    this.cleanSamplesCount = 0,
+    this.assistedSamplesCount = 0,
     this.machineId,
+    this.assistedSpeeds = const [],
     required this.speeds,
     required this.recommended,
+    this.fastest = const [],
     required this.byBatch,
     required this.byMoisture,
+    this.byPressure = const [],
+    this.byDoughTemp = const [],
     required this.machines,
   });
 
@@ -919,11 +1100,19 @@ class MamoulAnalysis {
         : <MamoulMachineComparison>[];
     return MamoulAnalysis(
       samplesCount: _int(d['samples_count']),
+      cleanSamplesCount: _int(d['clean_samples_count']),
+      assistedSamplesCount: _int(d['assisted_samples_count']),
       machineId: d['machine_id']?.toString(),
+      assistedSpeeds: groups(d['assisted_speeds']),
       speeds: groups(d['speeds']),
       recommended: groups(d['recommended']),
+      fastest: groups(d['fastest']),
       byBatch: stats(d['by_batch'], 'paste_batch'),
       byMoisture: stats(d['by_moisture'], 'paste_moisture_level'),
+      byPressure: stats(d['by_pressure'], 'pressure_level'),
+      byDoughTemp: d['by_dough_temp'] is List
+          ? (d['by_dough_temp'] as List).map((e) => MamoulGroupStat.fromTemp(Map<String, dynamic>.from(e as Map))).toList()
+          : <MamoulGroupStat>[],
       machines: comparison(d['machines']),
     );
   }

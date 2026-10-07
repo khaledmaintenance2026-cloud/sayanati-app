@@ -151,6 +151,19 @@ class _MamoulRunsTabState extends State<MamoulRunsTab> with AutomaticKeepAliveCl
             ],
           ),
         ),
+        if (t.avgPiecesPerMin != null || t.interventionsCount > 0) ...[
+          const SizedBox(height: 10),
+          MamoulCard(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Expanded(child: MamoulStat(label: 'متوسط القطع/دقيقة', value: t.avgPiecesPerMin == null ? '—' : mamoulNum(t.avgPiecesPerMin, decimals: 1))),
+                Expanded(child: MamoulStat(label: 'تدخل بشري', value: mamoulCount(t.interventionsCount))),
+                Expanded(child: MamoulStat(label: 'مدة التدخل', value: mamoulDuration(t.interventionsMinutes))),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -201,6 +214,8 @@ class _MamoulRunsTabState extends State<MamoulRunsTab> with AutomaticKeepAliveCl
                       color: s.stats.outCount == 0 ? AppColors.successText : kMamoulDanger,
                     ),
                   ),
+                  if (s.avgPiecesPerMin != null)
+                    Expanded(child: MamoulStat(label: 'قطع/دقيقة', value: mamoulNum(s.avgPiecesPerMin, decimals: 1))),
                 ],
               ),
             const SizedBox(height: 10),
@@ -218,6 +233,12 @@ class _MamoulRunsTabState extends State<MamoulRunsTab> with AutomaticKeepAliveCl
                     label: 'عيوب ${mamoulCount(s.defects.total)}',
                     color: kMamoulDanger,
                     background: kMamoulDanger.withOpacity(0.10),
+                  ),
+                if (s.interventionsCount > 0)
+                  StatusPill(
+                    label: 'تدخل بشري ${mamoulCount(s.interventionsCount)}',
+                    color: AppColors.warningText,
+                    background: AppColors.warningBg,
                   ),
                 if (s.faultsOpen > 0)
                   StatusPill(

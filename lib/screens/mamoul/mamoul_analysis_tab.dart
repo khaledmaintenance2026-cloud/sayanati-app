@@ -6,11 +6,13 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import 'mamoul_widgets.dart';
 
-/// تبويب "التحليل": يجيب على سؤال "لو ضبطت السرعات على كذا، كم ستكون الأوزان؟".
-/// يجمع كل عيّنات الأوزان بحسب (المكينة + سرعات السير والدفع والدوار + هدف
-/// الوزن) ويقترح أفضل ضبط لكل مكينة (أقل قطع خارج النطاق ثم الأقرب للهدف ثم
-/// الأقل تذبذبًا) من التركيبات التي قيست عليها قطع كافية. ويقارن بين المكائن
-/// (جودة الأوزان والعيوب والأعطال). مرِّر [fixedMachineId] لتحليل مكينة واحدة
+/// تبويب "التحليل": يجيب على سؤالين: "لو ضبطت السرعات على كذا، كم ستكون الأوزان؟"
+/// و"ما أعلى سرعة (إنتاج) تبقى معها كل القطع ضمن ٦٫٠–٦٫٤؟". يجمع كل عيّنات
+/// الأوزان بحسب (المكينة + سرعات السير والدفع والدوار + هدف الوزن) ويعرض: الأسرع
+/// داخل النطاق (قطع/دقيقة)، وأفضل ضبط لكل مكينة (أقل قطع خارج النطاق ثم الأقرب
+/// للهدف ثم الأقل تذبذبًا) من التركيبات التي قيست عليها قطع كافية، وأثر ضغط
+/// اليد وحرارة العجينة، ويقارن بين المكائن (جودة الأوزان والإنتاجية والتدخل
+/// البشري والعيوب والأعطال). مرِّر [fixedMachineId] لتحليل مكينة واحدة
 /// فقط (غرفة المكينة)، و[onOpenMachine] لفتح غرفة مكينة من جدول المقارنة.
 class MamoulAnalysisTab extends StatefulWidget {
   final String? fixedMachineId;
@@ -29,6 +31,7 @@ class _MamoulAnalysisTabState extends State<MamoulAnalysisTab> with AutomaticKee
   double? _target;
   String? _machineFilter;
   bool _showAllSpeeds = false;
+  bool _showAssisted = false;
 
   MamoulAnalysis? _analysis;
   bool _loading = true;
@@ -119,9 +122,10 @@ class _MamoulAnalysisTabState extends State<MamoulAnalysisTab> with AutomaticKee
 
   // ------------------------------- الأقسام -------------------------------
 
-  Widget _recommendedCard(int rank, MamoulSpeedGroup g) {
+  Widget _recommendedCard(int rank, MamoulSpeedGroup g, {bool fastest = false}) {
     final okAll = g.outPct <= 0;
     final badgeColor = rank == 1 ? AppColors.successText : AppColors.textSecondary;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: MamoulCard(
@@ -132,7 +136,7 @@ class _MamoulAnalysisTabState extends State<MamoulAnalysisTab> with AutomaticKee
             Row(
               children: [
                 StatusPill(
-                  label: rank == 1 ? 'الأفضل' : 'الخيار ${mamoulCount(rank)}',
+                  label: rank == 1 ? (fastest ? 'الأسرع' : 'الأفضل') : 'الخيار ${mamoulCount(rank)}',
                   color: badgeColor,
                   background: badgeColor.withOpacity(0.10),
                 ),
@@ -154,6 +158,14 @@ class _MamoulAnalysisTabState extends State<MamoulAnalysisTab> with AutomaticKee
                 Expanded(child: MamoulStat(label: 'الدوار', value: mamoulSpeed(g.speedRotary, g.speedUnit))),
               ],
             ),
+            if (g.avgPpm != null) ...[
+              const SizedBox(height: 12),
+              MamoulStat(
+                label: 'الإنتاج عند هذه السرعات',
+                value: mamoulPpm(g.avgPpm),
+                color: fastest ? AppColors.successText : null,
+              ),
+            ],
             const SizedBox(height: 12),
             Text(
               'عند هذه السرعات تراوحت الأوزان بين ${mamoulWeight(g.min)} و${mamoulWeight(g.max)} جرام '
@@ -169,6 +181,56 @@ class _MamoulAnalysisTabState extends State<MamoulAnalysisTab> with AutomaticKee
           ],
         ),
       ),
+    );
+  }
+
+  /// الأسرع داخل النطاق: لكل مكينة أعلى قطع/دقيقة بين التركيبات التي كل قطعها داخل الحدّين.
+  Widget _fastestSection(MamoulAnalysis a) {
+    final groups = _byMachine(a.fastest);
+    final showMachineNames = widget.fixedMachineId == null && _machineFilter == null && mamoulMachines.value.length > 1;
+    final hasPpm = a.speeds.any((g) => g.avgPpm != null);
+    final onlyAssistedPpm = !hasPpm && a.assistedSpeeds.any((g) => g.avgPpm != null);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const MamoulSectionTitle('الأسرع داخل النطاق'),
+        const SizedBox(height: 4),
+        Text(
+          'أعلى إنتاج (قطع في الدقيقة) بين التركيبات التي بقيت كل قطعها بين ${mamoulWeight(kMamoulWeightMin)} و${mamoulWeight(kMamoulWeightMax)}'
+          ' بعد قياس ${mamoulCount(kMamoulMinPieces)} قطعة عليها على الأقل، ومن العيّنات التي بدون ضغط يد فقط. هذه هي السرعات التي ترفع الإنتاج دون أن يخرج الوزن ودون مساعدة اليد.',
+          style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted, height: 1.5),
+        ),
+        const SizedBox(height: 10),
+        if (!hasPpm)
+          InfoNote(
+            text: onlyAssistedPpm
+                ? '«القطع في الدقيقة» مسجَّلة حاليًا في عيّنات فيها ضغط يد فقط، ولا تدخل في هذا القسم. سجّل عيّنات بدون ضغط يد.'
+                : 'لم يُسجَّل «القطع في الدقيقة» بعد. اكتبه عند إضافة كل عيّنة وسيبدأ هذا القسم بالظهور.',
+            color: AppColors.warningText,
+            icon: Icons.hourglass_empty,
+          )
+        else if (a.fastest.isEmpty)
+          const InfoNote(
+            text: 'لا توجد بعد تركيبة سرعات قياساتها كلها داخل النطاق مع تسجيل القطع/دقيقة وقطع كافية. استمر في التسجيل.',
+            color: AppColors.warningText,
+            icon: Icons.hourglass_empty,
+          )
+        else
+          for (final entry in groups) ...[
+            if (showMachineNames)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8, top: 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.precision_manufacturing_outlined, size: 18, color: kMamoulColor),
+                    const SizedBox(width: 6),
+                    Text(entry.key, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: kMamoulColor)),
+                  ],
+                ),
+              ),
+            for (var i = 0; i < entry.value.length; i++) _recommendedCard(i + 1, entry.value[i], fastest: true),
+          ],
+      ],
     );
   }
 
@@ -210,6 +272,43 @@ class _MamoulAnalysisTabState extends State<MamoulAnalysisTab> with AutomaticKee
     );
   }
 
+  /// تركيبات السرعات التي وُجدت مع ضغط يد: للاطلاع فقط ولا تُوصى (اليد لا يُتحكَّم فيها).
+  Widget _assistedSection(MamoulAnalysis a) {
+    if (a.assistedSpeeds.isEmpty) return const SizedBox.shrink();
+    final showMachine = widget.fixedMachineId == null && _machineFilter == null && mamoulMachines.value.length > 1;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        MamoulSectionTitle(
+          'تركيبات بضغط اليد (${mamoulCount(a.assistedSpeeds.length)})',
+          trailing: TextButton(
+            onPressed: () => setState(() => _showAssisted = !_showAssisted),
+            style: TextButton.styleFrom(foregroundColor: kMamoulColor),
+            child: Text(_showAssisted ? 'إخفاء' : 'عرض'),
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'سرعات أُخذت عليها عيّنات والعامل يضغط بيده. للاطلاع فقط: لا تُوصى لأن اليد لا يُتحكَّم فيها.',
+          style: TextStyle(fontSize: 11.5, color: AppColors.textMuted, height: 1.5),
+        ),
+        if (_showAssisted) ...[
+          const SizedBox(height: 8),
+          MamoulCard(
+            child: Column(
+              children: [
+                for (var i = 0; i < a.assistedSpeeds.length; i++) ...[
+                  if (i > 0) const Divider(height: 1),
+                  _groupRow(a.assistedSpeeds[i], showMachine),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _groupRow(MamoulSpeedGroup g, bool showMachine) {
     final muted = !g.enoughData;
     final textColor = muted ? AppColors.textMuted : AppColors.textPrimary;
@@ -225,7 +324,9 @@ class _MamoulAnalysisTabState extends State<MamoulAnalysisTab> with AutomaticKee
           const SizedBox(height: 3),
           Text(
             'هدف ${mamoulNum(g.targetWeight)} — متوسط ${mamoulWeight(g.avg)} — خارج النطاق ${mamoulPct(g.outPct)}'
-            ' — ${mamoulCount(g.pieces)} قطعة${muted ? ' (بيانات قليلة)' : ''}',
+            ' — ${mamoulCount(g.pieces)} قطعة${muted ? ' (بيانات قليلة)' : ''}'
+            '${g.avgPpm != null ? ' — ${mamoulPpm(g.avgPpm)}' : ''}'
+            '${g.mainPressure != null ? ' — ${mamoulPressureFull(g.mainPressure)}' : ''}',
             style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted, height: 1.5),
           ),
         ],
@@ -264,23 +365,64 @@ class _MamoulAnalysisTabState extends State<MamoulAnalysisTab> with AutomaticKee
     );
   }
 
-  Widget _groupStatsSection(String title, List<MamoulGroupStat> items, {bool moisture = false}) {
+  /// [rich] = صف من سطرين (الاسم ثم الإحصاءات الأربع بما فيها القطع/دقيقة) للضغط والحرارة.
+  Widget _groupStatsSection(
+    String title,
+    List<MamoulGroupStat> items, {
+    bool moisture = false,
+    bool pressure = false,
+    bool rich = false,
+    String? subtitle,
+  }) {
     if (items.isEmpty) return const SizedBox.shrink();
+    String labelOf(MamoulGroupStat x) {
+      if (moisture) return mamoulMoistureLabel(x.label);
+      if (pressure) return mamoulPressureFull(x.label);
+      return x.label;
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         MamoulSectionTitle(title),
+        if (subtitle != null) ...[
+          const SizedBox(height: 4),
+          Text(subtitle, style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted, height: 1.5)),
+        ],
         const SizedBox(height: 10),
         MamoulCard(
           child: Column(
             children: [
               for (var i = 0; i < items.length; i++) ...[
                 if (i > 0) const Divider(height: 18),
-                Row(
+                if (rich)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(labelOf(items[i]), style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(child: MamoulStat(label: 'القطع/دقيقة', value: items[i].avgPpm == null ? '—' : mamoulNum(items[i].avgPpm, decimals: 1))),
+                          Expanded(child: MamoulStat(label: 'المتوسط', value: mamoulWeight(items[i].avg))),
+                          Expanded(
+                            child: MamoulStat(
+                              label: 'خارج النطاق',
+                              value: mamoulPct(items[i].outPct),
+                              color: _outColor(items[i].outPct),
+                            ),
+                          ),
+                          Expanded(child: MamoulStat(label: 'القطع', value: mamoulCount(items[i].pieces))),
+                        ],
+                      ),
+                    ],
+                  )
+                else
+                  Row(
                   children: [
                     Expanded(
                       child: Text(
-                        moisture ? mamoulMoistureLabel(items[i].label) : items[i].label,
+                        labelOf(items[i]),
                         style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -338,6 +480,7 @@ class _MamoulAnalysisTabState extends State<MamoulAnalysisTab> with AutomaticKee
                   color: c.pieces == 0 ? null : _outColor(c.outPct),
                 ),
                 MamoulStat(label: 'التذبذب', value: c.pieces == 0 ? '—' : mamoulNum(c.std, decimals: 3)),
+                if (c.avgPpm != null) MamoulStat(label: 'متوسط القطع/دقيقة', value: mamoulNum(c.avgPpm, decimals: 1)),
               ],
             ),
             const SizedBox(height: 10),
@@ -367,8 +510,32 @@ class _MamoulAnalysisTabState extends State<MamoulAnalysisTab> with AutomaticKee
                     color: AppColors.textSecondary,
                     background: AppColors.divider,
                   ),
+                if (c.assistedSamples > 0)
+                  StatusPill(
+                    label: 'عيّنات بضغط يد ${mamoulCount(c.assistedSamples)} من ${mamoulCount(c.samplesCount)}',
+                    color: AppColors.warningText,
+                    background: AppColors.warningBg,
+                  ),
+                if (c.interventionsCount > 0)
+                  StatusPill(
+                    label: 'تدخل بشري ${mamoulCount(c.interventionsCount)}'
+                        '${c.interventionsMinutes > 0 ? ' · ${mamoulDuration(c.interventionsMinutes)}' : ''}',
+                    color: AppColors.warningText,
+                    background: AppColors.warningBg,
+                  ),
               ],
             ),
+            if (c.interventionsByKind.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                [
+                  for (final kind in kMamoulInterventionKinds)
+                    if ((c.interventionsByKind[kind] ?? 0) > 0)
+                      '${mamoulInterventionLabel(kind)} ${mamoulCount(c.interventionsByKind[kind]!)}',
+                ].join(' · '),
+                style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted, height: 1.5),
+              ),
+            ],
           ],
         ),
       ),
@@ -459,10 +626,44 @@ class _MamoulAnalysisTabState extends State<MamoulAnalysisTab> with AutomaticKee
             ),
           ],
         ));
+        if (a.assistedSamplesCount > 0) {
+          children.add(const SizedBox(height: 12));
+          children.add(InfoNote(
+            text: 'التوصيات (الأسرع داخل النطاق، أفضل ضبط، الرطوبة، الدفعة، حرارة العجينة) تعتمد على ${mamoulCount(a.cleanSamplesCount)} عيّنة بدون ضغط يد. '
+                'استُبعدت منها ${mamoulCount(a.assistedSamplesCount)} عيّنة فيها ضغط يد، وتجدها في «تركيبات بضغط اليد» و«أثر ضغط اليد».',
+            color: AppColors.warningText,
+            icon: Icons.pan_tool_outlined,
+          ));
+        }
+        children.add(const SizedBox(height: 18));
+        children.add(_fastestSection(a));
         children.add(const SizedBox(height: 18));
         children.add(_recommendedSection(a));
         children.add(const SizedBox(height: 18));
         children.add(_allSpeedsSection(a));
+        if (a.assistedSpeeds.isNotEmpty) {
+          children.add(const SizedBox(height: 18));
+          children.add(_assistedSection(a));
+        }
+        if (a.byPressure.isNotEmpty) {
+          children.add(const SizedBox(height: 18));
+          children.add(_groupStatsSection(
+            'أثر ضغط اليد',
+            a.byPressure,
+            pressure: true,
+            rich: true,
+            subtitle: 'ماذا يضيف ضغط اليد؟ قارن القطع/دقيقة ونسبة الخارج عن النطاق بين «بدون ضغط يد» وكل مستوى. هذه الأرقام للاطلاع ولا تدخل في التوصيات.',
+          ));
+        }
+        if (a.byDoughTemp.isNotEmpty) {
+          children.add(const SizedBox(height: 18));
+          children.add(_groupStatsSection(
+            'الأوزان حسب حرارة العجينة',
+            a.byDoughTemp,
+            rich: true,
+            subtitle: 'شرائح من ٥ درجات مئوية: أي حرارة تعطي وزنًا أثبت وإنتاجًا أعلى؟',
+          ));
+        }
         if (a.byMoisture.isNotEmpty) {
           children.add(const SizedBox(height: 18));
           children.add(_groupStatsSection('الأوزان حسب رطوبة العجينة', a.byMoisture, moisture: true));

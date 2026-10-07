@@ -6,8 +6,9 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import 'mamoul_widgets.dart';
 
-/// النوافذ السفلية الخاصة بتشغيلة المعمول: إضافة/تعديل عيّنة أوزان، تغيير
-/// السرعات، تسجيل عيوب، وإغلاق التشغيلة. كلها تحفظ بنفسها عبر
+/// النوافذ السفلية الخاصة بتشغيلة المعمول: إضافة/تعديل عيّنة أوزان (مع قطع/دقيقة
+/// وضغط اليد وحرارة العجينة)، تغيير السرعات، تسجيل عيوب، تسجيل تدخل بشري،
+/// وإغلاق التشغيلة. كلها تحفظ بنفسها عبر
 /// [MamoulMonitorService] وتستدعي [notifyMamoulChanged] ثم تغلق بـ true.
 
 /// عنوان النافذة السفلية مع مقبض صغير.
@@ -72,7 +73,12 @@ class MamoulSampleSheet extends StatefulWidget {
 class _MamoulSampleSheetState extends State<MamoulSampleSheet> {
   final TextEditingController _input = TextEditingController();
   final TextEditingController _note = TextEditingController();
+  final TextEditingController _ppm = TextEditingController();
+  final TextEditingController _temp = TextEditingController();
   final List<double> _weights = <double>[];
+
+  /// ضغط يد العامل: العيّنة الجديدة تبدأ بـ«بدون»؛ null يبقى فقط للعيّنات القديمة غير المسجَّلة.
+  String? _pressure = 'none';
   bool _saving = false;
   String? _error;
 
@@ -83,6 +89,9 @@ class _MamoulSampleSheetState extends State<MamoulSampleSheet> {
     if (e != null) {
       _weights.addAll(e.weights);
       _note.text = e.note ?? '';
+      _ppm.text = mamoulPlainNumber(e.piecesPerMin);
+      _temp.text = mamoulPlainNumber(e.doughTemp);
+      _pressure = e.pressureLevel;
     }
   }
 
@@ -90,7 +99,20 @@ class _MamoulSampleSheetState extends State<MamoulSampleSheet> {
   void dispose() {
     _input.dispose();
     _note.dispose();
+    _ppm.dispose();
+    _temp.dispose();
     super.dispose();
+  }
+
+  /// يقرأ حقلًا رقميًا اختياريًا: فارغ → null، غير صالح → يرمي FormatException بنص الخطأ.
+  double? _readOptional(TextEditingController c, String label, double min, double max) {
+    final raw = c.text.trim();
+    if (raw.isEmpty) return null;
+    final v = mamoulParseNumber(raw);
+    if (v == null || !v.isFinite || v < min || v > max) {
+      throw FormatException('$label غير صحيح (من ${mamoulNum(min)} إلى ${mamoulNum(max)})');
+    }
+    return v;
   }
 
   /// يقرأ ما كُتب في الحقل (رقم أو عدة أرقام بمسافات) ويضيفه للقائمة.
@@ -127,6 +149,15 @@ class _MamoulSampleSheetState extends State<MamoulSampleSheet> {
       setState(() => _error = 'أدخل وزن قطعة واحدة على الأقل');
       return;
     }
+    double? ppm;
+    double? temp;
+    try {
+      ppm = _readOptional(_ppm, 'عدد القطع في الدقيقة', 0.1, 5000);
+      temp = _readOptional(_temp, 'حرارة العجينة', 0, 100);
+    } on FormatException catch (err) {
+      setState(() => _error = err.message);
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
@@ -135,9 +166,23 @@ class _MamoulSampleSheetState extends State<MamoulSampleSheet> {
       final note = _nullIfBlank(_note.text);
       final e = widget.existing;
       if (e == null) {
-        await MamoulMonitorService.addSample(widget.run.id, weights: List<double>.from(_weights), note: note);
+        await MamoulMonitorService.addSample(
+          widget.run.id,
+          weights: List<double>.from(_weights),
+          note: note,
+          piecesPerMin: ppm,
+          pressureLevel: _pressure,
+          doughTemp: temp,
+        );
       } else {
-        await MamoulMonitorService.updateSample(e.id, weights: List<double>.from(_weights), note: note);
+        await MamoulMonitorService.updateSample(
+          e.id,
+          weights: List<double>.from(_weights),
+          note: note,
+          piecesPerMin: ppm,
+          pressureLevel: _pressure,
+          doughTemp: temp,
+        );
       }
       notifyMamoulChanged();
       if (!mounted) return;
@@ -245,6 +290,46 @@ class _MamoulSampleSheetState extends State<MamoulSampleSheet> {
             ),
           ),
         ],
+        const SizedBox(height: 16),
+        const MamoulSectionTitle('أداء المكينة وقت العيّنة (القطع والحرارة اختياريان)'),
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const MamoulFieldLabel('القطع في الدقيقة'),
+                  MamoulNumberField(controller: _ppm, hint: 'مثال: ١٢٠'),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const MamoulFieldLabel('حرارة العجينة (°م)'),
+                  MamoulNumberField(controller: _temp, hint: 'مثال: ٢٨'),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        const MamoulFieldLabel('هل ضغط العامل بيده على المكينة؟'),
+        MamoulChoiceRow<String>(
+          options: kMamoulPressureLevels,
+          labelOf: (v) => v == 'none' ? 'بدون ضغط يد' : 'ضغط يد ${mamoulPressureLabel(v)}',
+          selected: _pressure,
+          onSelected: (v) => setState(() => _pressure = v),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'اختر «بدون ضغط يد» إن كانت المكينة تعمل وحدها. العيّنات التي فيها ضغط يد لا تدخل في توصيات السرعات.',
+          style: TextStyle(fontSize: 11.5, color: AppColors.textMuted, height: 1.5),
+        ),
         const SizedBox(height: 14),
         MamoulTextField(controller: _note, hint: 'ملاحظة على العيّنة (اختياري)', maxLength: 300),
         if (_error != null) ...[
@@ -542,6 +627,109 @@ class _MamoulDefectSheetState extends State<MamoulDefectSheet> {
           label: _saving ? 'جارٍ الحفظ...' : 'حفظ العيوب',
           color: kMamoulColor,
           icon: Icons.check,
+          onPressed: _saving ? null : _save,
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// التدخل البشري
+// ---------------------------------------------------------------------------
+
+/// تسجيل تدخل بشري على المكينة أثناء التشغيل (ضغط يدوي، فك توائم، تعديل العجينة،
+/// تنظيف، ضبط يدوي، أخرى). تُحسب أعدادها ومدتها في التحليل لكل مكينة.
+class MamoulInterventionSheet extends StatefulWidget {
+  final MamoulRun run;
+
+  const MamoulInterventionSheet({super.key, required this.run});
+
+  @override
+  State<MamoulInterventionSheet> createState() => _MamoulInterventionSheetState();
+}
+
+class _MamoulInterventionSheetState extends State<MamoulInterventionSheet> {
+  String _kind = 'pressure';
+  final TextEditingController _minutes = TextEditingController();
+  final TextEditingController _note = TextEditingController();
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _minutes.dispose();
+    _note.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    final note = _nullIfBlank(_note.text);
+    if (_kind == 'other' && note == null) {
+      setState(() => _error = 'اكتب وصف التدخل');
+      return;
+    }
+    int? minutes;
+    final raw = _minutes.text.trim();
+    if (raw.isNotEmpty) {
+      final v = mamoulParseNumber(raw);
+      if (v == null || !v.isFinite || v < 0 || v != v.roundToDouble() || v > 1000) {
+        setState(() => _error = 'المدة تُكتب بالدقائق كرقم صحيح (من ٠ إلى ١٬٠٠٠)');
+        return;
+      }
+      minutes = v.toInt();
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await MamoulMonitorService.addIntervention(widget.run.id, kind: _kind, minutes: minutes, note: note);
+      notifyMamoulChanged();
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (err) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = mamoulErrorText(err);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const _SheetHeader(
+          title: 'تسجيل تدخل بشري',
+          subtitle: 'سجّل أي تدخل يدوي على المكينة (مثل الضغط على الخروج). كثرة التدخل تعني أن المكينة لا تعطي الوزن وحدها.',
+        ),
+        const MamoulFieldLabel('نوع التدخل', required: true),
+        MamoulChoiceRow<String>(
+          options: kMamoulInterventionKinds,
+          labelOf: mamoulInterventionLabel,
+          selected: _kind,
+          onSelected: (v) => setState(() => _kind = v),
+        ),
+        const SizedBox(height: 14),
+        const MamoulFieldLabel('المدة بالدقائق (اختياري)'),
+        MamoulNumberField(controller: _minutes, hint: 'كم دقيقة استمر التدخل؟', decimal: false),
+        const SizedBox(height: 14),
+        MamoulFieldLabel(_kind == 'other' ? 'وصف التدخل' : 'ملاحظة (اختياري)', required: _kind == 'other'),
+        MamoulTextField(controller: _note, hint: _kind == 'other' ? 'ماذا فعلت بالضبط؟' : 'مثال: ضغط قوي لمدة قصيرة', maxLength: 300),
+        if (_error != null) ...[
+          const SizedBox(height: 10),
+          Text(_error!, style: const TextStyle(fontSize: 13, color: kMamoulDanger, height: 1.5)),
+        ],
+        const SizedBox(height: 14),
+        PrimaryButton(
+          label: _saving ? 'جارٍ الحفظ...' : 'حفظ التدخل',
+          color: kMamoulColor,
+          icon: Icons.pan_tool_outlined,
           onPressed: _saving ? null : _save,
         ),
       ],

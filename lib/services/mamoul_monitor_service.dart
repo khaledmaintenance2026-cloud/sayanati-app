@@ -167,18 +167,41 @@ class MamoulMonitorService {
 
   // ------------------------------- العيّنات -------------------------------
 
-  static Future<MamoulSample> addSample(String runId, {required List<double> weights, String? note}) async {
+  /// [piecesPerMin] قطع/دقيقة، [pressureLevel] ضغط اليد (none/light/medium/strong)،
+  /// [doughTemp] حرارة العجينة °م — كلها اختيارية.
+  static Future<MamoulSample> addSample(
+    String runId, {
+    required List<double> weights,
+    String? note,
+    double? piecesPerMin,
+    String? pressureLevel,
+    double? doughTemp,
+  }) async {
     final data = await _api.post('$_base/runs/$runId/samples', {
       'weights': weights,
       'note': note,
+      'piecesPerMin': piecesPerMin,
+      'pressureLevel': pressureLevel,
+      'doughTemp': doughTemp,
     });
     return MamoulSample.fromApi(Map<String, dynamic>.from(_map(data)['sample'] as Map));
   }
 
-  static Future<MamoulSample> updateSample(String id, {required List<double> weights, String? note}) async {
+  /// كل الحقول تُرسَل (null في قطع/ضغط/حرارة = مسح القيمة).
+  static Future<MamoulSample> updateSample(
+    String id, {
+    required List<double> weights,
+    String? note,
+    double? piecesPerMin,
+    String? pressureLevel,
+    double? doughTemp,
+  }) async {
     final data = await _api.patch('$_base/samples/$id', {
       'weights': weights,
       'note': note ?? '',
+      'piecesPerMin': piecesPerMin,
+      'pressureLevel': pressureLevel,
+      'doughTemp': doughTemp,
     });
     return MamoulSample.fromApi(Map<String, dynamic>.from(_map(data)['sample'] as Map));
   }
@@ -200,6 +223,27 @@ class MamoulMonitorService {
 
   static Future<void> deleteDefect(String id) async {
     await _api.delete('$_base/defects/$id');
+  }
+
+  // ------------------------------- التدخل البشري -------------------------------
+
+  /// [kind]: pressure | twins | dough | clean | adjust | other (other يلزمها [note]).
+  static Future<MamoulIntervention> addIntervention(
+    String runId, {
+    required String kind,
+    int? minutes,
+    String? note,
+  }) async {
+    final data = await _api.post('$_base/runs/$runId/interventions', {
+      'kind': kind,
+      'minutes': minutes,
+      'note': note,
+    });
+    return MamoulIntervention.fromApi(Map<String, dynamic>.from(_map(data)['intervention'] as Map));
+  }
+
+  static Future<void> deleteIntervention(String id) async {
+    await _api.delete('$_base/interventions/$id');
   }
 
   // ------------------------------- الأعطال -------------------------------
