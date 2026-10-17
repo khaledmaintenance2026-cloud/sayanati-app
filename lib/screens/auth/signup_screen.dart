@@ -14,7 +14,6 @@ class SignupScreen extends StatefulWidget {
 
 class _SignupScreenState extends State<SignupScreen> {
   final _nameCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _loading = false;
@@ -23,24 +22,22 @@ class _SignupScreenState extends State<SignupScreen> {
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _emailCtrl.dispose();
     _phoneCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
   }
 
-  // البريد اختياري: من لا بريد له يسجّل برقم الجوال ويدخل به لاحقًا.
+  // التسجيل والدخول برقم الجوال فقط (لا بريد إلكتروني).
   bool get _canSubmit =>
       _nameCtrl.text.trim().isNotEmpty &&
       _phoneCtrl.text.trim().isNotEmpty &&
-      isPasswordStrongEnough(_passCtrl.text) &&
-      (_emailCtrl.text.trim().isEmpty || _emailCtrl.text.contains('@'));
+      isPasswordStrongEnough(_passCtrl.text);
 
   Future<void> _submit() async {
     if (!_canSubmit) return;
     setState(() => _loading = true);
     final auth = context.read<AuthService>();
-    await auth.signUp(_nameCtrl.text.trim(), _emailCtrl.text.trim(), _passCtrl.text, phone: _phoneCtrl.text.trim());
+    await auth.signUp(_nameCtrl.text.trim(), '', _passCtrl.text, phone: _phoneCtrl.text.trim());
     if (mounted) setState(() => _loading = false);
   }
 
@@ -78,14 +75,6 @@ class _SignupScreenState extends State<SignupScreen> {
                   const Text(
                     'إلزامي — به تدخل التطبيق لاحقًا، ويصلك عليه رمز استعادة كلمة المرور وإشعارات واتساب (تعيين بلاغ، إنجازه، نتيجة تصريح سلامة...).',
                     style: TextStyle(fontSize: 11.5, color: AppColors.textMuted, height: 1.5),
-                  ),
-                  const SizedBox(height: 14),
-                  const _FieldLabel('البريد الإلكتروني (اختياري)'),
-                  TextField(
-                    controller: _emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    onChanged: (_) => setState(() {}),
-                    decoration: _decoration(hint: 'اتركه فارغًا إن لم يكن لديك بريد'),
                   ),
                   const SizedBox(height: 14),
                   const _FieldLabel('كلمة المرور (٨ أحرف على الأقل، فيها حرف ورقم)'),

@@ -6,7 +6,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
 /// استعادة كلمة المرور لمن نسيها (فني أو غيره) — خطوتان في شاشة واحدة:
-///  ١) إدخال رقم الجوال (أو البريد) → يصل رمز من ٦ أرقام على واتساب الحساب.
+///  ١) إدخال رقم الجوال → يصل رمز من ٦ أرقام على واتساب الحساب.
 ///  ٢) إدخال الرمز + كلمة مرور جديدة → ترجع الشاشة بالمُعرِّف إلى شاشة الدخول.
 /// لو لم يصل الرمز أو لم يكن للحساب رقم جوال، يعيّن مسؤول الصيانة كلمة مرور
 /// مؤقتة من لوحة الإدارة (راجع زر "كلمة مرور مؤقتة" في بطاقة المستخدم).
@@ -106,10 +106,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 icon: Icons.chat_outlined,
               ),
               const SizedBox(height: 20),
-              const _FieldLabel('رقم الجوال أو البريد الإلكتروني'),
+              const _FieldLabel('رقم الجوال'),
               TextField(
                 controller: _idCtrl,
-                keyboardType: TextInputType.emailAddress,
+                keyboardType: TextInputType.phone,
                 autofocus: true,
                 onChanged: (_) => setState(() {}),
                 decoration: _decoration(hint: '05xxxxxxxx'),

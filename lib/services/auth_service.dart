@@ -203,9 +203,13 @@ class AppUser {
     this.phone,
   });
 
-  /// ما يُعرض للمستخدم كوسيلة تعريف لحسابه: البريد الحقيقي إن وُجد، وإلا رقم الجوال
-  /// (الحساب المسجَّل بالجوال فقط بريده اصطلاحي داخلي لا يُعرض).
-  String get displayContact => isPlaceholderEmail(email) ? (phone ?? '') : email;
+  /// ما يُعرض للمستخدم كوسيلة تعريف لحسابه: رقم الجوال (هو هوية الدخول الآن).
+  /// يُرجَع للبريد فقط لو لم يكن للحساب رقم (حالة نادرة)، ولا يُعرض البريد الاصطلاحي أبدًا.
+  String get displayContact {
+    final p = (phone ?? '').trim();
+    if (p.isNotEmpty) return p;
+    return isPlaceholderEmail(email) ? '' : email;
+  }
 
   /// يبني مستخدمًا من استجابة سيرفر صيانتي المحلي (حقل "user" في ردود
   /// /api/auth/* و /api/users) — الشكل: {id, name, email, role, status,
@@ -288,7 +292,7 @@ class AuthService extends ChangeNotifier {
     return 'session'; // القيمة نفسها غير مستخدَمة فعليًا الآن — ApiClient يرفق الرمز الحقيقي تلقائيًا بكل طلب.
   }
 
-  /// [identifier]: بريد إلكتروني أو رقم جوال (السيرفر يميّز بينهما).
+  /// [identifier]: رقم الجوال (الدخول بالجوال فقط).
   Future<bool> signIn(String identifier, String password) async {
     lastError = null;
     try {
