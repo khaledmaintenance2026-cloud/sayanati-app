@@ -171,7 +171,7 @@ jobs:
       # وإلا فبمفتاح Debug مؤقتًا كالسابق.
       - name: بناء APK (نسخة release)
         continue-on-error: true
-        run: flutter build apk --release
+       run: flutter build apk --release --no-shrink
 
       - name: رفع APK كملف تحميل (Artifact)
         if: always()
