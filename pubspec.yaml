@@ -18,6 +18,7 @@ dependencies:
   # (راجع lib/services/api_client.dart) — بدون أي حزمة إضافية غير http نفسها.
   http: ^1.2.2
   shared_preferences: ^2.3.2
+  shared_preferences_android: 2.4.28
 
   # تسجيل الدخول عبر جوجل — يحتاج معرّف عميل (Client ID) يُضبط من السيرفر
   # نفسه (site_settings) فلا يحتاج هذا الملف أي تعديل لاحقًا. راجع
