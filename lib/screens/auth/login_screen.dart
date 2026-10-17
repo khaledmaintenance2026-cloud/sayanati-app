@@ -5,6 +5,7 @@ import '../../services/auth_service.dart';
 import '../../services/constants.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import 'forgot_password_screen.dart';
 import 'signup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -48,6 +49,19 @@ class _LoginScreenState extends State<LoginScreen> {
     if (mounted) setState(() => _loading = false);
   }
 
+  Future<void> _forgotPassword() async {
+    final result = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => ForgotPasswordScreen(initialIdentifier: _emailCtrl.text.trim())),
+    );
+    // رجع بعد نجاح تغيير كلمة المرور: نملأ المُعرِّف ونترك كلمة المرور لصاحبها.
+    if (result != null && result.isNotEmpty && mounted) {
+      setState(() {
+        _emailCtrl.text = result;
+        _passCtrl.clear();
+      });
+    }
+  }
+
   Future<void> _submitGoogle() async {
     setState(() => _googleLoading = true);
     final auth = context.read<AuthService>();
@@ -84,11 +98,12 @@ class _LoginScreenState extends State<LoginScreen> {
               const Text('تسجيل الدخول للمتابعة', textAlign: TextAlign.center, style: TextStyle(fontSize: 13.5, color: AppColors.textMuted)),
               const SizedBox(height: 32),
               if (!kApiBaseUrlConfigured) const ServerConfigWarning(),
-              const _FieldLabel('البريد الإلكتروني'),
+              const _FieldLabel('رقم الجوال أو البريد الإلكتروني'),
               TextField(
                 controller: _emailCtrl,
                 keyboardType: TextInputType.emailAddress,
-                decoration: _decoration(hint: 'name@example.com'),
+                autofillHints: const [AutofillHints.username],
+                decoration: _decoration(hint: '05xxxxxxxx أو name@example.com'),
               ),
               const SizedBox(height: 14),
               const _FieldLabel('كلمة المرور'),
@@ -106,7 +121,14 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 10),
                 Text(auth.lastError!, style: const TextStyle(color: Color(0xFFB3261E), fontSize: 12.5)),
               ],
-              const SizedBox(height: 20),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: _forgotPassword,
+                  child: const Text('نسيت كلمة المرور؟', style: TextStyle(color: AppColors.maintenance, fontWeight: FontWeight.w600)),
+                ),
+              ),
+              const SizedBox(height: 8),
               _loading
                   ? const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
                   : PrimaryButton(label: 'تسجيل الدخول', color: AppColors.maintenance, onPressed: _submit),

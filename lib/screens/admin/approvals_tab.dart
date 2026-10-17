@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/api_client.dart';
@@ -118,6 +119,77 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
     await _load();
   }
 
+  /// يعيّن كلمة مرور مؤقتة جديدة لمن نسي كلمة مروره (فني مثلًا) ويعرضها
+  /// للمسؤول مرة واحدة — وتُرسَل أيضًا إلى واتساب صاحب الحساب إن كان له رقم.
+  Future<void> _resetPassword(String uid, String name) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('كلمة مرور مؤقتة', style: TextStyle(fontSize: 15)),
+        content: Text('سيتم تعيين كلمة مرور مؤقتة جديدة لـ «$name» وتتوقف كلمة مروره القديمة عن العمل. المتابعة؟'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('إلغاء')),
+          ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('تعيين')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final data = (await _api.patch('/users/$uid/reset-password')) as Map<String, dynamic>;
+      if (!mounted) return;
+      final temp = data['temporaryPassword'] as String? ?? '';
+      final waNote = switch (data['whatsapp']) {
+        'queued' => 'أُرسلت الكلمة أيضًا إلى واتساب المستخدم.',
+        'no_phone' => 'لا يوجد رقم جوال لهذا المستخدم — أبلغه بالكلمة مباشرة.',
+        _ => 'لم تُرسَل على واتساب — أبلغه بالكلمة مباشرة.',
+      };
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('كلمة المرور المؤقتة — $name', style: const TextStyle(fontSize: 14.5)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(12)),
+                child: SelectableText(
+                  temp,
+                  textAlign: TextAlign.center,
+                  textDirection: TextDirection.ltr,
+                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 3, fontFamily: 'monospace'),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(waNote, style: const TextStyle(fontSize: 12, color: AppColors.textMuted, height: 1.5)),
+              const SizedBox(height: 6),
+              const Text(
+                'تظهر هذه الكلمة هنا مرة واحدة فقط. اطلب منه تغييرها بعد الدخول من «الحساب والأمان».',
+                style: TextStyle(fontSize: 12, color: Color(0xFFB45309), height: 1.5),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: temp));
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('تم نسخ الكلمة')));
+                }
+              },
+              child: const Text('نسخ'),
+            ),
+            ElevatedButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('إغلاق')),
+          ],
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
@@ -166,6 +238,7 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
                 onChangeGeneralFacility: (facility) => _setGeneralFacility(u['id'].toString(), facility),
                 onChangePhone: (phone) => _setPhone(u['id'].toString(), phone),
                 onRevoke: () => _revoke(u['id'].toString()),
+                onResetPassword: () => _resetPassword(u['id'].toString(), (u['name'] as String?) ?? ''),
               )),
         ],
       ),
@@ -205,7 +278,8 @@ class _PendingCardState extends State<_PendingCard> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text((widget.user['name'] as String?) ?? '', style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold)),
-          Text((widget.user['email'] as String?) ?? '', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+          if (!isPlaceholderEmail(widget.user['email'] as String?))
+            Text((widget.user['email'] as String?) ?? '', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
           if ((widget.user['phone'] as String?)?.isNotEmpty ?? false)
             Text(widget.user['phone'] as String, style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
           const SizedBox(height: 10),
@@ -347,6 +421,7 @@ class _ApprovedCard extends StatelessWidget {
   final void Function(String? facility) onChangeGeneralFacility;
   final void Function(String? phone) onChangePhone;
   final VoidCallback onRevoke;
+  final VoidCallback onResetPassword;
 
   const _ApprovedCard({
     required this.user,
@@ -358,6 +433,7 @@ class _ApprovedCard extends StatelessWidget {
     required this.onChangeGeneralFacility,
     required this.onChangePhone,
     required this.onRevoke,
+    required this.onResetPassword,
   });
 
   Future<void> _editPhone(BuildContext context) async {
@@ -403,7 +479,8 @@ class _ApprovedCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text((user['name'] as String?) ?? '', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                    Text((user['email'] as String?) ?? '', style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+                    if (!isPlaceholderEmail(user['email'] as String?))
+                      Text((user['email'] as String?) ?? '', style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
                     InkWell(
                       onTap: locked ? null : () => _editPhone(context),
                       child: Padding(
@@ -437,6 +514,11 @@ class _ApprovedCard extends StatelessWidget {
                       .map((r) => DropdownMenuItem(value: r, child: Text(roleLabel(r), style: const TextStyle(fontSize: 12.5))))
                       .toList(),
                   onChanged: (v) => v == null ? null : onChangeRole(v),
+                ),
+                IconButton(
+                  tooltip: 'كلمة مرور مؤقتة',
+                  icon: const Icon(Icons.lock_reset, size: 20, color: AppColors.maintenance),
+                  onPressed: onResetPassword,
                 ),
                 IconButton(
                   tooltip: 'إلغاء الاعتماد',

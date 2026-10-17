@@ -44,7 +44,7 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
               const Text('بانتظار اعتماد الحساب', style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
               const SizedBox(height: 10),
               Text(
-                'حسابكم (${auth.currentUser?.email ?? ''}) بانتظار موافقة مدير النظام وتحديد صلاحيتكم. حدّثوا الصفحة بعد إبلاغه.',
+                'حسابكم (${auth.currentUser?.displayContact ?? ''}) بانتظار موافقة مدير النظام وتحديد صلاحيتكم. حدّثوا الصفحة بعد إبلاغه.',
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 13.5, color: AppColors.textMuted, height: 1.6),
               ),

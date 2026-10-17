@@ -149,6 +149,21 @@ String roleLabel(AppRole r) {
   }
 }
 
+/// البريد الاصطلاحي الداخلي الذي يعطيه السيرفر لمن سجّل برقم الجوال فقط (بلا
+/// بريد) — لا يُعرض للمستخدم أبدًا، ولا يُراسَل. راجع lib/phoneAuth.js بالسيرفر.
+bool isPlaceholderEmail(String? email) => email != null && email.toLowerCase().endsWith('@phone.sayanati.local');
+
+/// قوة كلمة المرور المطلوبة (نفس شرط السيرفر): ٨ أحرف فأكثر، فيها رقم وحرف.
+bool isPasswordStrongEnough(String pw) =>
+    pw.length >= 8 && RegExp(r'\d').hasMatch(pw) && RegExp(r'[^\d\s]').hasMatch(pw);
+
+/// نتيجة عملية مصادقة مستقلة (استعادة كلمة المرور) تُعرض في شاشتها هي فقط.
+class AuthActionResult {
+  final bool ok;
+  final String message;
+  const AuthActionResult(this.ok, this.message);
+}
+
 class AppUser {
   final String uid;
   final String email;
@@ -187,6 +202,10 @@ class AppUser {
     this.generalFacility,
     this.phone,
   });
+
+  /// ما يُعرض للمستخدم كوسيلة تعريف لحسابه: البريد الحقيقي إن وُجد، وإلا رقم الجوال
+  /// (الحساب المسجَّل بالجوال فقط بريده اصطلاحي داخلي لا يُعرض).
+  String get displayContact => isPlaceholderEmail(email) ? (phone ?? '') : email;
 
   /// يبني مستخدمًا من استجابة سيرفر صيانتي المحلي (حقل "user" في ردود
   /// /api/auth/* و /api/users) — الشكل: {id, name, email, role, status,
@@ -269,11 +288,12 @@ class AuthService extends ChangeNotifier {
     return 'session'; // القيمة نفسها غير مستخدَمة فعليًا الآن — ApiClient يرفق الرمز الحقيقي تلقائيًا بكل طلب.
   }
 
-  Future<bool> signIn(String email, String password) async {
+  /// [identifier]: بريد إلكتروني أو رقم جوال (السيرفر يميّز بينهما).
+  Future<bool> signIn(String identifier, String password) async {
     lastError = null;
     try {
       final data = await _api.post('/auth/login', {
-        'email': email.trim(),
+        'identifier': identifier.trim(),
         'password': password,
       });
       await _api.setToken(data['token'] as String);
@@ -294,7 +314,8 @@ class AuthService extends ChangeNotifier {
     try {
       final data = await _api.post('/auth/register', {
         'name': name.trim(),
-        'email': email.trim(),
+        // البريد اختياري: بدونه يُسجَّل الحساب برقم الجوال فقط.
+        if (email.trim().isNotEmpty) 'email': email.trim(),
         'password': password,
         if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
       });
@@ -439,6 +460,36 @@ class AuthService extends ChangeNotifier {
       lastError = e.message;
       notifyListeners();
       return false;
+    }
+  }
+
+  /// "نسيت كلمة المرور": يطلب من السيرفر إرسال رمز من ٦ أرقام إلى واتساب الحساب.
+  /// عمدًا لا يمس [lastError] ولا [status] (يعيد النتيجة مباشرة) كي لا يظهر خطأ
+  /// الاستعادة لاحقًا تحت حقول شاشة الدخول.
+  Future<AuthActionResult> requestPasswordReset(String identifier) async {
+    try {
+      final data = await _api.post('/auth/forgot-password', {'identifier': identifier.trim()});
+      return AuthActionResult(true, (data['message'] as String?) ?? 'تم إرسال الرمز إلى واتساب');
+    } on ApiException catch (e) {
+      return AuthActionResult(false, e.message);
+    } catch (_) {
+      return const AuthActionResult(false, 'تعذّر إرسال الرمز، حاول مرة أخرى');
+    }
+  }
+
+  /// يُكمل الاستعادة: الرمز الذي وصل على واتساب + كلمة المرور الجديدة.
+  Future<AuthActionResult> resetPasswordWithCode(String identifier, String code, String newPassword) async {
+    try {
+      await _api.post('/auth/reset-password', {
+        'identifier': identifier.trim(),
+        'code': code.trim(),
+        'newPassword': newPassword,
+      });
+      return const AuthActionResult(true, 'تم تغيير كلمة المرور');
+    } on ApiException catch (e) {
+      return AuthActionResult(false, e.message);
+    } catch (_) {
+      return const AuthActionResult(false, 'تعذّر تغيير كلمة المرور، حاول مرة أخرى');
     }
   }
 

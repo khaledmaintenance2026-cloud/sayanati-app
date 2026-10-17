@@ -85,7 +85,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   }
 
   bool get _canSubmit =>
-      _currentCtrl.text.isNotEmpty && _newCtrl.text.length >= 6 && _newCtrl.text == _confirmCtrl.text.trim();
+      _currentCtrl.text.isNotEmpty && isPasswordStrongEnough(_newCtrl.text) && _newCtrl.text == _confirmCtrl.text.trim();
 
   Future<void> _submit() async {
     setState(() {
@@ -154,7 +154,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               ),
             ),
             const SizedBox(height: 14),
-            const _FieldLabel('كلمة المرور الجديدة (٦ أحرف على الأقل)'),
+            const _FieldLabel('كلمة المرور الجديدة (٨ أحرف على الأقل، فيها حرف ورقم)'),
             TextField(
               controller: _newCtrl,
               obscureText: _obscureNew,

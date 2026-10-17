@@ -29,11 +29,12 @@ class _SignupScreenState extends State<SignupScreen> {
     super.dispose();
   }
 
+  // البريد اختياري: من لا بريد له يسجّل برقم الجوال ويدخل به لاحقًا.
   bool get _canSubmit =>
       _nameCtrl.text.trim().isNotEmpty &&
-      _emailCtrl.text.trim().isNotEmpty &&
       _phoneCtrl.text.trim().isNotEmpty &&
-      _passCtrl.text.length >= 6;
+      isPasswordStrongEnough(_passCtrl.text) &&
+      (_emailCtrl.text.trim().isEmpty || _emailCtrl.text.contains('@'));
 
   Future<void> _submit() async {
     if (!_canSubmit) return;
@@ -66,14 +67,6 @@ class _SignupScreenState extends State<SignupScreen> {
                   const _FieldLabel('الاسم الكامل'),
                   TextField(controller: _nameCtrl, onChanged: (_) => setState(() {}), decoration: _decoration()),
                   const SizedBox(height: 14),
-                  const _FieldLabel('البريد الإلكتروني'),
-                  TextField(
-                    controller: _emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    onChanged: (_) => setState(() {}),
-                    decoration: _decoration(hint: 'name@example.com'),
-                  ),
-                  const SizedBox(height: 14),
                   const _FieldLabel('رقم الجوال'),
                   TextField(
                     controller: _phoneCtrl,
@@ -83,11 +76,19 @@ class _SignupScreenState extends State<SignupScreen> {
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'إلزامي — يُستخدم لإرسال إشعارات واتساب موجَّهة لك شخصيًا (تعيين بلاغ، إنجازه، نتيجة تصريح سلامة...).',
+                    'إلزامي — به تدخل التطبيق لاحقًا، ويصلك عليه رمز استعادة كلمة المرور وإشعارات واتساب (تعيين بلاغ، إنجازه، نتيجة تصريح سلامة...).',
                     style: TextStyle(fontSize: 11.5, color: AppColors.textMuted, height: 1.5),
                   ),
                   const SizedBox(height: 14),
-                  const _FieldLabel('كلمة المرور (٦ أحرف على الأقل)'),
+                  const _FieldLabel('البريد الإلكتروني (اختياري)'),
+                  TextField(
+                    controller: _emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    onChanged: (_) => setState(() {}),
+                    decoration: _decoration(hint: 'اتركه فارغًا إن لم يكن لديك بريد'),
+                  ),
+                  const SizedBox(height: 14),
+                  const _FieldLabel('كلمة المرور (٨ أحرف على الأقل، فيها حرف ورقم)'),
                   TextField(
                     controller: _passCtrl,
                     obscureText: _obscure,
