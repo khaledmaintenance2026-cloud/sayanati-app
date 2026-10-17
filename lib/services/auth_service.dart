@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -256,32 +258,49 @@ class AuthService extends ChangeNotifier {
     _restoreSession();
   }
 
+  /// استرجاع الجلسة المحفوظة عند فتح التطبيق. القاعدة الصارمة هنا: مهما حدث
+  /// (شبكة بطيئة، سيرفر لا يردّ، تعذّر قراءة التخزين المحلي) لا تبقى الحالة
+  /// [AuthStatus.loading] أبدًا — وإلا دار مؤشر التحميل للأبد ولم يفتح التطبيق.
+  /// كل خطوة لها مهلة، وأي فشل ينتهي بشاشة الدخول (مع الرمز المحفوظ كما هو لو كان
+  /// السبب شبكة فقط، فلا يُسجَّل المستخدم خروجه بسبب انقطاع عابر).
   Future<void> _restoreSession() async {
-    final token = await _api.loadPersistedToken();
-    if (token == null) {
-      status = AuthStatus.signedOut;
-      notifyListeners();
-      return;
-    }
     try {
-      final data = await _api.get('/auth/me');
-      currentUser = AppUser.fromApi(data['user'] as Map<String, dynamic>);
-      status = _statusFor(currentUser!);
-      // إعادة محاولة تسجيل توكن الإشعار هنا تحديدًا: عند فتح التطبيق بجلسة
-      // محفوظة سابقًا، هذه أول لحظة يصبح فيها رمز الدخول مؤكَّدًا وصالحًا —
-      // لو حاول push_notification_service التسجيل قبل اكتمال هذا الاسترجاع
-      // (سباق توقيت عند بدء التشغيل)، فشلت المحاولة الأولى بصمت (401) ولن
-      // تُعاد أبدًا بدون هذا الاستدعاء.
-      PushNotificationService.registerTokenNow();
+      final token = await _api.loadPersistedToken().timeout(const Duration(seconds: 10));
+      if (_api.storageError != null) {
+        // يظهر هذا السطر تحت حقول شاشة الدخول فنعرف سبب تعذّر التخزين على الجهاز.
+        lastError = 'تعذّرت قراءة التخزين المحلي: ${_api.storageError}';
+      }
+      if (token == null) {
+        status = AuthStatus.signedOut;
+        return;
+      }
+      try {
+        final data = await _api.get('/auth/me').timeout(const Duration(seconds: 20));
+        currentUser = AppUser.fromApi(data['user'] as Map<String, dynamic>);
+        status = _statusFor(currentUser!);
+        // إعادة محاولة تسجيل توكن الإشعار هنا تحديدًا: عند فتح التطبيق بجلسة
+        // محفوظة سابقًا، هذه أول لحظة يصبح فيها رمز الدخول مؤكَّدًا وصالحًا.
+        PushNotificationService.registerTokenNow();
+      } catch (e) {
+        final offline = e is TimeoutException || (e is ApiException && e.isConnectionError);
+        // الرمز لم يعد صالحًا (انتهت صلاحيته أو أُلغي الحساب) → نمسحه. أما لو كان
+        // السبب شبكة/مهلة فنُبقيه ليدخل المستخدم تلقائيًا في المرة القادمة.
+        if (!offline) await _api.clearToken();
+        status = AuthStatus.signedOut;
+        if (e is ApiException && e.isConnectionError) {
+          lastError = e.message;
+        } else if (e is TimeoutException) {
+          lastError = 'تعذّر الاتصال بالسيرفر — تحقق من الإنترنت ثم أعد فتح التطبيق';
+        }
+      }
     } catch (e) {
-      // الرمز المحفوظ لم يعد صالحًا (انتهت صلاحيته، أو أُلغي اعتماد الحساب
-      // وحُذف) — وليس بالضرورة خطأ شبكة عابر؛ في حالة تعذّر الاتصال نُبقي
-      // المستخدم في وضع "غير مسجّل" ونعرض السبب بدل تسجيل خروج صامت مربك.
-      await _api.clearToken();
+      // خطأ غير متوقع (مثل تعذّر قراءة التخزين المحلي): نذهب لشاشة الدخول بدل
+      // الدوران، ونعرض السبب الحقيقي تحت حقول الدخول لنعرف ما الذي يعطّل الجهاز.
       status = AuthStatus.signedOut;
-      if (e is ApiException && e.isConnectionError) lastError = e.message;
+      lastError = 'تعذّر بدء التطبيق: $e';
+    } finally {
+      notifyListeners();
     }
-    notifyListeners();
   }
 
   /// أُبقي هذا الاسم والنوع (Future<String>) للتوافق مع أي كود قديم ينتظر

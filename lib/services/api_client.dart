@@ -34,6 +34,10 @@ class ApiClient {
 
   String? _token;
 
+  /// آخر خطأ حدث عند قراءة/كتابة التخزين المحلي (SharedPreferences) — null لو لا خطأ.
+  /// يُعرض في شاشة الدخول لتشخيص جوال لا يعمل فيه التخزين، بدل دوران صامت بلا نهاية.
+  String? storageError;
+
   bool get hasToken => _token != null;
 
   /// قيمة رمز الدخول (JWT) نفسه — تُستخدم فقط لبناء روابط تنزيل مباشرة تُفتح
@@ -44,22 +48,41 @@ class ApiClient {
   String? get token => _token;
 
   /// يُستدعى مرة واحدة عند بدء التطبيق لاسترجاع رمز دخول محفوظ من جلسة سابقة.
+  ///
+  /// مهم: لا يرمي أي استثناء أبدًا. لو تعذّر التخزين المحلي (جوال به مشكلة في
+  /// التخزين مثلًا) نكمل بلا جلسة محفوظة ونسجّل السبب في [storageError] —
+  /// بدل أن يعلق التطبيق في شاشة التحميل للأبد.
   Future<String?> loadPersistedToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    _token = prefs.getString(_tokenPrefKey);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _token = prefs.getString(_tokenPrefKey);
+    } catch (e) {
+      storageError = e.toString();
+      _token = null;
+    }
     return _token;
   }
 
+  /// يحفظ الرمز في الذاكرة أولًا (فيعمل الدخول في الجلسة الحالية دائمًا)، ثم يحاول
+  /// حفظه على الجهاز لاسترجاعه عند الفتح التالي — فشل الحفظ لا يمنع الدخول.
   Future<void> setToken(String token) async {
     _token = token;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenPrefKey, token);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_tokenPrefKey, token);
+    } catch (e) {
+      storageError = e.toString();
+    }
   }
 
   Future<void> clearToken() async {
     _token = null;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenPrefKey);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_tokenPrefKey);
+    } catch (e) {
+      storageError = e.toString();
+    }
   }
 
   Uri _uri(String path, [Map<String, dynamic>? query]) {
