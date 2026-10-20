@@ -7,6 +7,7 @@ import '../../services/mamoul_monitor_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import 'mamoul_fault_form_screen.dart';
+import 'mamoul_rate_counter_sheet.dart';
 import 'mamoul_run_form_screen.dart';
 import 'mamoul_run_sheets.dart';
 import 'mamoul_widgets.dart';
@@ -124,6 +125,15 @@ class _MamoulRunScreenState extends State<MamoulRunScreen> {
   Future<void> _addSample(MamoulRun run, {MamoulSample? existing}) async {
     final done = await showMamoulSheet<bool>(context, (ctx) => MamoulSampleSheet(run: run, existing: existing));
     if (done == true && mounted) showMamoulSnack(context, existing == null ? 'سُجّلت العيّنة' : 'حُفظ تعديل العيّنة');
+  }
+
+  /// عدّاد الإنتاج بالدقيقة: لو اختار الفني «تسجيل في عيّنة» تُفتح نافذة العيّنة
+  /// وفيها القطع/دقيقة مكتوبة مسبقًا.
+  Future<void> _openRateCounter(MamoulRun run) async {
+    final ppm = await showMamoulSheet<double>(context, (ctx) => MamoulRateCounterSheet(run: run));
+    if (ppm == null || !mounted) return;
+    final done = await showMamoulSheet<bool>(context, (ctx) => MamoulSampleSheet(run: run, initialPiecesPerMin: ppm));
+    if (done == true && mounted) showMamoulSnack(context, 'سُجّلت العيّنة');
   }
 
   Future<void> _deleteSample(MamoulSample s) async {
@@ -327,6 +337,34 @@ class _MamoulRunScreenState extends State<MamoulRunScreen> {
             const SizedBox(height: 12),
             MamoulOutlineButton(label: 'تغيير السرعات', icon: Icons.speed, onPressed: () => _changeSpeeds(run)),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _rateCounterCard(MamoulRun run) {
+    final avgPpm = run.summary.avgPiecesPerMin;
+    return MamoulCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const MamoulSectionTitle('عدّاد الإنتاج بالدقيقة'),
+          const SizedBox(height: 6),
+          const Text(
+            'شغّل مؤقّت دقيقة، عُدّ القطع التي تخرج من المكينة، ثم اكتب العدد: يحسب لك التطبيق كم ثانية يلزم للكيلو الواحد، والإنتاج في الساعة، والإنتاج المتوقع.',
+            style: TextStyle(fontSize: 12.5, color: AppColors.textMuted, height: 1.5),
+          ),
+          if (avgPpm != null) ...[
+            const SizedBox(height: 10),
+            MamoulStat(label: 'متوسط القطع/دقيقة في عيّنات هذه التشغيلة', value: mamoulPpm(avgPpm)),
+          ],
+          const SizedBox(height: 12),
+          PrimaryButton(
+            label: 'فتح العدّاد',
+            color: kMamoulColor,
+            icon: Icons.timer_outlined,
+            onPressed: () => _openRateCounter(run),
+          ),
         ],
       ),
     );
@@ -701,6 +739,8 @@ class _MamoulRunScreenState extends State<MamoulRunScreen> {
           _weightsSummary(r),
           const SizedBox(height: 12),
           _speedsCard(r),
+          const SizedBox(height: 12),
+          _rateCounterCard(r),
           const SizedBox(height: 18),
           _samplesSection(r, detail.samples),
           const SizedBox(height: 18),

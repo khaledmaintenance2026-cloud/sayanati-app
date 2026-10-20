@@ -64,7 +64,10 @@ class MamoulSampleSheet extends StatefulWidget {
   final MamoulRun run;
   final MamoulSample? existing;
 
-  const MamoulSampleSheet({super.key, required this.run, this.existing});
+  /// قيمة «القطع في الدقيقة» تُكتب مسبقًا في الحقل (تأتي من عدّاد الإنتاج بالدقيقة).
+  final double? initialPiecesPerMin;
+
+  const MamoulSampleSheet({super.key, required this.run, this.existing, this.initialPiecesPerMin});
 
   @override
   State<MamoulSampleSheet> createState() => _MamoulSampleSheetState();
@@ -92,6 +95,8 @@ class _MamoulSampleSheetState extends State<MamoulSampleSheet> {
       _ppm.text = mamoulPlainNumber(e.piecesPerMin);
       _temp.text = mamoulPlainNumber(e.doughTemp);
       _pressure = e.pressureLevel;
+    } else if (widget.initialPiecesPerMin != null) {
+      _ppm.text = mamoulPlainNumber(double.parse(widget.initialPiecesPerMin!.toStringAsFixed(1)));
     }
   }
 
