@@ -5,7 +5,7 @@ import '../services/arabic_format.dart';
 /// نماذج "مراقبة مكينة المعمول (البخور)" — تبويب لفريق الصيانة وإنتاج مصنع
 /// النساء. تصل كلها من سيرفر صيانتي عبر مسارات /api/mamoul-monitor (راجع
 /// routes/mamoulMonitor.js على السيرفر). أرقام الوزن بالجرام، والحدّان
-/// المقبولان ٦٫٠ إلى ٦٫٤ (ينسخهما السيرفر داخل كل تشغيلة).
+/// المقبولان ٦٫٠ إلى ٦٫٦ (ينسخهما السيرفر داخل كل تشغيلة).
 
 double? _dbl(Object? v) {
   if (v == null) return null;
@@ -31,12 +31,12 @@ String? _txt(Object? v) {
   return s.isEmpty ? null : s;
 }
 
-/// حدّا الوزن المقبولان وهدفاه الافتراضيان (قرار الإدارة 2026-10-07). تُستخدم
+/// حدّا الوزن المقبولان وأهدافه الافتراضية (قرار الإدارة 2026-10-07، والحدّ الأعلى صار ٦٫٦ في 2026-10-20). تُستخدم
 /// قبل وصول بيانات التشغيلة من السيرفر (نموذج تشغيلة جديدة)؛ كل تشغيلة بعد
 /// إنشائها تحمل حدودها المنسوخة.
 const double kMamoulWeightMin = 6.0;
-const double kMamoulWeightMax = 6.4;
-const List<double> kMamoulTargets = [6.2, 6.4];
+const double kMamoulWeightMax = 6.6;
+const List<double> kMamoulTargets = [6.2, 6.4, 6.6];
 
 /// هامش التنبيه المبكر (جرام): متوسط يقترب من أحد الحدّين بأقل من هذا الهامش.
 const double kMamoulWarnMargin = 0.05;
@@ -975,6 +975,42 @@ class MamoulGroupStat {
 }
 
 /// صف مقارنة بين المكائن: جودة الوزن والعيوب والأعطال لكل مكينة في المدة المختارة.
+/// آخر قراءة «عدّاد الدقيقة» لمكينة: قطع/دقيقة وساعات العمل، ووزن القطعة وقت القراءة.
+/// منها تُحسب بطاقة «كم تنتج المكينة» (ثواني الكيلو، الإنتاج في الساعة…).
+class MamoulMachineRate {
+  final double piecesPerMin;
+  final double weightG;
+  final double? workHours;
+  final String? at;
+  final String? by;
+  final int readingsCount;
+
+  const MamoulMachineRate({
+    required this.piecesPerMin,
+    required this.weightG,
+    this.workHours,
+    this.at,
+    this.by,
+    this.readingsCount = 1,
+  });
+
+  /// null لو القراءة غير صالحة (قطع/دقيقة أو وزن غير موجب).
+  static MamoulMachineRate? fromApi(Object? raw) {
+    if (raw is! Map) return null;
+    final ppm = _dbl(raw['pieces_per_min']);
+    final w = _dbl(raw['weight_g']);
+    if (ppm == null || w == null || ppm <= 0 || w <= 0) return null;
+    return MamoulMachineRate(
+      piecesPerMin: ppm,
+      weightG: w,
+      workHours: _dbl(raw['work_hours']),
+      at: _txt(raw['at'] ?? raw['created_at']),
+      by: _txt(raw['by'] ?? raw['created_by']),
+      readingsCount: _int(raw['readings_count']) > 0 ? _int(raw['readings_count']) : 1,
+    );
+  }
+}
+
 class MamoulMachineComparison {
   final String machineId;
   final String machineName;
@@ -993,6 +1029,9 @@ class MamoulMachineComparison {
   final int downtimeMinutes;
   final double? avgPpm;
 
+  /// آخر قراءة عدّاد الدقيقة للمكينة (null لو لم تُسجَّل قراءة بعد).
+  final MamoulMachineRate? rate;
+
   /// عدد العيّنات التي فيها ضغط يد (خفيف/متوسط/قوي) من عيّنات المكينة.
   final int assistedSamples;
   final int interventionsCount;
@@ -1003,6 +1042,7 @@ class MamoulMachineComparison {
 
   const MamoulMachineComparison({
     this.avgPpm,
+    this.rate,
     this.assistedSamples = 0,
     this.interventionsCount = 0,
     this.interventionsMinutes = 0,
@@ -1041,6 +1081,7 @@ class MamoulMachineComparison {
         faultsOpen: _int(d['faults_open']),
         downtimeMinutes: _int(d['downtime_minutes']),
         avgPpm: _dbl(d['avg_ppm']),
+        rate: MamoulMachineRate.fromApi(d['rate']),
         assistedSamples: _int(d['assisted_samples']),
         interventionsCount: d['interventions'] is Map ? _int((d['interventions'] as Map)['total']) : 0,
         interventionsMinutes: d['interventions'] is Map ? _int((d['interventions'] as Map)['minutes']) : 0,

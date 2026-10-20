@@ -246,6 +246,25 @@ class MamoulMonitorService {
     await _api.delete('$_base/interventions/$id');
   }
 
+  // ------------------------------- عدّاد الدقيقة -------------------------------
+
+  /// حفظ قراءة «عدّاد الدقيقة» للمكينة: قطع/دقيقة + وزن القطعة + ساعات العمل (اختياري).
+  /// السيرفر يحفظها، وتظهر في بطاقة المكينة (آخر قراءة) داخل التحليل.
+  static Future<void> addRateReading(
+    String machineId, {
+    required double piecesPerMin,
+    required double weightG,
+    double? workHours,
+    String? runId,
+  }) async {
+    await _api.post('$_base/machines/$machineId/readings', {
+      'piecesPerMin': piecesPerMin,
+      'weightG': weightG,
+      if (workHours != null) 'workHours': workHours,
+      if (runId != null) 'runId': runId,
+    });
+  }
+
   // ------------------------------- الأعطال -------------------------------
 
   /// [status]: 'open' | 'resolved' | null (الكل). بلا مدة → آخر ٩٠ يومًا.

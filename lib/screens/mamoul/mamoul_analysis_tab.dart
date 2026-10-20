@@ -4,10 +4,11 @@ import '../../models/mamoul_monitor.dart';
 import '../../services/mamoul_monitor_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import 'mamoul_machine_output.dart';
 import 'mamoul_widgets.dart';
 
 /// تبويب "التحليل": يجيب على سؤالين: "لو ضبطت السرعات على كذا، كم ستكون الأوزان؟"
-/// و"ما أعلى سرعة (إنتاج) تبقى معها كل القطع ضمن ٦٫٠–٦٫٤؟". يجمع كل عيّنات
+/// و"ما أعلى سرعة (إنتاج) تبقى معها كل القطع ضمن ٦٫٠–٦٫٦؟". يجمع كل عيّنات
 /// الأوزان بحسب (المكينة + سرعات السير والدفع والدوار + هدف الوزن) ويعرض: الأسرع
 /// داخل النطاق (قطع/دقيقة)، وأفضل ضبط لكل مكينة (أقل قطع خارج النطاق ثم الأقرب
 /// للهدف ثم الأقل تذبذبًا) من التركيبات التي قيست عليها قطع كافية، وأثر ضغط
@@ -467,6 +468,8 @@ class _MamoulAnalysisTabState extends State<MamoulAnalysisTab> with AutomaticKee
               ],
             ),
             const SizedBox(height: 12),
+            MamoulMachineOutputBlock(machine: c, compact: true),
+            const SizedBox(height: 12),
             Wrap(
               spacing: 22,
               runSpacing: 10,
@@ -606,6 +609,17 @@ class _MamoulAnalysisTabState extends State<MamoulAnalysisTab> with AutomaticKee
       if (showComparison) {
         children.add(_comparisonSection(a));
         children.add(const SizedBox(height: 18));
+      }
+      // مكينة واحدة (غرفة المكينة أو فلتر مكينة): «كم تنتج؟» أعلى الصفحة.
+      final oneId = widget.fixedMachineId ?? _machineFilter;
+      if (oneId != null) {
+        for (final mc in a.machines) {
+          if (mc.machineId == oneId) {
+            children.add(MamoulMachineOutputBlock(machine: mc));
+            children.add(const SizedBox(height: 18));
+            break;
+          }
+        }
       }
       if (a.samplesCount == 0) {
         children.add(const MamoulEmptyState(

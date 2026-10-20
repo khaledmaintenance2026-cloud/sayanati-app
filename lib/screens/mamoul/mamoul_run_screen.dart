@@ -127,15 +127,6 @@ class _MamoulRunScreenState extends State<MamoulRunScreen> {
     if (done == true && mounted) showMamoulSnack(context, existing == null ? 'سُجّلت العيّنة' : 'حُفظ تعديل العيّنة');
   }
 
-  /// عدّاد الإنتاج بالدقيقة: لو اختار الفني «تسجيل في عيّنة» تُفتح نافذة العيّنة
-  /// وفيها القطع/دقيقة مكتوبة مسبقًا.
-  Future<void> _openRateCounter(MamoulRun run) async {
-    final ppm = await showMamoulSheet<double>(context, (ctx) => MamoulRateCounterSheet(run: run));
-    if (ppm == null || !mounted) return;
-    final done = await showMamoulSheet<bool>(context, (ctx) => MamoulSampleSheet(run: run, initialPiecesPerMin: ppm));
-    if (done == true && mounted) showMamoulSnack(context, 'سُجّلت العيّنة');
-  }
-
   Future<void> _deleteSample(MamoulSample s) async {
     final ok = await confirmMamoul(
       context,
@@ -209,6 +200,30 @@ class _MamoulRunScreenState extends State<MamoulRunScreen> {
     await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => MamoulFaultFormScreen(existing: f)),
     );
+  }
+
+  /// عدّاد الدقيقة لمكينة التشغيلة: وزن القطعة من عيّنات التشغيلة (أو هدفها) وساعات
+  /// العمل من وقتي البدء والانتهاء لو سُجّلا، والقراءة المحفوظة تظهر في بطاقة المكينة.
+  Future<void> _openRateCounter(MamoulRun run) async {
+    final machineId = run.machineId;
+    if (machineId == null) return;
+    final avg = run.summary.stats.avg;
+    final bool hasSamples = run.summary.samplesCount > 0 && avg != null && avg > 0;
+    final double weight = hasSamples ? (avg ?? run.targetWeight) : run.targetWeight;
+    final done = await showMamoulSheet<bool>(
+      context,
+      (ctx) => MamoulRateCounterSheet(
+        machineId: machineId,
+        machineLabel: run.machineLabel,
+        defaultWeight: weight,
+        weightSource: hasSamples ? 'متوسط أوزان عيّنات هذه التشغيلة' : 'الوزن المستهدف للتشغيلة',
+        defaultHours: mamoulRunHours(run.startTime, run.endTime),
+        runId: run.id,
+      ),
+    );
+    if (done == true && mounted) {
+      showMamoulSnack(context, 'سُجّلت قراءة الإنتاج، وتجدها في بطاقة المكينة داخل «التحليل»');
+    }
   }
 
   // ------------------------------- الأقسام -------------------------------
@@ -343,25 +358,19 @@ class _MamoulRunScreenState extends State<MamoulRunScreen> {
   }
 
   Widget _rateCounterCard(MamoulRun run) {
-    final avgPpm = run.summary.avgPiecesPerMin;
     return MamoulCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const MamoulSectionTitle('عدّاد الإنتاج بالدقيقة'),
+          const MamoulSectionTitle('كم تنتج المكينة؟'),
           const SizedBox(height: 6),
           const Text(
-            'شغّل مؤقّت دقيقة، عُدّ القطع التي تخرج من المكينة، ثم اكتب العدد: يحسب لك التطبيق كم ثانية يلزم للكيلو الواحد، والإنتاج في الساعة، والإنتاج المتوقع.',
+            'شغّل مؤقّت دقيقة، عُدّ القطع، واكتب العدد وساعات العمل. تحسب لك الشاشة كم ثانية يخرج الكيلو وكم تنتج في الساعة.',
             style: TextStyle(fontSize: 12.5, color: AppColors.textMuted, height: 1.5),
           ),
-          if (avgPpm != null) ...[
-            const SizedBox(height: 10),
-            MamoulStat(label: 'متوسط القطع/دقيقة في عيّنات هذه التشغيلة', value: mamoulPpm(avgPpm)),
-          ],
           const SizedBox(height: 12),
-          PrimaryButton(
-            label: 'فتح العدّاد',
-            color: kMamoulColor,
+          MamoulOutlineButton(
+            label: 'عدّاد الإنتاج (دقيقة)',
             icon: Icons.timer_outlined,
             onPressed: () => _openRateCounter(run),
           ),
@@ -739,8 +748,10 @@ class _MamoulRunScreenState extends State<MamoulRunScreen> {
           _weightsSummary(r),
           const SizedBox(height: 12),
           _speedsCard(r),
-          const SizedBox(height: 12),
-          _rateCounterCard(r),
+          if (r.machineId != null) ...[
+            const SizedBox(height: 12),
+            _rateCounterCard(r),
+          ],
           const SizedBox(height: 18),
           _samplesSection(r, detail.samples),
           const SizedBox(height: 18),
