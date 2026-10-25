@@ -45,6 +45,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         return Icons.assignment_outlined;
       case 'safety_permit_reviewed':
         return Icons.verified_user_outlined;
+      case 'leave_alert':
+        return Icons.beach_access_outlined;
       default:
         return Icons.notifications_outlined;
     }

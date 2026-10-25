@@ -9,6 +9,7 @@ import '../admin/admin_home_screen.dart' show canOpenAdminTab;
 import '../auth/change_password_screen.dart';
 import '../chat/chat_list_screen.dart';
 import '../chat/chat_widgets.dart' show ChatUnreadBadge;
+import '../leaves/leaves_home_screen.dart' show LeavesHomeScreen, canOpenLeaves;
 import '../mamoul/mamoul_home_screen.dart' show canOpenMamoulMonitor;
 import '../notifications/notifications_screen.dart';
 import '../overtime/overtime_home_screen.dart' show canOpenOvertimeTab;
@@ -265,6 +266,20 @@ class HomeScreen extends StatelessWidget {
                 title: 'العمل الإضافي',
                 subtitle: 'تسجيل الأفراد وتقارير اليوم والشهر',
                 onTap: () => onSelectModule?.call('overtime'),
+              ),
+              const SizedBox(height: 12),
+            ],
+            // إجازات الموظفين (مصنع الرجال) — نفس أدوار العمل الإضافي مقيَّدة بمصنع الرجال
+            // (راجع canOpenLeaves). شاشة مستقلة تُفتح فوق الرئيسية، لا تبويبًا سفليًا.
+            if (canOpenLeaves(auth.currentUser)) ...[
+              _ModuleCard(
+                icon: Icons.beach_access_outlined,
+                color: const Color(0xFF1B6E87),
+                title: 'إجازات الموظفين',
+                subtitle: 'مصنع الرجال: الأرصدة والإجازات والتنبيهات',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const LeavesHomeScreen()),
+                ),
               ),
               const SizedBox(height: 12),
             ],

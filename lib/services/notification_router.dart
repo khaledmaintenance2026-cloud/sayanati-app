@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../models/app_notification.dart';
 import '../models/maintenance_report.dart';
 import '../models/safety_permit.dart';
+import '../screens/leaves/leave_employee_screen.dart';
+import '../screens/leaves/leaves_home_screen.dart';
 import '../screens/maintenance/maintenance_assign_screen.dart';
 import '../screens/maintenance/maintenance_report_print_screen.dart';
 import '../screens/maintenance/maintenance_task_close_screen.dart';
@@ -47,6 +49,7 @@ const Set<String> _inventoryEvents = {
 bool notificationHasTarget(String? eventType) {
   if (eventType == null) return false;
   return eventType == 'incident_created' ||
+      eventType == 'leave_alert' ||
       eventType == 'injury_report_created' ||
       _workOrderEvents.contains(eventType) ||
       _permitEvents.contains(eventType) ||
@@ -81,6 +84,21 @@ Future<void> openNotificationTarget(BuildContext context, AppNotification n) asy
 
   if (_inventoryEvents.contains(type)) {
     _switchModule(navigator, 'inventory');
+    return;
+  }
+
+  // تنبيه إجازات الموظفين (مصنع الرجال): نفتح قسم الإجازات، ثم صفحة الموظف لو الإشعار يخص موظفًا بعينه
+  // (refId = رقم الموظف في السيرفر؛ الإشعار المجمَّع بلا refId يكتفي بفتح القسم).
+  if (type == 'leave_alert') {
+    if (!canOpenLeaves(context.read<AuthService>().currentUser)) {
+      say('قسم إجازات الموظفين غير متاح لحسابك');
+      return;
+    }
+    navigator.popUntil((route) => route.isFirst);
+    navigator.push(MaterialPageRoute(builder: (_) => const LeavesHomeScreen()));
+    if (refId != null && refId.isNotEmpty) {
+      navigator.push(MaterialPageRoute(builder: (_) => LeaveEmployeeScreen(employeeId: refId)));
+    }
     return;
   }
 
