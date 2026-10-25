@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import 'leaves_employees_tab.dart';
+import 'leaves_reports_tab.dart';
 import 'leaves_settings_screen.dart';
 import 'leaves_summary_tab.dart';
 import 'leaves_widgets.dart';
@@ -29,8 +30,8 @@ bool canOpenLeaves(AppUser? user) {
   return false;
 }
 
-/// شاشة «إجازات الموظفين — مصنع الرجال»: تبويبان (الملخص، الموظفون) وزر إعدادات
-/// لمدير النظام فقط.
+/// شاشة «إجازات الموظفين — مصنع الرجال»: ثلاثة تبويبات (الملخص، الموظفون، التقارير)
+/// وزر إعدادات لمدير النظام فقط.
 class LeavesHomeScreen extends StatelessWidget {
   const LeavesHomeScreen({super.key});
 
@@ -43,7 +44,7 @@ class LeavesHomeScreen extends StatelessWidget {
     final user = context.read<AuthService>().currentUser;
     final isAdmin = user != null && user.role == AppRole.admin;
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Column(
@@ -70,6 +71,7 @@ class LeavesHomeScreen extends StatelessWidget {
             tabs: [
               Tab(text: 'الملخص'),
               Tab(text: 'الموظفون'),
+              Tab(text: 'التقارير'),
             ],
           ),
         ),
@@ -77,6 +79,7 @@ class LeavesHomeScreen extends StatelessWidget {
           children: [
             LeavesSummaryTab(),
             LeavesEmployeesTab(),
+            LeavesReportsTab(),
           ],
         ),
       ),

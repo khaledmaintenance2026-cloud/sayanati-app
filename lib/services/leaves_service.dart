@@ -1,5 +1,6 @@
 import '../models/leaves.dart';
 import 'api_client.dart';
+import 'constants.dart';
 
 /// طلبات «إجازات الموظفين» (مصنع الرجال) إلى سيرفر صيانتي (/api/leaves).
 /// كل الحسابات (الرصيد، المدفوع، بدون راتب، الحالة، التنبيهات) تتم في السيرفر؛
@@ -124,11 +125,13 @@ class LeavesService {
     required String start,
     required String expected,
     String? note,
+    String? replacement,
   }) async {
     final data = await _api.post('/leaves/employees/$employeeId/leaves', {
       'start': start,
       'expected': expected,
       'note': note ?? '',
+      'replacement': replacement ?? '',
     });
     return _employeeOf(data);
   }
@@ -140,11 +143,13 @@ class LeavesService {
     required String expected,
     String? actual,
     String? note,
+    String? replacement,
   }) async {
     final body = <String, dynamic>{
       'start': start,
       'expected': expected,
       'note': note ?? '',
+      'replacement': replacement ?? '',
     };
     if (actual != null) body['actual'] = actual;
     final data = await _api.patch('/leaves/leaves/$leaveId', body);
@@ -160,5 +165,28 @@ class LeavesService {
   static Future<LeaveEmployee> deleteLeave(String leaveId) async {
     final data = await _api.delete('/leaves/leaves/$leaveId');
     return _employeeOf(data);
+  }
+
+  // ------------------------------- التقارير -------------------------------
+
+  /// تقرير للعرض/الطباعة. بلا [employeeId] = تقرير شامل ([status] فلتر اختياري:
+  /// active | on_leave | upcoming | late)، ومعه [employeeId] = كشف موظف واحد.
+  static Future<LeaveReportData> fetchReport({String? employeeId, String? status}) async {
+    final query = <String, dynamic>{};
+    if (employeeId != null) query['employeeId'] = employeeId;
+    if (status != null) query['status'] = status;
+    final data = await _api.get('/leaves/report', query: query);
+    return LeaveReportData.fromApi(_map(data));
+  }
+
+  /// رابط تنزيل ملف Excel (يُفتح في المتصفح الخارجي بنفس رمز الدخول، مثل تصدير المخزون).
+  /// يرجع null لو لم يكن المستخدم مسجّلًا.
+  static Uri? excelUri({String? employeeId, String? status}) {
+    final token = _api.token;
+    if (token == null) return null;
+    final query = <String, String>{'token': token};
+    if (employeeId != null) query['employeeId'] = employeeId;
+    if (status != null) query['status'] = status;
+    return Uri.parse('$kApiBaseUrl/leaves/export.xlsx').replace(queryParameters: query);
   }
 }

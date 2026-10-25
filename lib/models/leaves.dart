@@ -166,6 +166,7 @@ class LeaveRecord {
   final int? unpaid;
   final double? balanceAtStart;
   final String? note;
+  final String? replacement; // الموظف البديل (اختياري)
 
   const LeaveRecord({
     required this.id,
@@ -181,6 +182,7 @@ class LeaveRecord {
     required this.unpaid,
     required this.balanceAtStart,
     required this.note,
+    required this.replacement,
   });
 
   factory LeaveRecord.fromApi(Map<String, dynamic> d) => LeaveRecord(
@@ -197,6 +199,7 @@ class LeaveRecord {
         unpaid: _int(d['unpaid']),
         balanceAtStart: _dbl(d['balance_at_start']),
         note: _str(d['note']),
+        replacement: _str(d['replacement']),
       );
 
   /// هل يمكن تسجيل المباشرة لهذه الإجازة؟ (بدأت ولم تُسجَّل مباشرتها بعد)
@@ -504,4 +507,40 @@ class LeaveSummary {
       fixNumber: _items(lists['fix_number']),
     );
   }
+}
+
+// ------------------------------- التقارير -------------------------------
+
+/// تقرير جاهز من السيرفر (شامل أو كشف موظف): صفحة HTML كاملة للطباعة/PDF + بياناته الوصفية.
+/// السيرفر هو من يبني الجدول بنفس أعمدة ملف الإكسل، والتطبيق يعرضه فقط.
+class LeaveReportData {
+  final String kind; // all | person
+  final String title;
+  final String subtitle;
+  final String orientation; // landscape | portrait
+  final String filename;
+  final int count;
+  final String html;
+
+  const LeaveReportData({
+    required this.kind,
+    required this.title,
+    required this.subtitle,
+    required this.orientation,
+    required this.filename,
+    required this.count,
+    required this.html,
+  });
+
+  bool get isLandscape => orientation == 'landscape';
+
+  factory LeaveReportData.fromApi(Map<String, dynamic> d) => LeaveReportData(
+        kind: (d['kind'] as String?) ?? 'all',
+        title: (d['title'] as String?) ?? 'تقرير الإجازات',
+        subtitle: (d['subtitle'] as String?) ?? '',
+        orientation: (d['orientation'] as String?) == 'portrait' ? 'portrait' : 'landscape',
+        filename: (d['filename'] as String?) ?? 'leaves-report.pdf',
+        count: _int(d['count']) ?? 0,
+        html: (d['html'] as String?) ?? '',
+      );
 }

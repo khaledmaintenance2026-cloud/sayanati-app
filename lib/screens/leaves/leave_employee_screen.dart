@@ -7,6 +7,7 @@ import '../../widgets/common.dart';
 import 'leave_form_screen.dart';
 import 'leave_return_sheet.dart';
 import 'leaves_employee_form_sheet.dart';
+import 'leaves_report_print_screen.dart';
 import 'leaves_widgets.dart';
 
 /// صفحة موظف في قسم الإجازات: بياناته وحالته وتنبيهاته وأرصدته (متاح/مُستحَق/مستخدم/
@@ -60,6 +61,14 @@ class _LeaveEmployeeScreenState extends State<LeaveEmployeeScreen> {
       notifyLeavesChanged();
       await _load();
     }
+  }
+
+  void _openReport() {
+    final e = _emp;
+    if (e == null) return;
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => LeavesReportPrintScreen(employeeId: e.id, title: 'كشف ${e.name}')),
+    );
   }
 
   Future<void> _openLeaveForm({LeaveRecord? existing}) async {
@@ -270,11 +279,13 @@ class _LeaveEmployeeScreenState extends State<LeaveEmployeeScreen> {
     final unpaid = l.unpaid;
     final balance = l.balanceAtStart;
     final note = l.note;
+    final replacement = l.replacement;
 
     final lines = <Widget>[
       _kv('مدة الإجازة', l.provisional ? '${leaveDays(l.duration)} (مؤقتة حتى تسجيل المباشرة)' : leaveDays(l.duration), bold: true),
     ];
     if (l.actual != null) lines.add(_kv('تمت المباشرة في', leaveDateLabel(l.actual)));
+    if (replacement != null) lines.add(_kv('الموظف البديل', replacement));
     if (balance != null) lines.add(_kv('الرصيد عند البدء', leaveAmountDays(balance)));
     if (paid != null) lines.add(_kv('أيام مدفوعة', leaveDays(paid), color: AppColors.successText, bold: true));
     if (unpaid != null) {
@@ -415,6 +426,12 @@ class _LeaveEmployeeScreenState extends State<LeaveEmployeeScreen> {
       appBar: ScreenTopBar(
         title: e?.name ?? widget.initialName ?? 'الموظف',
         actions: [
+          if (e != null)
+            IconButton(
+              tooltip: 'كشف الإجازات (PDF / Excel)',
+              icon: const Icon(Icons.picture_as_pdf_outlined, color: kLeavesColor),
+              onPressed: _openReport,
+            ),
           if (e != null)
             IconButton(
               tooltip: 'تعديل بيانات الموظف',

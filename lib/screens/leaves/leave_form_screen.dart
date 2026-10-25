@@ -24,6 +24,7 @@ class LeaveFormScreen extends StatefulWidget {
 
 class _LeaveFormScreenState extends State<LeaveFormScreen> {
   final TextEditingController _note = TextEditingController();
+  final TextEditingController _replacement = TextEditingController();
   DateTime? _start;
   DateTime? _expected;
   DateTime? _actual;
@@ -46,6 +47,7 @@ class _LeaveFormScreenState extends State<LeaveFormScreen> {
     _actual = leaveParseDate(ex?.actual);
     if (_expected == null && _actual != null) _expected = _actual;
     _note.text = ex?.note ?? '';
+    _replacement.text = ex?.replacement ?? '';
     if (_start != null && _expected != null) {
       _previewLoading = true;
       _debounce = Timer(const Duration(milliseconds: 50), _runPreview);
@@ -56,6 +58,7 @@ class _LeaveFormScreenState extends State<LeaveFormScreen> {
   void dispose() {
     _debounce?.cancel();
     _note.dispose();
+    _replacement.dispose();
     super.dispose();
   }
 
@@ -151,6 +154,7 @@ class _LeaveFormScreenState extends State<LeaveFormScreen> {
     }
     final a = _actual;
     final note = _note.text.trim();
+    final replacement = _replacement.text.trim();
     final ex = widget.existing;
 
     setState(() {
@@ -164,6 +168,7 @@ class _LeaveFormScreenState extends State<LeaveFormScreen> {
           start: leaveIsoDate(s),
           expected: leaveIsoDate(e),
           note: note,
+          replacement: replacement,
         );
       } else {
         await LeavesService.updateLeave(
@@ -172,6 +177,7 @@ class _LeaveFormScreenState extends State<LeaveFormScreen> {
           expected: leaveIsoDate(e),
           actual: a == null ? null : leaveIsoDate(a),
           note: note,
+          replacement: replacement,
         );
       }
       notifyLeavesChanged();
@@ -329,6 +335,15 @@ class _LeaveFormScreenState extends State<LeaveFormScreen> {
             ),
           ],
           const SizedBox(height: 12),
+          const Text('الموظف البديل (اختياري)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _replacement,
+            maxLength: 120,
+            textInputAction: TextInputAction.next,
+            decoration: fieldDecoration(hint: 'اسم من يقوم بعمله أثناء الإجازة'),
+          ),
+          const SizedBox(height: 4),
           const Text('ملاحظة (اختياري)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           TextField(

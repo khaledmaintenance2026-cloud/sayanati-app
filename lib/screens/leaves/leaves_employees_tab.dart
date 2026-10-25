@@ -276,7 +276,7 @@ class _EmployeeTile extends StatelessWidget {
     }
 
     return Material(
-      color: AppColors.surface,
+      color: leaveTileFill(e.status),
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -284,7 +284,7 @@ class _EmployeeTile extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            border: Border.all(color: AppColors.border),
+            border: Border.all(color: leaveTileBorder(e.status)),
             borderRadius: BorderRadius.circular(16),
           ),
           child: Row(

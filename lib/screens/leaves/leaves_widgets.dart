@@ -49,7 +49,23 @@ Color leaveStatusColor(String status) {
   }
 }
 
-Color leaveStatusBackground(String status) => leaveStatusColor(status).withOpacity(0.12);
+Color leaveStatusBackground(String status) => leaveStatusColor(status).withOpacity(0.16);
+
+/// هل تُلوَّن بطاقة الموظف في القوائم؟ فقط من في إجازة (أزرق) أو إجازته قادمة (كهرماني)
+/// أو متأخر عن المباشرة (أحمر)؛ أما «على رأس العمل» فتبقى بلا تلوين ليبرز غيرهم.
+bool leaveIsHighlighted(String status) => status == 'on_leave' || status == 'upcoming' || status == 'late';
+
+/// خلفية بطاقة الموظف في القوائم حسب حالته (تلوين خفيف).
+Color leaveTileFill(String status) {
+  if (!leaveIsHighlighted(status)) return AppColors.surface;
+  return Color.alphaBlend(leaveStatusColor(status).withOpacity(0.10), AppColors.surface);
+}
+
+/// حدّ بطاقة الموظف في القوائم حسب حالته.
+Color leaveTileBorder(String status) {
+  if (!leaveIsHighlighted(status)) return AppColors.border;
+  return leaveStatusColor(status).withOpacity(0.45);
+}
 
 /// لون التنبيه حسب نوعه: أحمر لما يحتاج إجراءً (تأخر/بلا عودة/رقم خاطئ)، وكهرماني لما عداه.
 Color leaveAlertColor(String code) {
