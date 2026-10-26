@@ -14,6 +14,7 @@ import 'maintenance_assign_screen.dart';
 import 'maintenance_completed_screen.dart';
 import 'maintenance_edit_screen.dart';
 import 'maintenance_analysis_screen.dart';
+import '../home/section_tools.dart';
 import 'maintenance_new_report_screen.dart';
 import 'maintenance_report_print_screen.dart';
 import 'maintenance_reports_screen.dart';
@@ -287,81 +288,88 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
           ),
         ],
       ),
-      body: Stack(
+      body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+          const SectionToolsBar(section: kSectionMaintenance),
+          Expanded(
+            child: Stack(
               children: [
-                Row(
-                  children: [
-                    KpiCard(value: avgResolutionLabel, label: 'متوسط وقت الإصلاح', valueColor: AppColors.maintenance),
-                    const SizedBox(width: 10),
-                    KpiCard(value: ArabicFormat.number(completedThisMonth), label: 'أعطال هذا الشهر', valueColor: AppColors.maintenance),
-                    const SizedBox(width: 10),
-                    KpiCard(value: '٪${ArabicFormat.toEasternDigits(preventiveRatio)}', label: 'نسبة الوقائي', valueColor: AppColors.maintenance),
-                  ],
-                ),
-                if (quickStatsLine != null) ...[
-                  const SizedBox(height: 10),
-                  InfoNote(text: quickStatsLine, color: AppColors.maintenance, icon: Icons.insights_outlined),
-                ],
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(12)),
-                  child: Row(
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Expanded(child: _Segment(label: 'الأعطال الطارئة', selected: tab == _DashTab.emergency, onTap: () => setState(() => _tab = _DashTab.emergency))),
-                      Expanded(child: _Segment(label: 'أعمال وقائية', selected: tab == _DashTab.preventive, onTap: () => setState(() => _tab = _DashTab.preventive))),
-                      Expanded(child: _Segment(label: 'المهام العامة', selected: tab == _DashTab.tasks, onTap: () => setState(() => _tab = _DashTab.tasks))),
+                      Row(
+                        children: [
+                          KpiCard(value: avgResolutionLabel, label: 'متوسط وقت الإصلاح', valueColor: AppColors.maintenance),
+                          const SizedBox(width: 10),
+                          KpiCard(value: ArabicFormat.number(completedThisMonth), label: 'أعطال هذا الشهر', valueColor: AppColors.maintenance),
+                          const SizedBox(width: 10),
+                          KpiCard(value: '٪${ArabicFormat.toEasternDigits(preventiveRatio)}', label: 'نسبة الوقائي', valueColor: AppColors.maintenance),
+                        ],
+                      ),
+                      if (quickStatsLine != null) ...[
+                        const SizedBox(height: 10),
+                        InfoNote(text: quickStatsLine, color: AppColors.maintenance, icon: Icons.insights_outlined),
+                      ],
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(12)),
+                        child: Row(
+                          children: [
+                            Expanded(child: _Segment(label: 'الأعطال الطارئة', selected: tab == _DashTab.emergency, onTap: () => setState(() => _tab = _DashTab.emergency))),
+                            Expanded(child: _Segment(label: 'أعمال وقائية', selected: tab == _DashTab.preventive, onTap: () => setState(() => _tab = _DashTab.preventive))),
+                            Expanded(child: _Segment(label: 'المهام العامة', selected: tab == _DashTab.tasks, onTap: () => setState(() => _tab = _DashTab.tasks))),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Expanded(
+                        child: feedItems.isEmpty
+                            ? const Center(child: Text('لا توجد بلاغات جارية', style: TextStyle(color: AppColors.textMuted)))
+                            : ListView.separated(
+                                itemCount: feedItems.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                                itemBuilder: (context, i) {
+                                  final item = feedItems[i];
+                                  if (item is Incident) {
+                                    return IncomingIncidentCard(
+                                      incident: item,
+                                      converting: _convertingIncidentIds.contains(item.id),
+                                      // التحويل لمسؤول الصيانة والمدير فقط (قرار 2026-10-05):
+                                      // الفني (ومسؤول المخزون/المصمم) يرى البلاغ وصورته لكن
+                                      // بلا زر "تحويل" (null يُخفيه). نفس القيد ملزم على
+                                      // السيرفر: POST /api/work-orders مع incidentReportId.
+                                      onConvert: canManage ? () => _convertIncident(item) : null,
+                                    );
+                                  }
+                                  final r = item as MaintenanceReport;
+                                  return MaintenanceReportCard(
+                                    report: r,
+                                    onEdit: canManage
+                                        ? () => Navigator.of(context).push(
+                                              MaterialPageRoute(builder: (_) => MaintenanceEditScreen(report: r)),
+                                            )
+                                        : null,
+                                    onDelete: canManage ? () => _confirmDelete(r.id, '${r.equipment} — ${r.line}') : null,
+                                    canAssign: canAssign,
+                                  );
+                                },
+                              ),
+                      ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 14),
-                Expanded(
-                  child: feedItems.isEmpty
-                      ? const Center(child: Text('لا توجد بلاغات جارية', style: TextStyle(color: AppColors.textMuted)))
-                      : ListView.separated(
-                          itemCount: feedItems.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 10),
-                          itemBuilder: (context, i) {
-                            final item = feedItems[i];
-                            if (item is Incident) {
-                              return IncomingIncidentCard(
-                                incident: item,
-                                converting: _convertingIncidentIds.contains(item.id),
-                                // التحويل لمسؤول الصيانة والمدير فقط (قرار 2026-10-05):
-                                // الفني (ومسؤول المخزون/المصمم) يرى البلاغ وصورته لكن
-                                // بلا زر "تحويل" (null يُخفيه). نفس القيد ملزم على
-                                // السيرفر: POST /api/work-orders مع incidentReportId.
-                                onConvert: canManage ? () => _convertIncident(item) : null,
-                              );
-                            }
-                            final r = item as MaintenanceReport;
-                            return MaintenanceReportCard(
-                              report: r,
-                              onEdit: canManage
-                                  ? () => Navigator.of(context).push(
-                                        MaterialPageRoute(builder: (_) => MaintenanceEditScreen(report: r)),
-                                      )
-                                  : null,
-                              onDelete: canManage ? () => _confirmDelete(r.id, '${r.equipment} — ${r.line}') : null,
-                              canAssign: canAssign,
-                            );
-                          },
-                        ),
-                ),
+                if (fab != null)
+                  Positioned(
+                    bottom: 20,
+                    left: 20,
+                    child: fab,
+                  ),
               ],
             ),
           ),
-          if (fab != null)
-            Positioned(
-              bottom: 20,
-              left: 20,
-              child: fab,
-            ),
         ],
       ),
     );

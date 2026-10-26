@@ -4,6 +4,7 @@ import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import 'approvals_tab.dart';
 import 'technicians_tab.dart';
+import '../home/section_tools.dart';
 
 /// من يرى تبويب "الإدارة"؟ مدير النظام ومسؤول الصيانة فقط (قرار الإدارة
 /// 2026-10-04) — الفني العادي وبقية الأدوار لا. هذه الدالة تُخفي التبويب في
@@ -34,10 +35,17 @@ class AdminHomeScreen extends StatelessWidget {
             ],
           ),
         ),
-        body: const TabBarView(
+        body: Column(
           children: [
-            TechniciansTab(),
-            ApprovalsTab(),
+            const SectionToolsBar(section: kSectionAdmin),
+            Expanded(
+              child: const TabBarView(
+                children: [
+                  TechniciansTab(),
+                  ApprovalsTab(),
+                ],
+              ),
+            ),
           ],
         ),
       ),

@@ -6,6 +6,7 @@ import '../../services/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import 'injury_reports_list_screen.dart';
+import '../home/section_tools.dart';
 import 'safety_approval_screen.dart';
 import 'safety_maintenance_report_screen.dart';
 import 'safety_permit_print_screen.dart';
@@ -50,10 +51,17 @@ class SafetyHomeScreen extends StatelessWidget {
             ],
           ),
         ),
-        body: const TabBarView(
+        body: Column(
           children: [
-            _SafetyPermitsTab(),
-            InjuryReportsListScreen(),
+            const SectionToolsBar(section: kSectionSafety),
+            Expanded(
+              child: const TabBarView(
+                children: [
+                  _SafetyPermitsTab(),
+                  InjuryReportsListScreen(),
+                ],
+              ),
+            ),
           ],
         ),
       ),

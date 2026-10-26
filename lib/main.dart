@@ -15,13 +15,11 @@ import 'screens/auth/complete_phone_screen.dart';
 import 'screens/auth/pending_approval_screen.dart';
 import 'screens/auth/welcome_screen.dart';
 import 'screens/home/home_screen.dart';
-import 'screens/maintenance/inventory_dashboard_screen.dart';
+import 'screens/home/section_tools.dart';
 import 'screens/maintenance/maintenance_dashboard_screen.dart';
 import 'screens/production/production_lines_screen.dart';
 import 'screens/safety/safety_home_screen.dart';
 import 'screens/admin/admin_home_screen.dart';
-import 'screens/overtime/overtime_home_screen.dart';
-import 'screens/mamoul/mamoul_home_screen.dart';
 import 'screens/general/general_report_screen.dart';
 Future<void> main() async {
   print('DIAG_TEST_9182');
@@ -262,35 +260,26 @@ class _RootNavState extends State<RootNav> {
   void _goToModule(String key) {
     final tabs = _buildKeys(context);
     final target = tabs.indexOf(key);
-    if (target != -1) setState(() => _index = target);
+    if (target != -1) {
+      setState(() => _index = target);
+      return;
+    }
+    // الأدوات (المخزون، المعمول، العمل الإضافي، الإجازات) لم تعد تبويبات سفلية بل شاشات
+    // داخل الأقسام: نفتحها مباشرة لو للمستخدم حق استعمالها (مثل الضغط على إشعار المخزون).
+    if (key == kToolInventory || key == kToolMamoul || key == kToolOvertime || key == kToolLeaves) {
+      if (canUseTool(key, context.read<AuthService>().currentUser)) {
+        setState(() => _index = 0);
+        openSectionTool(context, key);
+      }
+    }
   }
 
+  /// تبويبات الشريط السفلي: الرئيسية + أقسام المستخدم بالترتيب (إنتاج، صيانة، سلامة، إدارة).
+  /// صلاحية كل قسم محسوبة في [visibleSections] (section_tools.dart) بنفس الشروط القديمة؛
+  /// أما المخزون والمعمول والعمل الإضافي والإجازات فصارت أدوات داخل الأقسام، لا تبويبات.
   List<String> _buildKeys(BuildContext context) {
-    final role = context.read<AuthService>().currentUser?.role ?? AppRole.production;
     final keys = <String>['home'];
-    // تحديث 2026-10-03: مسؤول المخزون والمصمم أصبحا أيضًا "أفراد صيانة"
-    // قابلين للتكليف (راجع التعليق أعلى isInventoryOnlyRole في
-    // auth_service.dart) — فيريان تبويب "الصيانة" الآن أيضًا، بنطاق محدود
-    // بمهامهما فقط تمامًا كالفني العادي (التصفية فعليًا من السيرفر).
-    if (role == AppRole.admin || isMaintenanceRole(role) || isInventoryOnlyRole(role)) keys.add('maintenance');
-    // "المخزون" تبويب مستقل الآن (فُصل عن لوحة الصيانة — راجع
-    // inventory_dashboard_screen.dart)، لكنه يبقى مقصورًا على فريق الصيانة
-    // والمخزون فقط (فني/مسؤول صيانة، مسؤول المخزون، المصمم) بقرار من الإدارة
-    // — لم يُفتح لبقية الأقسام رغم استقلاليته. راجع نفس التعليق في
-    // home_screen.dart.
-    if (role == AppRole.admin || isMaintenanceRole(role) || isInventoryOnlyRole(role)) keys.add('inventory');
-    if (role == AppRole.admin || isProductionRole(role)) keys.add('production');
-    // تبويب "المعمول" (مراقبة مكائن البخور: أوزان وسرعات وأعطال) — فريق الصيانة
-    // كله + إنتاج مصنع النساء (أو غير المقيَّد بمصنع). قرار الإدارة 2026-10-07
-    // (راجع canOpenMamoulMonitor). القيد الملزم على السيرفر (routes/mamoulMonitor.js).
-    if (canOpenMamoulMonitor(context.read<AuthService>().currentUser)) keys.add('mamoul');
-    if (role == AppRole.admin || role == AppRole.safety) keys.add('safety');
-    // تبويب "الإضافي" (ساعات العمل الإضافي) — للمسؤولين فقط بقرار الإدارة
-    // 2026-10-06: مدير النظام ومسؤول الصيانة ومسؤول الإنتاج ومسؤول السلامة
-    // (راجع canOpenOvertimeTab). القيد الملزم على السيرفر (routes/overtime.js).
-    if (canOpenOvertimeTab(role)) keys.add('overtime');
-    // مدير النظام ومسؤول الصيانة (قرار الإدارة 2026-10-04) — راجع canOpenAdminTab.
-    if (canOpenAdminTab(role)) keys.add('admin');
+    keys.addAll(visibleSections(context.read<AuthService>().currentUser));
     return keys;
   }
 
@@ -301,23 +290,17 @@ class _RootNavState extends State<RootNav> {
 
     final screens = <String, Widget>{
       'home': HomeScreen(role: role, onSelectModule: _goToModule),
-      'maintenance': const MaintenanceDashboardScreen(),
-      'inventory': const InventoryDashboardScreen(),
-      'production': const ProductionLinesScreen(),
-      'mamoul': const MamoulHomeScreen(),
-      'safety': const SafetyHomeScreen(),
-      'overtime': const OvertimeHomeScreen(),
-      'admin': const AdminHomeScreen(),
+      kSectionProduction: const ProductionLinesScreen(),
+      kSectionMaintenance: const MaintenanceDashboardScreen(),
+      kSectionSafety: const SafetyHomeScreen(),
+      kSectionAdmin: const AdminHomeScreen(),
     };
     final items = <String, BottomNavigationBarItem>{
       'home': const BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'الرئيسية'),
-      'maintenance': const BottomNavigationBarItem(icon: Icon(Icons.build_outlined), label: 'الصيانة'),
-      'inventory': const BottomNavigationBarItem(icon: Icon(Icons.inventory_2_outlined), label: 'المخزون'),
-      'production': const BottomNavigationBarItem(icon: Icon(Icons.factory_outlined), label: 'الإنتاج'),
-      'mamoul': const BottomNavigationBarItem(icon: Icon(Icons.precision_manufacturing_outlined), label: 'المعمول'),
-      'safety': const BottomNavigationBarItem(icon: Icon(Icons.shield_outlined), label: 'السلامة'),
-      'overtime': const BottomNavigationBarItem(icon: Icon(Icons.more_time_outlined), label: 'الإضافي'),
-      'admin': const BottomNavigationBarItem(icon: Icon(Icons.admin_panel_settings_outlined), label: 'الإدارة'),
+      kSectionProduction: const BottomNavigationBarItem(icon: Icon(Icons.factory_outlined), label: 'الإنتاج'),
+      kSectionMaintenance: const BottomNavigationBarItem(icon: Icon(Icons.build_outlined), label: 'الصيانة'),
+      kSectionSafety: const BottomNavigationBarItem(icon: Icon(Icons.shield_outlined), label: 'السلامة'),
+      kSectionAdmin: const BottomNavigationBarItem(icon: Icon(Icons.admin_panel_settings_outlined), label: 'الإدارة'),
     };
 
     final index = _index.clamp(0, keys.length - 1);
@@ -330,8 +313,8 @@ class _RootNavState extends State<RootNav> {
         type: BottomNavigationBarType.fixed,
         selectedItemColor: AppColors.maintenance,
         unselectedItemColor: AppColors.textFaint,
-        // مع ٨ تبويبات (مدير النظام) تضيق الشاشة فنُخفي أسماء غير المختارة.
-        showUnselectedLabels: keys.length <= 7,
+        // الحد الأقصى ٥ تبويبات (الرئيسية + ٤ أقسام) فتظهر كل الأسماء دائمًا.
+        showUnselectedLabels: true,
         items: keys.map((k) => items[k]!).toList(),
       ),
     );

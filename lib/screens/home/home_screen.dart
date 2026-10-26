@@ -5,14 +5,11 @@ import '../../services/app_state.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_state.dart';
 import '../../theme/app_theme.dart';
-import '../admin/admin_home_screen.dart' show canOpenAdminTab;
 import '../auth/change_password_screen.dart';
 import '../chat/chat_list_screen.dart';
 import '../chat/chat_widgets.dart' show ChatUnreadBadge;
-import '../leaves/leaves_home_screen.dart' show LeavesHomeScreen, canOpenLeaves;
-import '../mamoul/mamoul_home_screen.dart' show canOpenMamoulMonitor;
 import '../notifications/notifications_screen.dart';
-import '../overtime/overtime_home_screen.dart' show canOpenOvertimeTab;
+import 'section_tools.dart';
 
 class HomeScreen extends StatelessWidget {
   final AppRole role;
@@ -30,17 +27,11 @@ class HomeScreen extends StatelessWidget {
     final pendingPermits = state.permits.where((p) => p.status.name == 'pending').length;
     final lowStockItems = state.inventoryItems.where((i) => i.isLow).length;
 
-    // تحديث 2026-10-03: مسؤول المخزون والمصمم أصبحا أيضًا "أفراد صيانة" قابلين
-    // للتكليف (راجع التعليق أعلى isInventoryOnlyRole في auth_service.dart) —
-    // فتظهر لهما بطاقة "الصيانة" الآن أيضًا، بنطاق محدود بمهامهما فقط تمامًا
-    // كالفني العادي (التصفية فعليًا من السيرفر، لا من هنا).
-    final showMaintenance = role == AppRole.admin || isMaintenanceRole(role) || isInventoryOnlyRole(role);
-    // "المخزون" بطاقة مستقلة الآن (تبويب مستقل — راجع inventory_dashboard_screen.dart
-    // وmain.dart)، لكنها تبقى مقصورة على فريق الصيانة والمخزون فقط (فني/مسؤول
-    // صيانة، مسؤول المخزون، المصمم) بقرار من الإدارة رغم استقلاليتها.
-    final showInventory = role == AppRole.admin || isMaintenanceRole(role) || isInventoryOnlyRole(role);
-    final showProduction = role == AppRole.admin || isProductionRole(role);
-    final showSafety = role == AppRole.admin || role == AppRole.safety;
+    // الأقسام الأربعة فقط في الرئيسية (إنتاج، صيانة، سلامة، إدارة)، وبقية الشاشات
+    // (العمل الإضافي، الإجازات، المعمول، المخزون) أدوات داخل الأقسام — راجع section_tools.dart.
+    // مسؤول المخزون والمصمم «أفراد صيانة» بنطاق مهامهما (راجع isInventoryOnlyRole).
+    final user = auth.currentUser;
+    final sections = visibleSections(user);
 
     return SafeArea(
       child: Padding(
@@ -184,113 +175,54 @@ class HomeScreen extends StatelessWidget {
               child: Text('الأقسام', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
             ),
             const SizedBox(height: 12),
-            // البطاقات داخل قائمة قابلة للتمرير: مع بطاقة "الرسائل" صار لمدير
-            // النظام ست بطاقات، وقد لا تتسع كلها في شاشة قصيرة (كان Column ثابتًا).
+            // الأقسام الأربعة داخل قائمة قابلة للتمرير (تتسع كلها في الشاشة عادةً).
             Expanded(
               child: ListView(
                 padding: EdgeInsets.zero,
                 children: [
-            // الرسائل (دردشة داخلية: محادثات خاصة + مجموعات) — بطاقة رئيسية بعدّاد
-            // غير المقروء، لكل الأدوار عدا "القسم العام".
-            if (chatAvailableForRole(role)) ...[
-              _ModuleCard(
-                icon: Icons.chat_bubble_outline,
-                color: const Color(0xFF0E7490),
-                title: 'الرسائل',
-                subtitle: chatUnread > 0 ? '$chatUnread رسائل غير مقروءة' : 'محادثات خاصة ومجموعات',
-                badgeCount: chatUnread,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ChatListScreen()),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (showMaintenance) ...[
-              _ModuleCard(
-                icon: Icons.build_outlined,
-                color: AppColors.maintenance,
-                title: 'الصيانة',
-                subtitle: '$openReports بلاغات مفتوحة الآن',
-                onTap: () => onSelectModule?.call('maintenance'),
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (showInventory) ...[
-              _ModuleCard(
-                icon: Icons.inventory_2_outlined,
-                color: AppColors.inventory,
-                title: 'المخزون',
-                subtitle: lowStockItems > 0 ? '$lowStockItems أصناف منخفضة' : 'المخزون بحالة جيدة',
-                onTap: () => onSelectModule?.call('inventory'),
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (showProduction) ...[
-              _ModuleCard(
-                icon: Icons.factory_outlined,
-                color: AppColors.production,
-                title: 'الإنتاج',
-                subtitle: '$activeLines خطوط إنتاج نشطة',
-                onTap: () => onSelectModule?.call('production'),
-              ),
-              const SizedBox(height: 12),
-            ],
-            // مراقبة المعمول (مكائن البخور) — فريق الصيانة + إنتاج مصنع النساء
-            // (راجع canOpenMamoulMonitor).
-            if (canOpenMamoulMonitor(auth.currentUser)) ...[
-              _ModuleCard(
-                icon: Icons.precision_manufacturing_outlined,
-                color: const Color(0xFF7A4B2A),
-                title: 'المعمول',
-                subtitle: 'مراقبة المكائن: الأوزان والسرعات والأعطال',
-                onTap: () => onSelectModule?.call('mamoul'),
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (showSafety) ...[
-              _ModuleCard(
-                icon: Icons.shield_outlined,
-                color: AppColors.safety,
-                iconColor: AppColors.safetyText,
-                title: 'السلامة',
-                subtitle: pendingPermits > 0 ? '$pendingPermits تصريح بانتظار الموافقة' : 'لا توجد تصاريح معلّقة',
-                onTap: () => onSelectModule?.call('safety'),
-              ),
-              const SizedBox(height: 12),
-            ],
-            // العمل الإضافي — للمسؤولين فقط (راجع canOpenOvertimeTab).
-            if (canOpenOvertimeTab(role)) ...[
-              _ModuleCard(
-                icon: Icons.more_time_outlined,
-                color: AppColors.warningText,
-                title: 'العمل الإضافي',
-                subtitle: 'تسجيل الأفراد وتقارير اليوم والشهر',
-                onTap: () => onSelectModule?.call('overtime'),
-              ),
-              const SizedBox(height: 12),
-            ],
-            // إجازات الموظفين (مصنع الرجال) — نفس أدوار العمل الإضافي مقيَّدة بمصنع الرجال
-            // (راجع canOpenLeaves). شاشة مستقلة تُفتح فوق الرئيسية، لا تبويبًا سفليًا.
-            if (canOpenLeaves(auth.currentUser)) ...[
-              _ModuleCard(
-                icon: Icons.beach_access_outlined,
-                color: const Color(0xFF1B6E87),
-                title: 'إجازات الموظفين',
-                subtitle: 'مصنع الرجال: الأرصدة والإجازات والتنبيهات',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const LeavesHomeScreen()),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (canOpenAdminTab(role))
-              _ModuleCard(
-                icon: Icons.admin_panel_settings_outlined,
-                color: AppColors.textSecondary,
-                title: 'الإدارة',
-                subtitle: 'الفنيون واعتماد المستخدمين',
-                onTap: () => onSelectModule?.call('admin'),
-              ),
+                  if (sections.contains(kSectionProduction)) ...[
+                    _ModuleCard(
+                      icon: Icons.factory_outlined,
+                      color: AppColors.production,
+                      title: 'الإنتاج',
+                      subtitle: '$activeLines خطوط إنتاج نشطة',
+                      hint: _toolsHint(user, kSectionProduction, lowStockItems),
+                      onTap: () => onSelectModule?.call(kSectionProduction),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (sections.contains(kSectionMaintenance)) ...[
+                    _ModuleCard(
+                      icon: Icons.build_outlined,
+                      color: AppColors.maintenance,
+                      title: 'الصيانة',
+                      subtitle: '$openReports بلاغات مفتوحة الآن',
+                      hint: _toolsHint(user, kSectionMaintenance, lowStockItems),
+                      onTap: () => onSelectModule?.call(kSectionMaintenance),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (sections.contains(kSectionSafety)) ...[
+                    _ModuleCard(
+                      icon: Icons.shield_outlined,
+                      color: AppColors.safety,
+                      iconColor: AppColors.safetyText,
+                      title: 'السلامة',
+                      subtitle: pendingPermits > 0 ? '$pendingPermits تصريح بانتظار الموافقة' : 'لا توجد تصاريح معلّقة',
+                      hint: _toolsHint(user, kSectionSafety, lowStockItems),
+                      onTap: () => onSelectModule?.call(kSectionSafety),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (sections.contains(kSectionAdmin))
+                    _ModuleCard(
+                      icon: Icons.admin_panel_settings_outlined,
+                      color: AppColors.textSecondary,
+                      title: 'الإدارة',
+                      subtitle: 'الفنيون واعتماد المستخدمين',
+                      hint: _toolsHint(user, kSectionAdmin, lowStockItems),
+                      onTap: () => onSelectModule?.call(kSectionAdmin),
+                    ),
                 ],
               ),
             ),
@@ -301,12 +233,29 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
+/// سطر صغير تحت عنوان بطاقة القسم يعدّد الأدوات الموجودة بداخله (مثل «المخزون · المعمول · العمل الإضافي»)
+/// كي يعرف المستخدم أين يجد كل شيء. لا يظهر لو لا أدوات في القسم.
+String? _toolsHint(AppUser? user, String section, int lowStockItems) {
+  final tools = toolsForSection(section, user);
+  if (tools.isEmpty) return null;
+  final labels = <String>[];
+  for (final t in tools) {
+    var label = toolLabel(t);
+    if (t == kToolInventory && lowStockItems > 0) label = '$label ($lowStockItems منخفض)';
+    labels.add(label);
+  }
+  return labels.join(' · ');
+}
+
 class _ModuleCard extends StatelessWidget {
   final IconData icon;
   final Color color;
   final Color? iconColor;
   final String title;
   final String subtitle;
+
+  /// سطر ثانوي صغير يعدّد أدوات القسم (اختياري).
+  final String? hint;
   final VoidCallback onTap;
 
   /// عدّاد أحمر يظهر قبل السهم لو أكبر من صفر (مثل رسائل الدردشة غير المقروءة).
@@ -318,6 +267,7 @@ class _ModuleCard extends StatelessWidget {
     this.iconColor,
     required this.title,
     required this.subtitle,
+    this.hint,
     required this.onTap,
     this.badgeCount = 0,
   });
@@ -351,6 +301,10 @@ class _ModuleCard extends StatelessWidget {
                   Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 3),
                   Text(subtitle, style: const TextStyle(fontSize: 13, color: AppColors.textMuted)),
+                  if (hint != null) ...[
+                    const SizedBox(height: 3),
+                    Text(hint!, style: const TextStyle(fontSize: 11.5, color: AppColors.textFaint)),
+                  ],
                 ],
               ),
             ),

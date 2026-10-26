@@ -12,6 +12,7 @@ import 'production_batch_form_screen.dart';
 import 'production_equipment_screen.dart';
 import 'production_incidents_screen.dart';
 import 'production_reports_screen.dart';
+import '../home/section_tools.dart';
  
 /// ترتيب تبويبات الإنتاج: القسمان المطلوبان أولًا (مصنع الرجال/النساء) ثم
 /// "المستودع العام" لخطوط قديمة بلا تصنيف. القيم نفسها المسموحة في
@@ -191,13 +192,23 @@ class _ProductionLinesScreenState extends State<ProductionLinesScreen>
               )
             : null,
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: _visibleTabs.map((f) => _FacilityLinesView(
-              facility: f,
-              onOpenForm: (existing) => _openForm(context, existing: existing),
-              onDelete: (line) => _confirmDelete(context, line),
-            )).toList(),
+      body: Column(
+        children: [
+          AnimatedBuilder(
+            animation: _tabController,
+            builder: (context, _) => SectionToolsBar(section: kSectionProduction, facility: _currentFacility),
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: _visibleTabs.map((f) => _FacilityLinesView(
+                    facility: f,
+                    onOpenForm: (existing) => _openForm(context, existing: existing),
+                    onDelete: (line) => _confirmDelete(context, line),
+                  )).toList(),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppColors.production,
