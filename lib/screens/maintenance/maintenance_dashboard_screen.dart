@@ -250,11 +250,11 @@ class _MaintenanceDashboardScreenState extends State<MaintenanceDashboardScreen>
         title: const Text('الصيانة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         actions: [
           // "تحليل الصيانة" (طلب 2026-10-03: "كـ إدارة الصيانة أريد صفحة
-          // للتحليل — المهام وعمل الفنيين") — مقصورة على مسؤول الصيانة (ومدير
-          // النظام تلقائيًا عبر canManageMaintenance) فقط، نفس تقييد GET
-          // /api/maintenance-analysis على السيرفر تمامًا — لا تظهر لفني
-          // الصيانة العادي ولا لمسؤول المخزون/المصمم.
-          if (canManage)
+          // للتحليل — المهام وعمل الفنيين") — صارت بقرار المالك 2026-10-26 لكل
+          // أفراد الصيانة مع الفنيين (canViewMaintenanceAnalysis)، نفس تقييد
+          // GET /api/maintenance-analysis على السيرفر تمامًا — لا تظهر للإنتاج
+          // ولا للسلامة.
+          if (canViewMaintenanceAnalysis(role))
             IconButton(
               icon: const Icon(Icons.bar_chart_outlined),
               tooltip: 'تحليل الصيانة',

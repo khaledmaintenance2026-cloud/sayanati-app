@@ -82,7 +82,10 @@ class _MaintenanceReportsScreenState extends State<MaintenanceReportsScreen> {
     // فقط، لا الفني — بنفس نمط canManageBatches في production_reports_screen.dart
     // تمامًا، وبنفس القيد الملزم فعليًا على السيرفر
     // (requireRole('maintenance_manager') على POST /api/work-orders/reports/request).
-    final canManage = canManageMaintenance(context.watch<AuthService>().currentUser?.role ?? AppRole.maintenanceTechnician);
+    final viewerRole = context.watch<AuthService>().currentUser?.role ?? AppRole.maintenanceTechnician;
+    final canManage = canManageMaintenance(viewerRole);
+    // «تحليل الصيانة» لكل أفراد الصيانة مع الفنيين (قرار 2026-10-26) — أوسع من canManage.
+    final canViewAnalysis = canViewMaintenanceAnalysis(viewerRole);
     final reports = state.maintenanceReports;
     final completedPreventive = reports.where((r) => !r.isEmergency && r.status == MaintenanceStatus.completed).length;
     final avgResolution = averageMaintenanceResolution(reports);
@@ -113,7 +116,7 @@ class _MaintenanceReportsScreenState extends State<MaintenanceReportsScreen> {
               const SizedBox(height: 20),
               const Text('تقارير تلقائية عبر واتساب', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
               const SizedBox(height: 10),
-              const _ReportRow(title: 'التقرير الشهري', subtitle: 'رابط تقرير — كل ٣٠ يومًا تقريبًا لجروب الصيانة'),
+              const _ReportRow(title: 'التقرير الشهري', subtitle: 'يُرسَل تلقائيًا لجروب الصيانة يوم ٢٥ من كل شهر (من ٢٥ إلى ٢٤)'),
               const SizedBox(height: 10),
               const _ReportRow(title: 'التقرير السنوي', subtitle: 'رابط تقرير — كل سنة تقريبًا لجروب الصيانة'),
               // اختصار مباشر لصفحة "تحليل الصيانة" (رسوم بيانية تفصيلية عن

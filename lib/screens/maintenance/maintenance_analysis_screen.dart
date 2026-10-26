@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../models/maintenance_analysis.dart';
 import '../../services/app_state.dart';
 import '../../services/arabic_format.dart';
+import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
@@ -22,15 +23,22 @@ import '../../widgets/common.dart';
 /// فترة زمنية يختارها المستخدم — إما آخر ٣٠ يومًا (افتراضي) أو فترة مخصصة.
 ///
 /// مصدر البيانات: GET /api/maintenance-analysis (راجع
-/// routes/maintenanceAnalysis.js على السيرفر) — مقصور على مسؤول الصيانة
-/// (ومدير النظام تلقائيًا) فقط؛ الدخول لهذه الشاشة نفسها مقصور بنفس الشرط من
-/// maintenance_dashboard_screen.dart وmaintenance_completed_screen.dart
-/// (أيقونة/بطاقة "تحليل الصيانة" لا تظهر لغيرهما).
+/// routes/maintenanceAnalysis.js على السيرفر). بقرار المالك 2026-10-26 صارت
+/// لكل أفراد الصيانة مع الفنيين (انظر [canViewMaintenanceAnalysis]) بعد أن
+/// كانت لمسؤول الصيانة ومدير النظام فقط؛ الإنتاج والسلامة والقسم العام لا
+/// يرونها. أيقونة/بطاقة "تحليل الصيانة" في maintenance_dashboard_screen.dart
+/// وmaintenance_completed_screen.dart تُفحص بنفس الدالة.
 ///
 /// بلا أي حزمة رسم بياني خارجية — الحلقة الدائرية مرسومة بـCustomPainter
 /// بسيط (لا توجد أي حزمة من هذا النوع بالمشروع أصلًا)، وبقية الرسوم
 /// Container/Row عادية بنفس أسلوب التطبيق في inventory_screen.dart.
 enum _RangeMode { last30, custom }
+
+/// من يرى «تحليل الصيانة»؟ مدير النظام ومسؤول الصيانة والفني + مسؤول المخزون والمصمم
+/// (أفراد صيانة قابلون للتكليف، راجع isInventoryOnlyRole). تُخفي الأيقونة في الواجهة فقط؛
+/// القيد الملزم على السيرفر في routes/maintenanceAnalysis.js (MAINTENANCE_ROLES +
+/// TECHNICIAN_ROLES) — يجب أن تبقى القائمتان متطابقتين.
+bool canViewMaintenanceAnalysis(AppRole role) => role == AppRole.admin || isMaintenanceRole(role) || isInventoryOnlyRole(role);
 
 class MaintenanceAnalysisScreen extends StatefulWidget {
   const MaintenanceAnalysisScreen({super.key});
