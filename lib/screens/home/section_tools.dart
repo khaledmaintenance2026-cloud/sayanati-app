@@ -7,7 +7,8 @@ import '../admin/admin_home_screen.dart' show canOpenAdminTab;
 import '../leaves/leaves_home_screen.dart' show LeavesHomeScreen, canOpenLeaves, kLeavesFacility;
 import '../leaves/leaves_widgets.dart' show kLeavesColor;
 import '../maintenance/inventory_dashboard_screen.dart' show InventoryDashboardScreen;
-import '../mamoul/mamoul_home_screen.dart' show MamoulHomeScreen, canOpenMamoulMonitor;
+import '../mamoul/mamoul_home_screen.dart' show MamoulHomeScreen, canOpenMamoulMonitor, kMamoulWomenFacility;
+import '../mamoul/mamoul_op_reports_home_screen.dart' show MamoulOpReportsHomeScreen;
 import '../mamoul/mamoul_widgets.dart' show kMamoulColor;
 import '../overtime/overtime_home_screen.dart' show OvertimeHomeScreen, canOpenOvertimeTab;
 import '../overtime/overtime_widgets.dart' show kOvertimeColor;
@@ -32,6 +33,9 @@ const String kToolInventory = 'inventory';
 const String kToolMamoul = 'mamoul';
 const String kToolOvertime = 'overtime';
 
+/// تقرير تشغيل المعمول (ورقة QMS-PD-006): زر داخل الإنتاج ← «مصنع النساء» فقط.
+const String kToolMamoulReport = 'mamoul_report';
+
 /// الأقسام التي يراها المستخدم، بالترتيب المعتمد (إنتاج، صيانة، سلامة، إدارة).
 List<String> visibleSections(AppUser? user) {
   final out = <String>[];
@@ -52,6 +56,7 @@ bool canUseTool(String tool, AppUser? user) {
   if (tool == kToolOvertime) return canOpenOvertimeTab(r);
   if (tool == kToolLeaves) return canOpenLeaves(user);
   if (tool == kToolMamoul) return canOpenMamoulMonitor(user);
+  if (tool == kToolMamoulReport) return canOpenMamoulMonitor(user);
   if (tool == kToolInventory) return r == AppRole.admin || isMaintenanceRole(r) || isInventoryOnlyRole(r);
   return false;
 }
@@ -60,6 +65,7 @@ String toolLabel(String tool) {
   if (tool == kToolLeaves) return 'إجازات الموظفين';
   if (tool == kToolInventory) return 'المخزون';
   if (tool == kToolMamoul) return 'المعمول';
+  if (tool == kToolMamoulReport) return 'تقرير تشغيل المعمول';
   return 'العمل الإضافي';
 }
 
@@ -67,13 +73,14 @@ IconData toolIcon(String tool) {
   if (tool == kToolLeaves) return Icons.beach_access_outlined;
   if (tool == kToolInventory) return Icons.inventory_2_outlined;
   if (tool == kToolMamoul) return Icons.precision_manufacturing_outlined;
+  if (tool == kToolMamoulReport) return Icons.assignment_outlined;
   return Icons.more_time_outlined;
 }
 
 Color toolColor(String tool) {
   if (tool == kToolLeaves) return kLeavesColor;
   if (tool == kToolInventory) return AppColors.inventory;
-  if (tool == kToolMamoul) return kMamoulColor;
+  if (tool == kToolMamoul || tool == kToolMamoulReport) return kMamoulColor;
   return kOvertimeColor;
 }
 
@@ -104,6 +111,10 @@ List<String> toolsForSection(String section, AppUser? user, {String? facility}) 
     if (tool == kToolLeaves && hasHome && facility != null && facility != kLeavesFacility) continue;
     out.add(tool);
   }
+  // تقرير تشغيل المعمول: داخل الإنتاج تحت تبويب «مصنع النساء» فقط، ولا يظهر في أي مكان آخر.
+  if (section == kSectionProduction && facility == kMamoulWomenFacility && canUseTool(kToolMamoulReport, user)) {
+    out.add(kToolMamoulReport);
+  }
   // العمل الإضافي في كل قسم.
   if (canUseTool(kToolOvertime, user)) out.add(kToolOvertime);
   return out;
@@ -119,6 +130,8 @@ void openSectionTool(BuildContext context, String tool) {
     screen = const InventoryDashboardScreen();
   } else if (tool == kToolMamoul) {
     screen = const MamoulHomeScreen();
+  } else if (tool == kToolMamoulReport) {
+    screen = const MamoulOpReportsHomeScreen();
   } else {
     screen = const OvertimeHomeScreen();
   }

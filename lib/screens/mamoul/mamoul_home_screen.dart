@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../../models/mamoul_monitor.dart';
 import '../../services/auth_service.dart';
@@ -9,7 +8,6 @@ import 'mamoul_analysis_tab.dart';
 import 'mamoul_faults_tab.dart';
 import 'mamoul_machine_room_screen.dart';
 import 'mamoul_machines_screen.dart';
-import 'mamoul_op_reports_tab.dart';
 import 'mamoul_runs_tab.dart';
 import 'mamoul_widgets.dart';
 
@@ -32,10 +30,8 @@ bool canOpenMamoulMonitor(AppUser? user) {
   return false;
 }
 
-/// شاشة "مراقبة المعمول": أربعة تبويبات (التشغيلات، الأعطال، التحليل، تقارير
-/// التشغيل)، وزر "المكائن" لإدارة المكائن والدخول لغرفة كل مكينة. تبويب «تقارير
-/// التشغيل» (ورقة Mamoul Operating Report، طلب 2026-11-05) يُفتح أولًا لموظفي
-/// الإنتاج لأنه عملهم اليومي، وبقية الأدوار تبدأ بالتشغيلات كما كانت.
+/// شاشة "مراقبة المعمول": ثلاثة تبويبات (التشغيلات، الأعطال، التحليل)، وزر
+/// "المكائن" لإدارة المكائن والدخول لغرفة كل مكينة.
 class MamoulHomeScreen extends StatefulWidget {
   const MamoulHomeScreen({super.key});
 
@@ -44,14 +40,9 @@ class MamoulHomeScreen extends StatefulWidget {
 }
 
 class _MamoulHomeScreenState extends State<MamoulHomeScreen> {
-  /// موظفو الإنتاج يبدأون بتبويب «تقارير التشغيل» (عملهم اليومي).
-  late final bool _startOnReports;
-
   @override
   void initState() {
     super.initState();
-    final role = context.read<AuthService>().currentUser?.role;
-    _startOnReports = role != null && isProductionRole(role);
     reloadMamoulMachines();
   }
 
@@ -66,8 +57,7 @@ class _MamoulHomeScreenState extends State<MamoulHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
-      initialIndex: _startOnReports ? 3 : 0,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('مراقبة المعمول', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
@@ -81,7 +71,6 @@ class _MamoulHomeScreenState extends State<MamoulHomeScreen> {
             const SizedBox(width: 6),
           ],
           bottom: const TabBar(
-            isScrollable: true,
             labelColor: kMamoulColor,
             unselectedLabelColor: AppColors.textMuted,
             indicatorColor: kMamoulColor,
@@ -89,7 +78,6 @@ class _MamoulHomeScreenState extends State<MamoulHomeScreen> {
               Tab(text: 'التشغيلات'),
               Tab(text: 'الأعطال'),
               Tab(text: 'التحليل'),
-              Tab(text: 'تقارير التشغيل'),
             ],
           ),
         ),
@@ -124,7 +112,6 @@ class _MamoulHomeScreenState extends State<MamoulHomeScreen> {
                   const MamoulRunsTab(),
                   const MamoulFaultsTab(),
                   MamoulAnalysisTab(onOpenMachine: _openRoom),
-                  const MamoulOpReportsTab(),
                 ],
               ),
             ),
