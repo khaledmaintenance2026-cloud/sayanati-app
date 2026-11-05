@@ -10,6 +10,7 @@ import 'services/chat_state.dart';
 import 'services/notification_router.dart';
 import 'services/push_notification_service.dart';
 import 'theme/app_theme.dart';
+import 'widgets/update_banner.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/complete_phone_screen.dart';
 import 'screens/auth/pending_approval_screen.dart';
@@ -64,7 +65,8 @@ class SayanatiApp extends StatelessWidget {
         builder: (context, child) {
           return Directionality(
             textDirection: TextDirection.rtl,
-            child: child!,
+            // رسالة «يوجد تحديث جديد» على نسخة الويب فقط (راجع widgets/update_banner.dart).
+            child: UpdateBanner(child: child!),
           );
         },
         home: const AuthGate(),

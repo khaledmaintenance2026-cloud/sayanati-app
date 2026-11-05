@@ -157,7 +157,20 @@ jobs:
           convert assets/images/app_icon.png -resize 32x32 web/favicon.png
 
       - name: بناء نسخة الويب
-        run: flutter build web --release --pwa-strategy=none
+        run: flutter build web --release --pwa-strategy=none --dart-define=SAYANATI_BUILD_ID=${GITHUB_SHA}
+
+      # رقم خاص لكل نسخة (طلب المالك 2026-11-05): Cloudflare يجعل المتصفح يحتفظ بملفات js
+      # أربع ساعات، فكانت التحديثات تتأخر. بإضافة ?v=<رقم الكوميت> يصير كل إصدار رابطًا جديدًا
+      # فيُحمَّل فورًا (index.html نفسه لا يُخزَّن). app_build.json يقرؤه التطبيق ليعرض رسالة
+      # «يوجد تحديث جديد» (راجع lib/widgets/update_banner.dart).
+      - name: ختم النسخة برقمها (لتصل التحديثات فورًا)
+        run: |
+          BID="${GITHUB_SHA::7}"
+          sed -i "s#src=\"flutter_bootstrap.js\"#src=\"flutter_bootstrap.js?v=${BID}\"#" build/web/index.html
+          sed -i "s#\"mainJsPath\":\"main.dart.js\"#\"mainJsPath\":\"main.dart.js?v=${BID}\"#g" build/web/flutter_bootstrap.js
+          printf '{"build":"%s"}' "${GITHUB_SHA}" > build/web/app_build.json
+          grep -q "flutter_bootstrap.js?v=${BID}" build/web/index.html
+          grep -q "main.dart.js?v=${BID}" build/web/flutter_bootstrap.js
 
       - name: ضغط ناتج البناء في ملف واحد (باسم يتضمن رقم الكوميت لتفادي أي كاش قديم)
         run: |
