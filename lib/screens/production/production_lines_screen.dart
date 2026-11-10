@@ -13,6 +13,7 @@ import 'production_equipment_screen.dart';
 import 'production_incidents_screen.dart';
 import 'production_reports_screen.dart';
 import '../home/section_tools.dart';
+import '../safety/safety_permit_request_screen.dart';
  
 /// ترتيب تبويبات الإنتاج: القسمان المطلوبان أولًا (مصنع الرجال/النساء) ثم
 /// "المستودع العام" لخطوط قديمة بلا تصنيف. القيم نفسها المسموحة في
@@ -166,6 +167,18 @@ class _ProductionLinesScreenState extends State<ProductionLinesScreen>
             tooltip: 'بلاغ عطل',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => ProductionIncidentsScreen(facility: _currentFacility)),
+            ),
+          ),
+          // طلب تصريح عمل من السلامة (لحام، ارتفاعات، أماكن مغلقة...) — طلب المالك
+          // 2026-11-10: نفس الزر الموجود في قسم الصيانة بالضبط، لإنتاج مصنع الرجال
+          // ومصنع النساء معًا. يفتح نفس شاشة/عملية الطلب في قسم السلامة
+          // (SafetyPermitRequestScreen) بلا أي تعديل عليها، والسيرفر يقبل الطلب
+          // من أي مستخدم معتمد (POST /api/safety-permits).
+          IconButton(
+            icon: const Icon(Icons.verified_user_outlined),
+            tooltip: 'طلب تصريح عمل',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SafetyPermitRequestScreen()),
             ),
           ),
           IconButton(
